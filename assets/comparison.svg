@@ -1,20 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 360" width="1000" height="360" role="img" aria-label="The 5-Hour Wall: Standard Claude Code vs tokencut">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 380" width="1000" height="380" role="img" aria-label="The 5-Hour Wall: Standard Claude Code vs tokencut">
   <defs>
     <linearGradient id="wallBg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0b101b"/>
-      <stop offset="100%" stop-color="#060911"/>
+      <stop offset="0%" stop-color="#0a0f1a"/>
+      <stop offset="100%" stop-color="#050810"/>
     </linearGradient>
     <linearGradient id="badBar" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#ef4444"/>
-      <stop offset="100%" stop-color="#dc2626"/>
+      <stop offset="100%" stop-color="#b91c1c"/>
     </linearGradient>
     <linearGradient id="goodBar" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#00f5a0"/>
       <stop offset="100%" stop-color="#00d9f5"/>
-    </linearGradient>
-    <linearGradient id="glowG" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#00f5a0" stop-opacity="0.12"/>
-      <stop offset="100%" stop-color="#00f5a0" stop-opacity="0"/>
     </linearGradient>
     <filter id="cardShadow" x="-5%" y="-5%" width="110%" height="110%">
       <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.5"/>
@@ -26,48 +22,48 @@
   </defs>
 
   <!-- Frame Background -->
-  <rect width="1000" height="360" rx="14" fill="url(#wallBg)" stroke="#1a2336" stroke-width="1.5"/>
+  <rect width="1000" height="380" rx="14" fill="url(#wallBg)" stroke="#172236" stroke-width="1.5"/>
 
   <!-- Title Section -->
-  <text x="40" y="44" fill="#ffffff" font-size="20" font-weight="700" class="sans">The 5-Hour Rate Limit Wall: Real Multi-Turn Dev Session</text>
-  <text x="40" y="68" fill="#718096" font-size="13" class="sans">Measured on standard full-stack workflow (running tests, reading codebase, executing builds, git diffs)</text>
+  <text x="40" y="42" fill="#ffffff" font-size="19" font-weight="700" class="sans">The 5-Hour Rate Limit Wall: Real Multi-Turn Dev Session</text>
+  <text x="40" y="66" fill="#718096" font-size="12.5" class="sans">Measured on standard full-stack workflow (running test suites, codebase reading, build logs, git diffs)</text>
 
   <!-- Card 1: Standard AI Coding Assistant (Without tokencut) -->
-  <g transform="translate(40, 95)" filter="url(#cardShadow)">
-    <rect width="920" height="95" rx="10" fill="#121624" stroke="#2d1c24" stroke-width="1.2"/>
-    <text x="24" y="32" fill="#f87171" font-size="14" font-weight="700" class="mono">STANDARD CLAUDE CODE / CURSOR (WITHOUT TOKENCUT)</text>
+  <g transform="translate(40, 90)" filter="url(#cardShadow)">
+    <rect width="920" height="105" rx="10" fill="#111522" stroke="#2d1b22" stroke-width="1.2"/>
+    <text x="24" y="30" fill="#f87171" font-size="13" font-weight="700" class="mono">🔴 STANDARD CLAUDE CODE / CURSOR (WITHOUT TOKENCUT)</text>
     
     <!-- Progress Bar Container -->
-    <rect x="24" y="46" width="620" height="24" rx="6" fill="#1c2132"/>
+    <rect x="24" y="46" width="605" height="26" rx="6" fill="#1a2030"/>
     <!-- Filled Burn Bar -->
-    <rect x="24" y="46" width="580" height="24" rx="6" fill="url(#badBar)"/>
-    <text x="36" y="63" fill="#ffffff" font-size="12" font-weight="bold" class="mono">184,000 TOKENS BURNED · CONTEXT POLLUTED</text>
+    <rect x="24" y="46" width="560" height="26" rx="6" fill="url(#badBar)"/>
+    <text x="36" y="64" fill="#ffffff" font-size="11.5" font-weight="bold" class="mono">184,000 TOKENS BURNED · CONTEXT WINDOW POLLUTED</text>
 
     <!-- Result Tag on Right -->
-    <rect x="660" y="36" width="236" height="44" rx="8" fill="#2d151c" stroke="#dc2626" stroke-width="1"/>
-    <text x="778" y="55" text-anchor="middle" fill="#f87171" font-size="12" font-weight="bold" class="mono">5h LIMIT HIT AT 48 MINS</text>
-    <text x="778" y="70" text-anchor="middle" fill="#fca5a5" font-size="11" class="mono">Session locked out</text>
+    <rect x="650" y="28" width="246" height="52" rx="8" fill="#241218" stroke="#dc2626" stroke-width="1"/>
+    <text x="773" y="50" text-anchor="middle" fill="#f87171" font-size="12" font-weight="bold" class="mono">5h LIMIT HIT AT 48 MINS</text>
+    <text x="773" y="68" text-anchor="middle" fill="#fca5a5" font-size="11" class="mono">Session locked out · Work halted</text>
   </g>
 
   <!-- Card 2: With tokencut SOTA Engine -->
   <g transform="translate(40, 215)" filter="url(#cardShadow)">
-    <rect width="920" height="110" rx="10" fill="#0c1d24" stroke="#00f5a0" stroke-width="1.5"/>
-    <text x="24" y="32" fill="#00f5a0" font-size="14" font-weight="700" class="mono">WITH TOKENCUT (SOTA REVERSIBLE COMPACTOR + MCP)</text>
+    <rect width="920" height="125" rx="10" fill="#091c22" stroke="#00f5a0" stroke-width="1.5"/>
+    <text x="24" y="28" fill="#00f5a0" font-size="13" font-weight="700" class="mono">🟢 WITH TOKENCUT (SOTA REVERSIBLE COMPACTOR + MCP)</text>
     
     <!-- Progress Bar Container -->
-    <rect x="24" y="48" width="620" height="24" rx="6" fill="#132a32"/>
+    <rect x="24" y="44" width="605" height="26" rx="6" fill="#10252e"/>
     <!-- Compacted Bar -->
-    <rect x="24" y="48" width="105" height="24" rx="6" fill="url(#goodBar)"/>
-    <text x="140" y="65" fill="#a7f3d0" font-size="12" font-weight="bold" class="mono">31,200 TOKENS (-83.0%) · 100% REASONING PRESERVED</text>
+    <rect x="24" y="44" width="105" height="26" rx="6" fill="url(#goodBar)"/>
+    <text x="140" y="62" fill="#a7f3d0" font-size="11.5" font-weight="bold" class="mono">31,200 TOKENS (-83.0%) · 100% REASONING PRESERVED</text>
 
     <!-- Result Tag on Right -->
-    <rect x="660" y="38" width="236" height="52" rx="8" fill="#09332c" stroke="#00f5a0" stroke-width="1.2"/>
-    <text x="778" y="59" text-anchor="middle" fill="#00f5a0" font-size="13" font-weight="bold" class="mono">ALL-DAY WORKFLOW</text>
-    <text x="778" y="76" text-anchor="middle" fill="#6ee7b7" font-size="11" class="mono">0 rate limits · Zero interruptions</text>
+    <rect x="650" y="28" width="246" height="52" rx="8" fill="#062e26" stroke="#00f5a0" stroke-width="1.2"/>
+    <text x="773" y="50" text-anchor="middle" fill="#00f5a0" font-size="12.5" font-weight="bold" class="mono">ALL-DAY WORKFLOW</text>
+    <text x="773" y="68" text-anchor="middle" fill="#6ee7b7" font-size="11" class="mono">0 rate limits · Zero interruptions</text>
 
     <!-- Micro-badges below bar -->
-    <text x="24" y="94" fill="#38bdf8" font-size="11" class="mono">✓ 100% Traceback Preserved</text>
-    <text x="220" y="94" fill="#38bdf8" font-size="11" class="mono">✓ Reversible CCR Ref IDs</text>
-    <text x="410" y="94" fill="#38bdf8" font-size="11" class="mono">✓ Prompt Cache Hit: 89%</text>
+    <text x="24" y="100" fill="#38bdf8" font-size="11" class="mono">✓ 100% Traceback Preserved</text>
+    <text x="240" y="100" fill="#38bdf8" font-size="11" class="mono">✓ Reversible CCR Ref IDs</text>
+    <text x="445" y="100" fill="#38bdf8" font-size="11" class="mono">✓ Prompt Cache Hit: 89%</text>
   </g>
 </svg>

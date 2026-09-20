@@ -1,28 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="tokencut — SOTA Token Optimizer for Claude Code, Codex, and Gemini CLI">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#090d16"/>
-      <stop offset="100%" stop-color="#04060a"/>
+      <stop offset="0%" stop-color="#080c14"/>
+      <stop offset="100%" stop-color="#030509"/>
     </linearGradient>
     <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#00f5a0"/>
       <stop offset="50%" stop-color="#00d9f5"/>
-      <stop offset="100%" stop-color="#7928ca"/>
+      <stop offset="100%" stop-color="#9d4edd"/>
     </linearGradient>
     <linearGradient id="card-border" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#00f5a0" stop-opacity="0.6"/>
+      <stop offset="0%" stop-color="#00f5a0" stop-opacity="0.5"/>
       <stop offset="100%" stop-color="#00d9f5" stop-opacity="0.1"/>
     </linearGradient>
-    <radialGradient id="glow" cx="80%" cy="25%" r="55%">
-      <stop offset="0%" stop-color="#00f5a0" stop-opacity="0.15"/>
+    <radialGradient id="glow" cx="82%" cy="20%" r="50%">
+      <stop offset="0%" stop-color="#00f5a0" stop-opacity="0.14"/>
       <stop offset="100%" stop-color="#00f5a0" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="glow2" cx="20%" cy="80%" r="50%">
-      <stop offset="0%" stop-color="#00d9f5" stop-opacity="0.12"/>
+    <radialGradient id="glow2" cx="15%" cy="85%" r="45%">
+      <stop offset="0%" stop-color="#00d9f5" stop-opacity="0.10"/>
       <stop offset="100%" stop-color="#00d9f5" stop-opacity="0"/>
     </radialGradient>
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.5"/>
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.6"/>
     </filter>
     <style>
       .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
@@ -34,77 +34,88 @@
   <rect width="1280" height="640" fill="url(#bg)"/>
   <rect width="1280" height="640" fill="url(#glow)"/>
   <rect width="1280" height="640" fill="url(#glow2)"/>
-  <rect x="0" y="0" width="1280" height="640" fill="none" stroke="#1b2234" stroke-width="2"/>
+  <rect x="0" y="0" width="1280" height="640" fill="none" stroke="#161e2e" stroke-width="2"/>
 
   <!-- Top Badge -->
-  <g transform="translate(80, 75)">
-    <rect width="360" height="32" rx="16" fill="#131b2e" stroke="#253554" stroke-width="1"/>
-    <circle cx="16" cy="16" r="5" fill="#00f5a0"/>
-    <text x="32" y="21" fill="#8ea2c6" font-size="13" font-weight="600" class="mono" letter-spacing="1.5">SOTA TOKEN OPTIMIZER · 2026</text>
+  <g transform="translate(76, 68)">
+    <rect width="320" height="30" rx="15" fill="#0f1728" stroke="#1f2c44" stroke-width="1"/>
+    <circle cx="16" cy="15" r="4.5" fill="#00f5a0"/>
+    <text x="30" y="20" fill="#8ea2c6" font-size="12" font-weight="600" class="mono" letter-spacing="1.5">SOTA TOKEN OPTIMIZER · 2026</text>
   </g>
 
   <!-- Main Title -->
-  <text x="76" y="200" font-size="108" font-weight="900" letter-spacing="-3" fill="#ffffff" class="sans">token<tspan fill="url(#brand)">cut</tspan></text>
+  <text x="74" y="185" font-size="102" font-weight="900" letter-spacing="-3" fill="#ffffff" class="sans">token<tspan fill="url(#brand)">cut</tspan></text>
 
   <!-- Accent Line -->
-  <rect x="80" y="222" width="460" height="6" rx="3" fill="url(#brand)"/>
+  <rect x="76" y="206" width="380" height="5" rx="2.5" fill="url(#brand)"/>
 
-  <!-- Subtitle -->
-  <text x="80" y="280" font-size="28" font-weight="600" fill="#e1e7f5" class="sans">Cut token burn by 60–85% without losing reasoning quality.</text>
-  <text x="80" y="320" font-size="18" fill="#8ea2c6" class="sans">Stop hitting the 5-hour rate limit on Claude Code, Cursor, OpenAI Codex &amp; Gemini CLI.</text>
+  <!-- Subtitle (Broken into 2 lines so it NEVER touches the right card) -->
+  <text x="76" y="260" font-size="30" font-weight="700" fill="#f0f4fc" class="sans">Cut token burn by 60–85%</text>
+  <text x="76" y="298" font-size="28" font-weight="600" fill="#00d9f5" class="sans">without losing reasoning quality.</text>
+  
+  <text x="76" y="342" font-size="16" fill="#8ea2c6" class="sans">Stop hitting the 5-hour rate limit on Claude Code,</text>
+  <text x="76" y="366" font-size="16" fill="#8ea2c6" class="sans">Cursor, OpenAI Codex, and Gemini CLI.</text>
 
-  <!-- Feature Tags -->
-  <g transform="translate(80, 365)">
-    <!-- Tag 1 -->
-    <rect width="210" height="36" rx="8" fill="#0e1726" stroke="#212d45" stroke-width="1"/>
-    <text x="14" y="23" fill="#00f5a0" font-size="13" font-weight="600" class="mono">⚡ Zero Quality Loss</text>
+  <!-- Feature Tags (Stacked 2 columns to fit perfectly in left zone) -->
+  <g transform="translate(76, 405)">
+    <!-- Row 1 -->
+    <rect width="180" height="32" rx="6" fill="#0c1322" stroke="#1c2840" stroke-width="1"/>
+    <text x="12" y="20" fill="#00f5a0" font-size="12" font-weight="600" class="mono">⚡ Zero Quality Loss</text>
 
-    <!-- Tag 2 -->
-    <rect x="225" width="220" height="36" rx="8" fill="#0e1726" stroke="#212d45" stroke-width="1"/>
-    <text x="239" y="23" fill="#00d9f5" font-size="13" font-weight="600" class="mono">🛡️ Prompt Cache Safe</text>
+    <rect x="192" width="185" height="32" rx="6" fill="#0c1322" stroke="#1c2840" stroke-width="1"/>
+    <text x="204" y="20" fill="#00d9f5" font-size="12" font-weight="600" class="mono">🛡️ Prompt Cache Safe</text>
 
-    <!-- Tag 3 -->
-    <rect x="460" width="230" height="36" rx="8" fill="#0e1726" stroke="#212d45" stroke-width="1"/>
-    <text x="474" y="23" fill="#a78bfa" font-size="13" font-weight="600" class="mono">🔌 Universal MCP Server</text>
-  </g>
+    <!-- Row 2 -->
+    <rect y="40" width="200" height="32" rx="6" fill="#0c1322" stroke="#1c2840" stroke-width="1"/>
+    <text x="12" y="60" fill="#a78bfa" font-size="12" font-weight="600" class="mono">🔌 Universal MCP Server</text>
 
-  <!-- Comparison Card on Right -->
-  <g transform="translate(740, 110)" filter="url(#shadow)">
-    <rect width="460" height="440" rx="16" fill="#0d1322" stroke="url(#card-border)" stroke-width="1.5"/>
-
-    <!-- Window Header -->
-    <rect width="460" height="44" rx="16" fill="#131c30"/>
-    <rect y="30" width="460" height="14" fill="#131c30"/>
-    <circle cx="24" cy="22" r="6" fill="#ff5f56"/>
-    <circle cx="44" cy="22" r="6" fill="#ffbd2e"/>
-    <circle cx="64" cy="22" r="6" fill="#27c93f"/>
-    <text x="230" y="26" text-anchor="middle" fill="#627293" font-size="12" class="mono">real-world session benchmark</text>
-
-    <!-- Card Content -->
-    <!-- Without tokencut -->
-    <g transform="translate(30, 75)">
-      <rect width="400" height="135" rx="10" fill="#161b2a" stroke="#2d222e" stroke-width="1"/>
-      <text x="20" y="32" fill="#ff6b6b" font-size="14" font-weight="700" class="mono">🔴 WITHOUT TOKENCUT</text>
-      <text x="20" y="62" fill="#e1e7f5" font-size="13" class="mono">Pytest &amp; Build: <tspan fill="#ff8585" font-weight="bold">18,400 tokens / run</tspan></text>
-      <text x="20" y="88" fill="#8ea2c6" font-size="12" class="mono">Context window consumed: <tspan fill="#ff6b6b">87%</tspan></text>
-      <text x="20" y="114" fill="#f87171" font-size="12" class="mono">⚠️ Claude Code 5h limit hit in 48 mins</text>
-    </g>
-
-    <!-- With tokencut -->
-    <g transform="translate(30, 235)">
-      <rect width="400" height="165" rx="10" fill="#0d2426" stroke="#00f5a0" stroke-width="1.5"/>
-      <text x="20" y="32" fill="#00f5a0" font-size="14" font-weight="700" class="mono">🟢 WITH TOKENCUT</text>
-      <text x="20" y="62" fill="#ffffff" font-size="13" class="mono">Pytest &amp; Build: <tspan fill="#00f5a0" font-weight="bold">3,120 tokens (-83.0%)</tspan></text>
-      <text x="20" y="88" fill="#e1e7f5" font-size="12" class="mono">Context window consumed: <tspan fill="#00f5a0">15%</tspan></text>
-      <text x="20" y="114" fill="#38bdf8" font-size="12" class="mono">Traceback &amp; Errors preserved: <tspan fill="#ffffff" font-weight="bold">100%</tspan></text>
-      <text x="20" y="142" fill="#a7f3d0" font-size="13" font-weight="700" class="mono">✨ Session lasts ALL DAY uninterrupted</text>
-    </g>
+    <rect x="212" y="40" width="165" height="32" rx="6" fill="#0c1322" stroke="#1c2840" stroke-width="1"/>
+    <text x="224" y="60" fill="#fbbf24" font-size="12" font-weight="600" class="mono">🔒 Secret Sanitizer</text>
   </g>
 
   <!-- Bottom Command Bar -->
-  <g transform="translate(80, 520)">
-    <rect width="580" height="52" rx="10" fill="#101726" stroke="#253554" stroke-width="1"/>
-    <text x="24" y="32" fill="#00f5a0" font-size="16" font-weight="600" class="mono">$</text>
-    <text x="44" y="32" fill="#e1e7f5" font-size="15" class="mono">uvx tokencut run -- pytest -v tests/</text>
+  <g transform="translate(76, 520)">
+    <rect width="450" height="48" rx="8" fill="#0b111f" stroke="#1c2840" stroke-width="1"/>
+    <text x="20" y="29" fill="#00f5a0" font-size="15" font-weight="600" class="mono">$</text>
+    <text x="38" y="29" fill="#e1e7f5" font-size="13.5" class="mono">uvx tokencut run -- pytest -v tests/</text>
+  </g>
+
+  <!-- Right Side: Comparison Benchmark Card (Positioned at x=690, width=515) -->
+  <g transform="translate(690, 85)" filter="url(#shadow)">
+    <rect width="515" height="475" rx="14" fill="#0b101c" stroke="url(#card-border)" stroke-width="1.5"/>
+
+    <!-- Window Header -->
+    <rect width="515" height="42" rx="14" fill="#101728"/>
+    <rect y="28" width="515" height="14" fill="#101728"/>
+    <circle cx="24" cy="21" r="5.5" fill="#ff5f56"/>
+    <circle cx="42" cy="21" r="5.5" fill="#ffbd2e"/>
+    <circle cx="60" cy="21" r="5.5" fill="#27c93f"/>
+    <text x="257" y="25" text-anchor="middle" fill="#627293" font-size="11.5" font-weight="600" class="mono">session benchmark · 120 tests + build</text>
+
+    <!-- Card 1: WITHOUT TOKENCUT -->
+    <g transform="translate(24, 62)">
+      <rect width="467" height="150" rx="9" fill="#141824" stroke="#331c22" stroke-width="1"/>
+      <text x="18" y="30" fill="#f87171" font-size="13" font-weight="700" class="mono">🔴 WITHOUT TOKENCUT (RAW CLI)</text>
+      
+      <text x="18" y="58" fill="#e1e7f5" font-size="12.5" class="mono">Pytest &amp; Build: <tspan fill="#f87171" font-weight="bold">18,400 tokens / run</tspan></text>
+      <text x="18" y="82" fill="#8ea2c6" font-size="12" class="mono">Context window consumed: <tspan fill="#f87171" font-weight="bold">87%</tspan></text>
+      <text x="18" y="106" fill="#f87171" font-size="12" class="mono">⚠️ Claude Code 5h limit hit at 48 mins</text>
+      <text x="18" y="130" fill="#94a3b8" font-size="11.5" class="mono">Session aborted · Progress blocked</text>
+    </g>
+
+    <!-- Card 2: WITH TOKENCUT -->
+    <g transform="translate(24, 232)">
+      <rect width="467" height="205" rx="9" fill="#082220" stroke="#00f5a0" stroke-width="1.5"/>
+      <text x="18" y="30" fill="#00f5a0" font-size="13" font-weight="700" class="mono">🟢 WITH TOKENCUT (SOTA ENGINE)</text>
+      
+      <text x="18" y="58" fill="#ffffff" font-size="12.5" class="mono">Pytest &amp; Build: <tspan fill="#00f5a0" font-weight="bold">3,120 tokens (-83.0%)</tspan></text>
+      <text x="18" y="82" fill="#e1e7f5" font-size="12" class="mono">Context window consumed: <tspan fill="#00f5a0" font-weight="bold">15%</tspan></text>
+      <text x="18" y="106" fill="#38bdf8" font-size="12" class="mono">Traceback &amp; Errors preserved: <tspan fill="#ffffff" font-weight="bold">100%</tspan></text>
+      <text x="18" y="130" fill="#a7f3d0" font-size="12" font-weight="bold" class="mono">Reversible CCR Ref: <tspan fill="#38bdf8">tc_8f2a1b</tspan></text>
+      
+      <!-- Bottom Highlight -->
+      <rect x="18" y="150" width="431" height="36" rx="6" fill="#053328" stroke="#00f5a0" stroke-width="0.8"/>
+      <text x="32" y="173" fill="#6ee7b7" font-size="12" font-weight="bold" class="mono">✨ Session lasts ALL DAY uninterrupted</text>
+    </g>
   </g>
 </svg>
