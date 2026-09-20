@@ -1,3 +1,5 @@
+import json
+import os
 import sys
 
 from typer.testing import CliRunner
@@ -17,9 +19,47 @@ def test_cli_help():
 def test_cli_demo():
     res = runner.invoke(app, ["demo"])
     assert res.exit_code == 0
-    assert "Anthropic Claude" in res.output
-    assert "OpenAI GPT-4o" in res.output
-    assert "Google Gemini" in res.output
+    assert "verify your installation" in res.output
+    assert "PASS" in res.output
+    assert "No model calls" in res.output
+
+
+def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
+    cache_path = os.environ["TOKENCUT_CACHE_DIR"]
+    cache = ContextCache()
+    ref = cache.store("existing user output", source="test")
+    before = cache.get_stats()["count"]
+    empty_directory = tmp_path / "empty-project"
+    empty_directory.mkdir()
+    monkeypatch.chdir(empty_directory)
+    res = runner.invoke(app, ["demo", "--json"])
+    assert res.exit_code == 0
+    data = json.loads(res.stdout)
+    assert data["passed"] and all(data["checks"].values())
+    assert data["model_calls"] == 0
+    assert 0 < data["output_tokens"] < data["raw_tokens"]
+    assert os.environ["TOKENCUT_CACHE_DIR"] == cache_path
+    assert cache.get_stats()["count"] == before
+    assert cache.retrieve(ref) == "existing user output"
+
+
+def test_demo_fails_if_compaction_drops_diagnostics(monkeypatch):
+    monkeypatch.setattr("tokencut.cli.safe_compact_output", lambda text, **kw: "everything passed")
+    res = runner.invoke(app, ["demo", "--json"])
+    assert res.exit_code == 1
+    data = json.loads(res.stdout)
+    assert not data["passed"]
+    assert not data["checks"]["complete_failure_tail_preserved"]
+    assert not data["checks"]["original_recovered_exactly"]
+
+
+def test_invalid_run_budget_is_rejected_before_execution(tmp_path):
+    marker = tmp_path / "must-not-execute"
+    script = f"from pathlib import Path; Path({str(marker)!r}).touch()"
+    for budget in ("0", "-1"):
+        res = runner.invoke(app, ["run", "--budget", budget, "--", sys.executable, "-c", script])
+        assert res.exit_code == 2
+        assert not marker.exists()
 
 
 def test_cli_run():

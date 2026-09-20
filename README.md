@@ -19,6 +19,28 @@
   </p>
 </div>
 
+## Try it in one minute
+
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Install this repository: the PyPI name `tokencut` belongs to another project.
+
+```bash
+uv tool install 'git+https://github.com/00200200/tokencut.git'
+tokencut demo
+```
+
+The demo works outside a project and makes **no model calls**. It measures an
+authored log, checks the complete diagnostic tail, verifies recovery of the
+original, and confirms that unfamiliar output stays unchanged. Checks print
+`PASS` or `FAIL`; a failed check returns a nonzero exit code. Use `tokencut demo
+--json` for machine-readable results. Demo data uses a disposable cache.
+
+Then try your own command: `tokencut run -- <command> <args>`, or connect
+[Claude Code](#claude-code), [Claude Desktop](#claude-desktop-macos),
+[Codex](#codex), or [Antigravity](#antigravity--gemini-cli).
+Smaller tool output is the measured benefit; subscription limits and task quality
+need separate evaluation.
+
 <br />
 
 <div align="center">
@@ -87,7 +109,7 @@ Gemini values are uncalibrated heuristics. These are **not exact counts for Astr
 Fable, Opus, or any named model**, and not measurements of subscription limits.
 MCP session stats include recovery notices, exit status, and subsequent retrieval
 text; they exclude tool schemas, JSON envelopes, conversation input, and reasoning.
-CLI dollar figures use fixed example prices, not your actual bill.
+The demo and CLI statistics report local text estimates, not dollar savings.
 
 ---
 
@@ -218,7 +240,7 @@ tokencut pr --base main --markdown
 # Audit CLAUDE.md for prompt cache busting
 tokencut lint CLAUDE.md
 
-# Run interactive visual benchmark demo
+# Verify filtering and recovery with a built-in fixture
 tokencut demo
 ```
 

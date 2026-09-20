@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shlex
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Annotated
 
 import typer
@@ -36,7 +39,6 @@ from tokencut.core.specialized import auto_specialize_command_output
 from tokencut.core.telemetry import TelemetryStore
 from tokencut.core.tree_scanner import render_tree, scan_directory
 from tokencut.mcp.server import run_mcp_stdio_server
-from tokencut.metrics.pricing import estimate_savings
 from tokencut.metrics.tokenizer import compute_metrics, count_tokens
 
 app = typer.Typer(
@@ -55,7 +57,7 @@ def run(
     command: Annotated[list[str], typer.Argument(help="Command and arguments to execute")],
     max_lines: Annotated[int, typer.Option("--max-lines", "-m", help="Max lines to keep")] = 80,
     budget: Annotated[
-        int | None, typer.Option("--budget", "-b", help="Strict token ceiling budget")
+        int | None, typer.Option("--budget", "-b", min=1, help="Strict token ceiling budget")
     ] = None,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Omit the summary footer")] = False,
     safe: Annotated[
@@ -619,16 +621,12 @@ def mcp():
 
 
 @app.command()
-def demo():
-    """Run interactive demonstration showing token reduction on real-world scenarios."""
-    console.print(
-        Panel(
-            "[bold cyan]tokencut[/bold cyan] — Real-World Token Optimization Demo\n"
-            "[dim]Evaluating token savings on Pytest failure trace and large build log.[/dim]",
-            border_style="cyan",
-        )
-    )
-
+def demo(
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit the measured fixture result and checks as JSON")
+    ] = False,
+):
+    """Verify safe filtering and recovery on an authored fixture, without model calls."""
     noisy_pytest = (
         "pytest -v tests/\n"
         + "\n".join(
@@ -649,52 +647,66 @@ def demo():
         + "========================= 1 failed, 84 passed in 3.42s =========================\n"
     )
 
-    opts = CleanerOptions(max_lines=30)
-    compacted = compact_terminal_output(noisy_pytest, opts)
-    metrics = compute_metrics(noisy_pytest, compacted)
-    savings = estimate_savings(
-        metrics.saved_tokens.claude, metrics.saved_tokens.openai, metrics.saved_tokens.gemini
-    )
+    # A disposable cache makes the demo independent of the user's project and
+    # existing history. Always restore an explicit caller-provided cache path.
+    previous_cache = os.environ.get("TOKENCUT_CACHE_DIR")
+    with TemporaryDirectory(prefix="tokencut-demo-") as directory:
+        try:
+            os.environ["TOKENCUT_CACHE_DIR"] = directory
+            compacted = safe_compact_output(noisy_pytest, command="pytest -v tests/", exit_code=1)
+            ref = re.search(r"tc_[a-f0-9]{16}", compacted)
+            recovered = ContextCache().retrieve(ref[0]) if ref else None
+            failure_tail = noisy_pytest[noisy_pytest.index("=== FAILURES") :]
+            unknown = "".join(f"unique custom record {i}\n" for i in range(150))
+            checks = {
+                "complete_failure_tail_preserved": failure_tail in compacted,
+                "original_recovered_exactly": recovered == noisy_pytest,
+                "unknown_output_unchanged": safe_compact_output(unknown) == unknown,
+            }
+        finally:
+            if previous_cache is None:
+                os.environ.pop("TOKENCUT_CACHE_DIR", None)
+            else:
+                os.environ["TOKENCUT_CACHE_DIR"] = previous_cache
 
-    table = Table(title="Scenario: Pytest Failure with 85 test items")
-    table.add_column("Harness / Model", style="cyan")
-    table.add_column("Raw Tokens", style="red")
-    table.add_column("With tokencut", style="green")
-    table.add_column("Reduction", style="bold yellow")
-    table.add_column("Preserved Info", style="magenta")
-
-    table.add_row(
-        "Anthropic Claude 3.5/3.7",
-        f"{metrics.raw_tokens.claude:,}",
-        f"{metrics.compact_tokens.claude:,}",
-        f"-{metrics.reduction_pct}%",
-        "100% (Exact traceback & error intact)",
-    )
-    table.add_row(
-        "OpenAI GPT-4o / Codex",
-        f"{metrics.raw_tokens.openai:,}",
-        f"{metrics.compact_tokens.openai:,}",
-        f"-{metrics.reduction_pct}%",
-        "100% (Exact traceback & error intact)",
-    )
-    table.add_row(
-        "Google Gemini 2.0 / 1.5",
-        f"{metrics.raw_tokens.gemini:,}",
-        f"{metrics.compact_tokens.gemini:,}",
-        f"-{metrics.reduction_pct}%",
-        "100% (Exact traceback & error intact)",
-    )
-
-    console.print(table)
-    console.print(
-        f"[bold green]Result:[/bold green] Saved [bold]{metrics.saved_tokens.avg:,} tokens[/bold] "
-        f"([bold]{metrics.reduction_pct}% saved[/bold]) on a single test run! Est. savings: {savings.format_avg()}"
-    )
+    raw_tokens = count_tokens(noisy_pytest).openai
+    output_tokens = count_tokens(compacted).openai
+    checks["smaller_including_recovery_notice"] = output_tokens < raw_tokens
+    passed = all(checks.values())
+    result = {
+        "measurement": "local tokenizer estimate on an authored fixture; not model billing or quota",
+        "model_calls": 0,
+        "raw_tokens": raw_tokens,
+        "output_tokens": output_tokens,
+        "reduction_pct": round(100 * (raw_tokens - output_tokens) / raw_tokens, 1),
+        "checks": checks,
+        "passed": passed,
+    }
+    if json_output:
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+    else:
+        table = Table(title="TokenCut: verify your installation")
+        table.add_column("Authored pytest fixture", style="cyan")
+        table.add_column("Result")
+        table.add_row(
+            "Estimated output tokens (includes recovery notice)",
+            f"{raw_tokens:,} -> {output_tokens:,}",
+        )
+        table.add_row("Estimated text reduction", f"{result['reduction_pct']}%")
+        for name, ok in checks.items():
+            table.add_row(name.replace("_", " "), "PASS" if ok else "FAIL")
+        console.print(table)
+        console.print(
+            "No model calls. Fixture results are not subscription savings or a task-quality benchmark."
+        )
+        console.print("Try your own command: tokencut run -- <command> <args>")
+    if not passed:
+        raise typer.Exit(code=1)
 
 
 @app.command()
 def benchmark():
-    """Run automated benchmarks across real-world workloads."""
+    """Run the installation fixture; use scripts/benchmark_suite.py for the full suite."""
     demo()
 
 

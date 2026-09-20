@@ -28,7 +28,18 @@ jobs:
         run: uv sync --all-extras
 
       - name: Run linter (ruff)
-        run: uv run ruff check .
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
 
       - name: Run tests (pytest)
         run: uv run pytest -v
+
+      - name: Verify the installed wheel outside the checkout
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          uv build --wheel
+          wheel="$(realpath dist/*.whl)"
+          cd "$(mktemp -d)"
+          uv tool run --isolated --from "$wheel" tokencut demo --json
