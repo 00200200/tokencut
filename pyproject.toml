@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "tokencut"
 version = "0.1.0"
-description = "High-performance context compression engine and universal MCP server for AI coding assistants."
+description = "Bound AI coding tool output with local compaction, targeted reads, and recoverable context."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -33,6 +33,7 @@ classifiers = [
   "Topic :: Utilities",
 ]
 dependencies = [
+  "ast-grep-py>=0.41,<1",
   "rich>=13.7.0",
   "tiktoken>=0.7.0",
   "typer>=0.12.0",

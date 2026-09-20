@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import shlex
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Annotated
 
 import typer
@@ -15,6 +20,7 @@ from rich.table import Table
 from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
+from tokencut.core.companion_state import already_wrapped, paused
 from tokencut.core.config import load_config
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.doctor import (
@@ -23,16 +29,18 @@ from tokencut.core.doctor import (
     configure_shell_alias,
     run_all_diagnostics,
 )
+from tokencut.core.engines import filter_rtk, select_engine
 from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
 from tokencut.core.json_slimmer import slim_json
+from tokencut.core.native_hooks import install_claude_hook, run_hook_filter
 from tokencut.core.pr_analyzer import analyze_pr_tokens
 from tokencut.core.rules_linter import lint_rule_content, minify_rules
+from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import auto_specialize_command_output
-from tokencut.core.telemetry import TelemetryStore
+from tokencut.core.telemetry import TelemetryStore, record_text, recovery_engine
 from tokencut.core.tree_scanner import render_tree, scan_directory
 from tokencut.mcp.server import run_mcp_stdio_server
-from tokencut.metrics.pricing import estimate_savings
 from tokencut.metrics.tokenizer import compute_metrics, count_tokens
 
 app = typer.Typer(
@@ -46,71 +54,154 @@ console = Console()
 err_console = Console(stderr=True)
 
 
+def _emit(text: str) -> str:
+    emitted = text + ("\n" if text and not text.endswith("\n") else "")
+    sys.stdout.write(emitted)
+    return emitted
+
+
+@app.command("code")
+def code_query(
+    root: Annotated[Path, typer.Argument(help="Absolute project directory")],
+    mode: Annotated[str, typer.Option("--mode")] = "map",
+    query: Annotated[str, typer.Option("--query", "-q")] = "",
+    file: Annotated[str | None, typer.Option("--file")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=200)] = 30,
+    budget: Annotated[int, typer.Option("--budget", min=64, max=32000)] = 2000,
+):
+    """Query an incremental local syntax index without AI calls."""
+    from tokencut.mcp.server import handle_tokencut_code
+
+    arguments = {
+        "root": str(root),
+        "mode": mode,
+        "query": query,
+        "limit": limit,
+        "max_tokens": budget,
+    }
+    if file is not None:
+        arguments["file"] = file
+    try:
+        _emit(handle_tokencut_code(arguments))
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command("edit-symbol")
+def edit_symbol(
+    path: Annotated[Path, typer.Argument(help="Absolute source file")],
+    symbol: Annotated[str, typer.Argument(help="Qualified name, optionally @line")],
+    replacement_file: Annotated[Path, typer.Option("--replacement-file")],
+    expected_hash: Annotated[str, typer.Option("--expected-hash")],
+    apply: Annotated[bool, typer.Option("--apply", help="Write the previewed change")] = False,
+):
+    """Preview/replace an exact symbol; run through the client's native shell permissions."""
+    from tokencut.core.redactor import redact_secrets
+    from tokencut.core.symbol_edit import replace_symbol
+
+    try:
+        result = replace_symbol(
+            path, symbol, replacement_file.read_bytes().decode("utf-8"), expected_hash, apply=apply
+        )
+        _emit(redact_secrets(result))
+    except (ValueError, SyntaxError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command()
+def monitor(stdio: Annotated[bool, typer.Option("--stdio")] = False):
+    """Local companion JSON-lines protocol (stdin/stdout; no listening port)."""
+    from tokencut.core.monitor import Monitor
+
+    service = Monitor()
+    if stdio:
+        service.serve(sys.stdin, sys.stdout)
+    else:
+        sys.stdout.write(json.dumps(service.snapshot(), ensure_ascii=False) + "\n")
+
+
 @app.command()
 def run(
     command: Annotated[list[str], typer.Argument(help="Command and arguments to execute")],
     max_lines: Annotated[int, typer.Option("--max-lines", "-m", help="Max lines to keep")] = 80,
     budget: Annotated[
-        int | None, typer.Option("--budget", "-b", help="Strict token ceiling budget")
+        int | None, typer.Option("--budget", "-b", min=1, help="Strict token ceiling budget")
     ] = None,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Omit the summary footer")] = False,
+    engine: Annotated[str, typer.Option("--engine", help="auto|tokencut|rtk|none")] = "auto",
+    safe: Annotated[
+        bool,
+        typer.Option(
+            "--safe/--compact",
+            help="Preserve unknown output and diagnostics; --compact permits truncation",
+        ),
+    ] = True,
 ):
     """Execute a command and optimize its output for AI context windows."""
-    full_cmd = " ".join(command)
+    full_cmd = shlex.join(command)
+    try:
+        selected = select_engine(engine, command)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--engine") from exc
+    if selected == "rtk" and (budget is not None or not safe):
+        if engine == "rtk":
+            raise typer.BadParameter(
+                "RTK cannot be combined with --budget or --compact", param_hint="--engine"
+            )
+        selected = "tokencut"
+    wrapped = already_wrapped(full_cmd)
+    if wrapped:
+        selected = "none"
     start_time = time.perf_counter()
 
-    proc = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
+    # Preserve argument boundaries and literal shell metacharacters. Shell syntax
+    # remains available explicitly: tokencut run -- bash -lc 'command | other'.
+    proc = subprocess.run(
+        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace"
+    )
     raw_output = proc.stdout
-    if proc.stderr:
-        raw_output += ("\n" if raw_output else "") + proc.stderr
 
     duration = time.perf_counter() - start_time
 
     # Step 1: Check specialized command handler
-    specialized = auto_specialize_command_output(full_cmd, raw_output)
+    specialized = None if safe else auto_specialize_command_output(full_cmd, raw_output)
     base_text = specialized if specialized is not None else raw_output
 
-    # Step 2: Check if output is a large JSON payload
-    trimmed = base_text.strip()
-    if (trimmed.startswith("{") and trimmed.endswith("}")) or (
-        trimmed.startswith("[") and trimmed.endswith("]")
-    ):
-        if len(trimmed) > 500:
-            compacted = slim_json(trimmed, max_array_items=3)
-        else:
-            compacted = trimmed
-    elif budget:
-        compacted = compress_to_budget(base_text, max_tokens=budget, source=full_cmd)
+    # Step 2: Apply adaptive budget or standard compaction
+    if selected == "none":
+        compacted = raw_output
+    elif selected == "rtk":
+        compacted = filter_rtk(raw_output, command, proc.returncode)
+    elif budget is not None:
+        compacted = compress_to_budget(
+            base_text, max_tokens=budget, source="run", original_text=raw_output
+        )
+    elif safe:
+        compacted = safe_compact_output(raw_output, command=full_cmd, exit_code=proc.returncode)
+    elif len(base_text) > 500 and base_text.lstrip().startswith(("{", "[")):
+        compacted = slim_json(base_text, max_array_items=3)
     else:
         opts = CleanerOptions(max_lines=max_lines)
         compacted = compact_terminal_output(base_text, opts)
 
     if compacted:
-        console.print(compacted)
+        # Rich markup/wrapping can alter diagnostic text and hide recovery refs.
+        sys.stdout.write(compacted)
+        if not compacted.endswith("\n"):
+            sys.stdout.write("\n")
 
-    # Compute metrics & record telemetry
-    metrics = compute_metrics(raw_output, compacted)
-    savings = estimate_savings(
-        metrics.saved_tokens.claude, metrics.saved_tokens.openai, metrics.saved_tokens.gemini
-    )
+    if raw_output and not quiet and not safe:
+        metrics = compute_metrics(raw_output, compacted)
+        if not quiet and not safe:
+            err_console.print(
+                f"[tokencut: estimated text reduction {metrics.reduction_pct}%; {duration:.2f}s]",
+                markup=False,
+            )
 
-    telemetry = TelemetryStore()
-    telemetry.record(
-        command=full_cmd,
-        raw_claude=metrics.raw_tokens.claude,
-        saved_claude=metrics.saved_tokens.claude,
-        raw_openai=metrics.raw_tokens.openai,
-        saved_openai=metrics.saved_tokens.openai,
-        raw_gemini=metrics.raw_tokens.gemini,
-        saved_gemini=metrics.saved_tokens.gemini,
-        duration_s=duration,
-    )
-
-    if not quiet and metrics.raw_tokens.avg > 0:
-        err_console.print(
-            f"[dim]tokencut: saved ~{metrics.saved_tokens.avg:,} tokens (-{metrics.reduction_pct}%) | "
-            f"Claude: -{metrics.saved_tokens.claude:,} · GPT-4o: -{metrics.saved_tokens.openai:,} | "
-            f"est. saved: {savings.format_avg()} | exit: {proc.returncode}[/dim]"
+    if not wrapped:
+        emitted = compacted + ("\n" if compacted and not compacted.endswith("\n") else "")
+        record_text(
+            raw_output, emitted, duration_s=time.perf_counter() - start_time, engine=selected
         )
 
     if proc.returncode != 0:
@@ -143,26 +234,29 @@ def cat(
         err_console.print(f"[bold red]File not found:[/bold red] {file_path}")
         raise typer.Exit(code=1)
 
-    raw_content = file_path.read_text(encoding="utf-8", errors="replace")
-    output = extract_symbol_or_range(
-        file_path,
-        symbol=symbol,
-        lines_range=lines,
-        skeleton=skeleton,
-        strip_comments=strip_comments,
-    )
-
-    if budget:
-        output = compress_to_budget(output, max_tokens=budget, source=str(file_path))
-
-    console.print(output)
-
-    if skeleton or lines or symbol or strip_comments or budget:
-        metrics = compute_metrics(raw_content, output)
-        err_console.print(
-            f"[dim]tokencut: original {metrics.raw_tokens.avg:,} tokens -> {metrics.compact_tokens.avg:,} tokens "
-            f"(-{metrics.reduction_pct}%)[/dim]"
+    start = time.perf_counter()
+    try:
+        output = extract_symbol_or_range(
+            file_path,
+            symbol=symbol,
+            lines_range=lines,
+            skeleton=skeleton,
+            strip_comments=strip_comments,
         )
+    except (ValueError, SyntaxError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    requested = output
+    if budget and not paused():
+        output = compress_to_budget(output, max_tokens=budget, source=str(file_path))
+    record_text(
+        requested,
+        _emit(output),
+        operation="read",
+        project=file_path,
+        duration_s=time.perf_counter() - start,
+        engine="none" if paused() else "tokencut",
+    )
 
 
 @app.command(name="json")
@@ -180,6 +274,7 @@ def json_cmd(
     ] = False,
 ):
     """Compact large JSON payloads, folding arrays and truncating long strings."""
+    start = time.perf_counter()
     if target:
         p = Path(target)
         if p.exists() and p.is_file():
@@ -193,18 +288,20 @@ def json_cmd(
         err_console.print("[dim]No JSON input received.[/dim]")
         return
 
-    slimmed = slim_json(
-        raw_text,
-        max_array_items=max_items,
-        max_string_len=max_str,
-        cache_full=not no_cache,
+    slimmed = (
+        raw_text
+        if paused()
+        else slim_json(
+            raw_text, max_array_items=max_items, max_string_len=max_str, cache_full=not no_cache
+        )
     )
-    console.print(slimmed)
-
-    metrics = compute_metrics(raw_text, slimmed)
-    err_console.print(
-        f"[dim]tokencut json: original {metrics.raw_tokens.avg:,} -> {metrics.compact_tokens.avg:,} tokens "
-        f"(-{metrics.reduction_pct}%)[/dim]"
+    record_text(
+        raw_text,
+        _emit(slimmed),
+        operation="json",
+        project=p if target and p.is_file() else None,
+        duration_s=time.perf_counter() - start,
+        engine="none" if paused() else "tokencut",
     )
 
 
@@ -213,14 +310,29 @@ def retrieve(
     ref_id: Annotated[
         str, typer.Argument(help="Reference ID from tokencut log notice (e.g. 'tc_8f2a1b')")
     ],
+    query: Annotated[str | None, typer.Option("--query", "-q")] = None,
     lines: Annotated[
         str | None, typer.Option("--lines", "-l", help="Line range to inspect (e.g. 20-60)")
     ] = None,
 ):
     """Retrieve full uncompressed raw output from the local Compress-Cache-Retrieve store."""
     cache = ContextCache()
-    raw = cache.retrieve(ref_id, lines_range=lines)
-    console.print(raw)
+    if query is not None and lines is not None:
+        raise typer.BadParameter("Choose --query or --lines, not both")
+    try:
+        raw = (
+            cache.search(ref_id, query)
+            if query is not None
+            else cache.retrieve(ref_id, lines_range=lines)
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    emitted = _emit(raw)
+    # Recovery is additional context, not a second saving of the original log.
+    try:
+        record_text("", emitted, operation="retrieve", engine=recovery_engine(ref_id))
+    except Exception:
+        pass
 
 
 @app.command()
@@ -278,7 +390,7 @@ def stats(
         str, typer.Option("--format", "-f", help="Output format: table, json, markdown")
     ] = "table",
 ):
-    """Display lifetime token savings telemetry and financial metrics."""
+    """Display local output estimates, not provider billing or usage quotas."""
     telemetry = TelemetryStore()
     s = telemetry.get_stats()
 
@@ -289,9 +401,9 @@ def stats(
             "saved_openai": s.saved_openai,
             "saved_gemini": s.saved_gemini,
             "reduction_pct": s.reduction_pct,
-            "estimated_usd_saved": s.estimated_usd_saved,
+            "measurement": "local output estimates, not model usage or subscription quota",
         }
-        console.print(json.dumps(data, indent=2))
+        sys.stdout.write(json.dumps(data, indent=2) + "\n")
         return
 
     if format_type == "markdown":
@@ -302,23 +414,21 @@ def stats(
 | **OpenAI Tokens Saved** | {s.saved_openai:,} |
 | **Gemini Tokens Saved** | {s.saved_gemini:,} |
 | **Average Reduction** | {s.reduction_pct}% |
-| **Estimated Money Saved** | ${s.estimated_usd_saved:.4f} USD |
+| **Measurement** | Local output estimates; not model billing or quota |
 """
         console.print(md.strip())
         return
 
-    table = Table(title="tokencut Lifetime Savings Telemetry")
+    table = Table(title="TokenCut local output estimates (not model usage)")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="bold")
 
-    table.add_row("Total Executions", f"{s.total_runs:,}")
-    table.add_row("Total Claude Tokens Saved", f"[bold green]-{s.saved_claude:,}[/bold green]")
-    table.add_row("Total OpenAI Tokens Saved", f"[bold green]-{s.saved_openai:,}[/bold green]")
-    table.add_row("Total Gemini Tokens Saved", f"[bold green]-{s.saved_gemini:,}[/bold green]")
-    table.add_row("Average Reduction Ratio", f"[bold yellow]-{s.reduction_pct}%[/bold yellow]")
-    table.add_row(
-        "Estimated Money Saved", f"[bold yellow]${s.estimated_usd_saved:.4f} USD[/bold yellow]"
-    )
+    table.add_row("Recorded CLI output events", f"{s.total_runs:,}")
+    table.add_row("Claude heuristic net reduction", f"{s.saved_claude:,}")
+    table.add_row("OpenAI tokenizer net reduction", f"{s.saved_openai:,}")
+    table.add_row("Gemini heuristic net reduction", f"{s.saved_gemini:,}")
+    table.add_row("Average estimated reduction", f"{s.reduction_pct}%")
+    table.add_row("Scope", "CLI output and retrieval only; excludes prompts, schemas and reasoning")
 
     console.print(table)
 
@@ -375,25 +485,39 @@ def doctor(
 @app.command()
 def install(
     all_targets: Annotated[
-        bool, typer.Option("--all", "-a", help="Install all integrations (Cursor MCP, shell alias)")
+        bool,
+        typer.Option("--all", "-a", help="Install Claude Desktop, Cursor MCP, and shell alias"),
     ] = False,
     cursor: Annotated[
         bool, typer.Option("--cursor", help="Configure Cursor MCP (~/.cursor/mcp.json)")
+    ] = False,
+    claude_desktop: Annotated[
+        bool, typer.Option("--claude-desktop", help="Configure Claude Desktop local MCP")
     ] = False,
     alias: Annotated[
         bool, typer.Option("--alias", help="Add 'alias cc=tokencut run --' to shell rc")
     ] = False,
 ):
-    """Automatically configure Cursor MCP and shell aliases."""
-    if not (all_targets or cursor or alias):
-        console.print(
-            "[yellow]Specify --all, --cursor, or --alias. Run with --help for details.[/yellow]"
-        )
+    """Configure local MCP integrations and optional shell aliases."""
+    if not (all_targets or cursor or claude_desktop or alias):
+        console.print("[yellow]Specify --all, --claude-desktop, --cursor, or --alias.[/yellow]")
         raise typer.Exit(code=1)
 
     if all_targets or cursor:
-        _, msg = configure_cursor_mcp()
+        ok, msg = configure_cursor_mcp()
+        if not ok:
+            err_console.print(msg, markup=False)
+            raise typer.Exit(code=1)
         console.print(f"[green]✓ Cursor MCP configured in {msg}![/green]")
+
+    if all_targets or claude_desktop:
+        ok, msg = configure_claude_desktop_mcp()
+        if not ok:
+            err_console.print(msg, markup=False)
+            raise typer.Exit(code=1)
+        console.print(
+            f"Claude Desktop MCP configured in {msg}. Restart/reconnect to activate.", markup=False
+        )
 
     if all_targets or alias:
         _, msg = configure_shell_alias()
@@ -405,9 +529,23 @@ def hook(
     install: Annotated[
         bool, typer.Option("--install", "-i", help="Install shell wrapper to ~/.zshrc")
     ] = False,
+    client: Annotated[
+        str,
+        typer.Option("--client", help="claude for native output filtering, or shell for aliases"),
+    ] = "shell",
 ):
     """Configure Claude Code or terminal hooks for automatic optimization."""
     if install:
+        if client == "claude":
+            executable = Path(shutil.which("tokencut") or sys.argv[0])
+            settings = install_claude_hook(executable)
+            console.print(
+                f"Installed Claude Bash output hook in {settings}. Restart Claude Code to activate.",
+                markup=False,
+            )
+            return
+        if client != "shell":
+            raise typer.BadParameter("client must be claude or shell")
         zshrc = install_zsh_hook()
         console.print(f"[green]✓ Successfully installed alias to {zshrc}![/green]")
         console.print("Run [bold cyan]source ~/.zshrc[/bold cyan] to enable [bold]cc-run[/bold].")
@@ -425,6 +563,12 @@ def hook(
         )
 
 
+@app.command("hook-filter")
+def hook_filter(client: Annotated[str, typer.Option("--client")] = "claude"):
+    """Process one native hook event on stdin, without model calls."""
+    run_hook_filter(client, sys.stdin, sys.stdout)
+
+
 @app.command()
 def pipe(
     max_lines: Annotated[int, typer.Option("--max-lines", "-m", help="Max lines to keep")] = 80,
@@ -433,12 +577,15 @@ def pipe(
     ] = None,
 ):
     """Stream or pipe standard input through tokencut."""
+    start = time.perf_counter()
     raw_input = sys.stdin.read()
     if not raw_input:
         return
 
     trimmed = raw_input.strip()
-    if (trimmed.startswith("{") and trimmed.endswith("}")) or (
+    if paused():
+        compacted = raw_input
+    elif (trimmed.startswith("{") and trimmed.endswith("}")) or (
         trimmed.startswith("[") and trimmed.endswith("]")
     ):
         if len(trimmed) > 500:
@@ -451,7 +598,13 @@ def pipe(
         opts = CleanerOptions(max_lines=max_lines)
         compacted = compact_terminal_output(raw_input, opts)
 
-    sys.stdout.write(compacted + "\n")
+    record_text(
+        raw_input,
+        _emit(compacted),
+        operation="pipe",
+        duration_s=time.perf_counter() - start,
+        engine="none" if paused() else "tokencut",
+    )
 
 
 @app.command()
@@ -459,20 +612,24 @@ def diff(
     staged: Annotated[bool, typer.Option("--staged", "-s", help="Inspect staged changes")] = False,
 ):
     """Slim git diff by folding lockfiles and suppressing excessive context."""
-    cmd = "git diff --cached" if staged else "git diff"
-    res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    start = time.perf_counter()
+    cmd = ["git", "diff", "--no-ext-diff", "--no-textconv", "--no-color"]
+    if staged:
+        cmd.append("--cached")
+    res = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
     raw_diff = res.stdout
-
-    if not raw_diff.strip():
-        console.print("[dim]No git changes detected.[/dim]")
-        return
-
-    slimmed = slim_git_diff(raw_diff)
-    console.print(slimmed)
-
-    metrics = compute_metrics(raw_diff, slimmed)
-    err_console.print(
-        f"[dim]tokencut diff: saved {metrics.saved_tokens.avg:,} tokens (-{metrics.reduction_pct}%)[/dim]"
+    if res.returncode:
+        sys.stderr.write(res.stderr)
+        raise typer.Exit(res.returncode)
+    slimmed = raw_diff if paused() else slim_git_diff(raw_diff)
+    emitted = _emit(slimmed)
+    sys.stderr.write(res.stderr)
+    record_text(
+        raw_diff + res.stderr,
+        emitted + res.stderr,
+        operation="diff",
+        duration_s=time.perf_counter() - start,
+        engine="none" if paused() else "tokencut",
     )
 
 
@@ -568,16 +725,12 @@ def mcp():
 
 
 @app.command()
-def demo():
-    """Run interactive demonstration showing token reduction on real-world scenarios."""
-    console.print(
-        Panel(
-            "[bold cyan]tokencut[/bold cyan] — Real-World Token Optimization Demo\n"
-            "[dim]Evaluating token savings on Pytest failure trace and large build log.[/dim]",
-            border_style="cyan",
-        )
-    )
-
+def demo(
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit the measured fixture result and checks as JSON")
+    ] = False,
+):
+    """Verify safe filtering and recovery on an authored fixture, without model calls."""
     noisy_pytest = (
         "pytest -v tests/\n"
         + "\n".join(
@@ -598,52 +751,66 @@ def demo():
         + "========================= 1 failed, 84 passed in 3.42s =========================\n"
     )
 
-    opts = CleanerOptions(max_lines=30)
-    compacted = compact_terminal_output(noisy_pytest, opts)
-    metrics = compute_metrics(noisy_pytest, compacted)
-    savings = estimate_savings(
-        metrics.saved_tokens.claude, metrics.saved_tokens.openai, metrics.saved_tokens.gemini
-    )
+    # A disposable cache makes the demo independent of the user's project and
+    # existing history. Always restore an explicit caller-provided cache path.
+    previous_cache = os.environ.get("TOKENCUT_CACHE_DIR")
+    with TemporaryDirectory(prefix="tokencut-demo-") as directory:
+        try:
+            os.environ["TOKENCUT_CACHE_DIR"] = directory
+            compacted = safe_compact_output(noisy_pytest, command="pytest -v tests/", exit_code=1)
+            ref = re.search(r"tc_[a-f0-9]{16}", compacted)
+            recovered = ContextCache().retrieve(ref[0]) if ref else None
+            failure_tail = noisy_pytest[noisy_pytest.index("=== FAILURES") :]
+            unknown = "".join(f"unique custom record {i}\n" for i in range(150))
+            checks = {
+                "complete_failure_tail_preserved": failure_tail in compacted,
+                "original_recovered_exactly": recovered == noisy_pytest,
+                "unknown_output_unchanged": safe_compact_output(unknown) == unknown,
+            }
+        finally:
+            if previous_cache is None:
+                os.environ.pop("TOKENCUT_CACHE_DIR", None)
+            else:
+                os.environ["TOKENCUT_CACHE_DIR"] = previous_cache
 
-    table = Table(title="Scenario: Pytest Failure with 85 test items")
-    table.add_column("Harness / Model", style="cyan")
-    table.add_column("Raw Tokens", style="red")
-    table.add_column("With tokencut", style="green")
-    table.add_column("Reduction", style="bold yellow")
-    table.add_column("Preserved Info", style="magenta")
-
-    table.add_row(
-        "Anthropic Claude 3.5/3.7",
-        f"{metrics.raw_tokens.claude:,}",
-        f"{metrics.compact_tokens.claude:,}",
-        f"-{metrics.reduction_pct}%",
-        "100% (Exact traceback & error intact)",
-    )
-    table.add_row(
-        "OpenAI GPT-4o / Codex",
-        f"{metrics.raw_tokens.openai:,}",
-        f"{metrics.compact_tokens.openai:,}",
-        f"-{metrics.reduction_pct}%",
-        "100% (Exact traceback & error intact)",
-    )
-    table.add_row(
-        "Google Gemini 2.0 / 1.5",
-        f"{metrics.raw_tokens.gemini:,}",
-        f"{metrics.compact_tokens.gemini:,}",
-        f"-{metrics.reduction_pct}%",
-        "100% (Exact traceback & error intact)",
-    )
-
-    console.print(table)
-    console.print(
-        f"[bold green]Result:[/bold green] Saved [bold]{metrics.saved_tokens.avg:,} tokens[/bold] "
-        f"([bold]{metrics.reduction_pct}% saved[/bold]) on a single test run! Est. savings: {savings.format_avg()}"
-    )
+    raw_tokens = count_tokens(noisy_pytest).openai
+    output_tokens = count_tokens(compacted).openai
+    checks["smaller_including_recovery_notice"] = output_tokens < raw_tokens
+    passed = all(checks.values())
+    result = {
+        "measurement": "local tokenizer estimate on an authored fixture; not model billing or quota",
+        "model_calls": 0,
+        "raw_tokens": raw_tokens,
+        "output_tokens": output_tokens,
+        "reduction_pct": round(100 * (raw_tokens - output_tokens) / raw_tokens, 1),
+        "checks": checks,
+        "passed": passed,
+    }
+    if json_output:
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+    else:
+        table = Table(title="TokenCut: verify your installation")
+        table.add_column("Authored pytest fixture", style="cyan")
+        table.add_column("Result")
+        table.add_row(
+            "Estimated output tokens (includes recovery notice)",
+            f"{raw_tokens:,} -> {output_tokens:,}",
+        )
+        table.add_row("Estimated text reduction", f"{result['reduction_pct']}%")
+        for name, ok in checks.items():
+            table.add_row(name.replace("_", " "), "PASS" if ok else "FAIL")
+        console.print(table)
+        console.print(
+            "No model calls. Fixture results are not subscription savings or a task-quality benchmark."
+        )
+        console.print("Try your own command: tokencut run -- <command> <args>")
+    if not passed:
+        raise typer.Exit(code=1)
 
 
 @app.command()
 def benchmark():
-    """Run automated benchmarks across real-world workloads."""
+    """Run the installation fixture; use scripts/benchmark_suite.py for the full suite."""
     demo()
 
 

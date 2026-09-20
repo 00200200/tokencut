@@ -73,13 +73,11 @@ class TokenReductionMetrics:
 
 
 def count_tokens(text: str) -> TokenCount:
-    """Accurately count and estimate tokens for Claude, OpenAI, and Gemini.
+    """Return local text-size estimates, not provider billing or quota usage.
 
-    - OpenAI: uses o200k_base / cl100k_base exact BPE counts.
-    - Claude: Anthropic BPE tokenizer tends to yield slightly more tokens on code/whitespace
-      (~1.08x - 1.15x compared to cl100k) due to specific subword segmentation.
-    - Gemini: SentencePiece model (256k vocab) yields very close token efficiency
-      to cl100k (~0.98x - 1.02x).
+    OpenAI uses o200k_base (cl100k_base fallback), not a model-specific tokenizer.
+    Claude and Gemini are uncalibrated multipliers retained for compatibility.
+    These estimates do not establish counts for Astra, Fable, Opus, or other models.
     """
     if not text:
         return TokenCount(claude=0, openai=0, gemini=0)
@@ -90,7 +88,7 @@ def count_tokens(text: str) -> TokenCount:
         openai_count = len(get_cl100k().encode(text, disallowed_special=()))
 
     # Claude token estimation
-    # On typical programming text and logs, Anthropic tokenizer runs ~1.10x tiktoken
+    # Legacy heuristic; not a measured Anthropic tokenizer.
     claude_count = int(math.ceil(openai_count * 1.10))
 
     # Gemini SentencePiece estimation

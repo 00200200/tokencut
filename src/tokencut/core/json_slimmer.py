@@ -60,7 +60,7 @@ def slim_json_data(
         if isinstance(sample_item, dict):
             keys = list(sample_item.keys())[:4]
             hint = f" (sample keys: {keys})"
-        kept.append(f"... {omitted_count} items matching schema omitted by tokencut{hint} ...")
+        kept.append(f"... {omitted_count} array items omitted by tokencut{hint} ...")
         return kept
 
     if isinstance(data, str):

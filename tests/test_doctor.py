@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import json
+import os
+import sqlite3
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
+
+from tokencut.core import doctor
+from tokencut.core.cache import ContextCache
 from tokencut.core.doctor import (
     check_cache_db,
     check_chatgpt_desktop,
     check_claude_desktop_mcp,
+    check_codex_mcp,
     check_python,
     configure_claude_desktop_mcp,
     configure_cursor_mcp,
@@ -25,6 +35,29 @@ def test_check_cache_db():
     assert res.status == "ok"
 
 
+def test_check_cache_counts_actual_entries_without_altering_schema():
+    cache = ContextCache()
+    cache.store("first distinct output")
+    cache.store("second distinct output")
+    with sqlite3.connect(cache.db_path) as connection:
+        before = connection.execute("SELECT name, sql FROM sqlite_master ORDER BY name").fetchall()
+    result = check_cache_db()
+    assert result.status == "ok"
+    assert "2 cached entries" in result.message
+    with sqlite3.connect(cache.db_path) as connection:
+        after = connection.execute("SELECT name, sql FROM sqlite_master ORDER BY name").fetchall()
+    assert after == before
+
+
+def test_check_missing_cache_does_not_create_database():
+    path = Path(os.environ["TOKENCUT_CACHE_DIR"]) / "cache.db"
+    assert not path.exists()
+    result = check_cache_db()
+    assert result.status == "ok"
+    assert "first run" in result.message
+    assert not path.exists()
+
+
 def test_run_all_diagnostics():
     items = run_all_diagnostics()
     assert len(items) >= 4
@@ -34,7 +67,8 @@ def test_run_all_diagnostics():
 
 
 def test_configure_cursor_mcp(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: str(tmp_path / "bin" / "tokencut"))
     ok, path = configure_cursor_mcp()
     assert ok is True
     cursor_file = tmp_path / ".cursor" / "mcp.json"
@@ -43,7 +77,7 @@ def test_configure_cursor_mcp(tmp_path, monkeypatch):
 
 
 def test_configure_shell_alias(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("SHELL", "/bin/zsh")
     ok, path = configure_shell_alias()
     assert ok is True
@@ -59,14 +93,198 @@ def test_check_claude_desktop():
 
 def test_check_chatgpt_desktop():
     res = check_chatgpt_desktop()
-    assert res.status == "ok"
+    assert res.status == "warning"
+    assert "does not support local stdio MCP" in res.message
+    assert "Codex" in res.remedy
 
 
 def test_configure_claude_desktop(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: str(tmp_path / "bin" / "tokencut"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     ok, path_str = configure_claude_desktop_mcp()
     assert ok is True
     cfg_file = Path(path_str)
     assert cfg_file.exists()
     assert "tokencut" in cfg_file.read_text()
+
+
+@pytest.fixture
+def local_install(tmp_path, monkeypatch):
+    executable = tmp_path / "bin" / "tokencut"
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: str(executable))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    return executable
+
+
+@pytest.mark.parametrize("client", ["claude", "cursor"])
+def test_mcp_install_preserves_settings_and_backs_up_once(tmp_path, local_install, client):
+    target = tmp_path / "claude.json" if client == "claude" else tmp_path / ".cursor" / "mcp.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = {
+        "theme": "dark",
+        "mcpServers": {
+            "other": {"command": "other", "env": {"SETTING": "kept"}},
+            "tokencut": {
+                "command": "uvx",
+                "args": ["tokencut", "mcp"],
+                "env": {"LOCAL": "kept"},
+                "disabled": False,
+            },
+        },
+    }
+    original_bytes = json.dumps(original, separators=(",", ":")).encode()
+    target.write_bytes(original_bytes)
+    target.chmod(0o640)
+    configure = (
+        (lambda: configure_claude_desktop_mcp(target))
+        if client == "claude"
+        else configure_cursor_mcp
+    )
+    assert configure() == (True, str(target))
+    changed = json.loads(target.read_text())
+    assert changed["theme"] == "dark"
+    assert changed["mcpServers"]["other"] == original["mcpServers"]["other"]
+    assert changed["mcpServers"]["tokencut"] == {
+        "command": str(local_install),
+        "args": ["mcp"],
+        "env": {"LOCAL": "kept"},
+        "disabled": False,
+    }
+    assert target.stat().st_mode & 0o777 == 0o640
+    backups = list(target.parent.glob(target.name + ".pre-tokencut-*"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == original_bytes
+    installed_bytes, modified_ns = target.read_bytes(), target.stat().st_mtime_ns
+    assert configure() == (True, str(target))
+    assert target.read_bytes() == installed_bytes
+    assert target.stat().st_mtime_ns == modified_ns
+    assert list(target.parent.glob(target.name + ".pre-tokencut-*")) == backups
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["{bad json", "[]", "null", '{"mcpServers": []}', '{"mcpServers": {"tokencut": "broken"}}'],
+)
+@pytest.mark.parametrize("client", ["claude", "cursor"])
+def test_malformed_config_is_untouched(tmp_path, local_install, raw, client):
+    target = tmp_path / "claude.json" if client == "claude" else tmp_path / ".cursor" / "mcp.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(raw)
+    configure = (
+        (lambda: configure_claude_desktop_mcp(target))
+        if client == "claude"
+        else configure_cursor_mcp
+    )
+    ok, message = configure()
+    assert not ok
+    assert "not overwritten" in message
+    assert target.read_text() == raw
+    assert list(target.parent.glob(target.name + ".*")) == []
+
+
+def test_installer_refuses_to_replace_remote_transport(tmp_path, local_install):
+    target = tmp_path / "config.json"
+    raw = '{"mcpServers": {"tokencut": {"url": "https://example.invalid/mcp"}}}'
+    target.write_text(raw)
+    ok, message = configure_claude_desktop_mcp(target)
+    assert not ok and "another transport" in message
+    assert target.read_text() == raw
+
+
+def test_installer_uses_verified_current_interpreter_when_entrypoint_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
+    interpreter = tmp_path / "venv" / "bin" / "python"
+    monkeypatch.setattr(doctor.sys, "executable", str(interpreter))
+    probes = []
+
+    def probe(args, **kwargs):
+        probes.append((args, kwargs))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(doctor.subprocess, "run", probe)
+    target = tmp_path / "config.json"
+    assert configure_claude_desktop_mcp(target)[0]
+    assert json.loads(target.read_text())["mcpServers"]["tokencut"] == {
+        "command": str(interpreter),
+        "args": ["-m", "tokencut.cli", "mcp"],
+    }
+    assert probes[0][0][:3] == [str(interpreter), "-I", "-c"]
+    assert probes[0][1]["timeout"] == 5
+    assert not list(tmp_path.glob("*.pre-tokencut-*"))
+
+
+@pytest.mark.parametrize("failure", ["unavailable", "timeout", "nonzero"])
+def test_no_usable_installation_does_not_write_config(tmp_path, monkeypatch, failure):
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
+
+    def probe(*args, **kwargs):
+        if failure == "unavailable":
+            raise OSError("no interpreter")
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired("python", 5)
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(doctor.subprocess, "run", probe)
+    target = tmp_path / "new" / "config.json"
+    ok, message = configure_claude_desktop_mcp(target)
+    assert not ok and "No usable local TokenCut installation" in message
+    assert not target.parent.exists()
+
+
+def test_atomic_replace_failure_leaves_existing_config_and_backup_intact(
+    tmp_path, local_install, monkeypatch
+):
+    target = tmp_path / "config.json"
+    original = '{"other_setting": "preserve"}\n'
+    target.write_text(original)
+
+    def fail_replace(*args, **kwargs):
+        raise OSError("atomic replacement denied")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    ok, message = configure_claude_desktop_mcp(target)
+    assert not ok and "atomic replacement denied" in message
+    assert target.read_text() == original
+    assert not list(tmp_path.glob("*.tmp-*"))
+    assert next(tmp_path.glob("*.pre-tokencut-*")).read_text() == original
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_codex_registration_is_distinguished_from_runtime_connectivity(
+    tmp_path, monkeypatch, installed
+):
+    monkeypatch.setattr(doctor, "_codex_available", lambda: installed)
+    target = tmp_path / "config.toml"
+    target.write_text('[mcp_servers.tokencut]\ncommand = "/local/bin/tokencut"\nargs = ["mcp"]\n')
+    result = check_codex_mcp(target)
+    assert result.status == ("ok" if installed else "warning")
+    assert "Runtime connectivity is untested" in result.message
+    assert "Codex" in result.name
+    assert "ChatGPT" not in result.name
+
+
+@pytest.mark.parametrize(
+    "config, status, phrase",
+    [
+        (None, "missing", "not registered"),
+        ("bad = [", "warning", "cannot validate"),
+        ('[mcp_servers.tokencut]\ncommand="local"\nenabled=false', "warning", "disabled"),
+        (
+            '[mcp_servers.tokencut]\ncommand="uvx"\nargs=["tokencut", "mcp"]',
+            "warning",
+            "unrelated PyPI",
+        ),
+        ('[mcp_servers.tokencut]\nurl="https://example.invalid"', "warning", "local server"),
+    ],
+)
+def test_codex_missing_disabled_or_invalid_is_not_marked_working(
+    tmp_path, monkeypatch, config, status, phrase
+):
+    monkeypatch.setattr(doctor, "_codex_available", lambda: True)
+    target = tmp_path / "config.toml"
+    if config is not None:
+        target.write_text(config)
+    result = check_codex_mcp(target)
+    assert result.status == status
+    assert phrase in result.message

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any
+
+from tokencut.core.redactor import redact_secrets
 
 DEFAULT_CACHE_DIR = Path.home() / ".tokencut"
 DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "cache.db"
@@ -13,13 +16,13 @@ DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "cache.db"
 class ContextCache:
     """Local SQLite-backed cache for Compress-Cache-Retrieve (CCR) architecture.
 
-    Guarantees 100% reversibility: whenever tokencut compresses an output, the full
-    uncompressed data is stored locally. An AI agent or developer can retrieve
-    any slice of the original text using the generated ref ID.
+    Stored content is recoverable after recognized secrets have been redacted.
+    An agent or developer can retrieve slices using the generated ref ID.
     """
 
     def __init__(self, db_path: Path | None = None):
-        self.db_path = db_path or DEFAULT_CACHE_DB
+        cache_dir = os.environ.get("TOKENCUT_CACHE_DIR")
+        self.db_path = db_path or (Path(cache_dir) / "cache.db" if cache_dir else DEFAULT_CACHE_DB)
         self._ensure_db()
 
     def _ensure_db(self):
@@ -39,10 +42,18 @@ class ContextCache:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_hash ON output_cache(content_hash)")
             conn.commit()
 
-    def store(self, content: str, source: str = "exec") -> str:
-        """Store raw content and return a short human-readable reference ID."""
+    def store(self, content: str, source: str = "exec", *, namespace: str = "") -> str:
+        """Store redacted content and return a human-readable reference ID."""
+        content = redact_secrets(content)
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        ref_id = f"tc_{content_hash[:8]}"
+        # Separate measurement owners without breaking existing stable refs.
+        # Hash the digest, not a raw-text prefix (which could alias another log).
+        ref_hash = (
+            hashlib.sha256(f"{namespace}:{content_hash}".encode()).hexdigest()
+            if namespace
+            else content_hash
+        )
+        ref_id = f"tc_{ref_hash[:16]}"
 
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
@@ -66,7 +77,8 @@ class ContextCache:
         if not row:
             return f"Error: ref ID '{ref_id}' not found in tokencut cache."
 
-        content, source = row[0], row[1]
+        # Also protect entries written by older versions before cache redaction.
+        content, source = redact_secrets(row[0]), row[1]
         if not lines_range:
             return content
 
@@ -74,22 +86,77 @@ class ContextCache:
         try:
             if "-" in lines_range:
                 start_s, end_s = lines_range.split("-", 1)
-                start = max(1, int(start_s))
-                end = min(len(all_lines), int(end_s))
+                start, end = int(start_s), int(end_s)
             else:
-                start = max(1, int(lines_range))
+                start = int(lines_range)
                 end = start
+            if start < 1 or end < start:
+                raise ValueError
+            end = min(len(all_lines), end)
             selected = all_lines[start - 1 : end]
             return (
                 f"# [Retrieved {ref_id} ({source}) lines {start}-{end} of {len(all_lines)}]\n"
                 + "\n".join(selected)
             )
         except ValueError:
-            return content
+            return "Error: lines must be a positive line number or an ascending range (e.g. 10-40)."
+
+    def search(self, ref_id: str, query: str, limit: int = 5) -> str:
+        """Search only the requested recovery record; never search conversations.
+
+        Index the already-redacted snapshot lazily. FTS data is recovery content,
+        kept in cache.db rather than the metadata-only telemetry database.
+        """
+        from tokencut.core.code_index import terms
+
+        expression = terms(query)
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("limit must be 1–20")
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT content FROM output_cache WHERE ref_id=?", (ref_id,)
+            ).fetchone()
+        if row is None:
+            return f"Error: ref ID '{ref_id}' not found in tokencut cache."
+        original = redact_secrets(row[0])
+        checksum = hashlib.sha256(original.encode()).hexdigest()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS recovery_search USING fts5(ref UNINDEXED, first UNINDEXED, last UNINDEXED, body)"
+            )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS recovery_indexed (ref TEXT PRIMARY KEY, checksum TEXT)"
+            )
+            existing = conn.execute(
+                "SELECT checksum FROM recovery_indexed WHERE ref=?", (ref_id,)
+            ).fetchone()
+            if not existing or existing[0] != checksum:
+                conn.execute("DELETE FROM recovery_search WHERE ref=?", (ref_id,))
+                lines = original.splitlines()
+                conn.executemany(
+                    "INSERT INTO recovery_search(ref,first,last,body) VALUES (?,?,?,?)",
+                    [
+                        (ref_id, i + 1, min(i + 30, len(lines)), "\n".join(lines[i : i + 30]))
+                        for i in range(0, len(lines), 30)
+                    ],
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO recovery_indexed VALUES (?,?)", (ref_id, checksum)
+                )
+            rows = conn.execute(
+                "SELECT first,last,body FROM recovery_search WHERE recovery_search MATCH ? AND ref=? ORDER BY bm25(recovery_search),CAST(first AS INTEGER) LIMIT ?",
+                (expression, ref_id, limit + 1),
+            ).fetchall()
+        result = "\n".join(
+            f"# {ref_id} lines {first}-{last}\n{body}" for first, last, body in rows[:limit]
+        )
+        if len(rows) > limit:
+            result += "\n[More matching chunks; narrow query or raise limit.]"
+        return result or f"No matches in {ref_id}; the original remains available with retrieve."
 
     def check_duplicate(self, content: str) -> str | None:
         """Check if identical content was cached recently within last 15 minutes."""
-        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        content_hash = hashlib.sha256(redact_secrets(content).encode("utf-8")).hexdigest()
         cutoff = time.time() - 900  # 15 mins
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
@@ -101,6 +168,9 @@ class ContextCache:
     def clear(self):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM output_cache")
+            for table in ("recovery_search", "recovery_indexed"):
+                if conn.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+                    conn.execute(f"DELETE FROM {table}")
             conn.commit()
 
     def get_stats(self) -> dict[str, Any]:

@@ -11,69 +11,68 @@ def compress_to_budget(
     max_tokens: int,
     provider: str = "claude",
     source: str = "adaptive",
+    *,
+    original_text: str | None = None,
+    suffix: str = "",
 ) -> str:
-    """Adaptively compress any text to guarantee it stays strictly within a token budget.
+    """Bound the complete text, including recovery metadata, using a local estimator.
 
-    Guarantees 100% reversibility via ContextCache ref ID.
+    Truncated content is recoverable after secret redaction. Tiny budgets that
+    cannot hold a recovery reference raise rather than silently losing content.
+    Provider estimates are not billing counts for any particular model.
     """
-    if not text or max_tokens <= 0:
-        return ""
+    if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0:
+        raise ValueError("max_tokens must be a positive integer")
+    if provider not in {"claude", "openai", "gemini"}:
+        raise ValueError("provider must be claude, openai, or gemini")
 
-    tok_info = count_tokens(text)
-    current_tokens = getattr(tok_info, provider, tok_info.avg)
+    def size(value: str) -> int:
+        return getattr(count_tokens(value), provider)
 
-    if current_tokens <= max_tokens:
-        return text
+    original = redact_secrets(text if original_text is None else original_text)
+    cleaned = redact_secrets(text)
+    suffix = redact_secrets(suffix)
+    if cleaned.rstrip("\n") == original.rstrip("\n") and size(cleaned + suffix) <= max_tokens:
+        return cleaned + suffix
 
-    # Cache original for full recovery
-    cache = ContextCache()
-    ref_id = cache.store(text, source=source)
+    # Sanitization is deliberately applied before persistence, not only display.
+    ref_id = ContextCache().store(original, source=source)
+    marker = f"\n[... Ref: {ref_id}; retrieve omitted lines]"
+    if size(marker + suffix) > max_tokens:
+        raise ValueError("max_tokens is too small for the recovery reference")
 
-    # Level 1: Sanitize and basic strip
-    cleaned = redact_secrets(strip_ansi(text)).strip()
-    tok_info = count_tokens(cleaned)
-    current_tokens = getattr(tok_info, provider, tok_info.avg)
-    if current_tokens <= max_tokens:
-        return cleaned
+    cleaned = strip_ansi(cleaned).strip()
+    if size(cleaned + marker + suffix) <= max_tokens:
+        return cleaned + marker + suffix
 
-    # Level 2: Proportional line truncation based on token budget
-    estimated_target_lines = max(4, int(max_tokens / 12))
-    head_lines = max(1, int(estimated_target_lines * 0.3))
-    tail_lines = max(2, int(estimated_target_lines * 0.7))
-
-    opts = CleanerOptions(
-        max_lines=estimated_target_lines,
-        head_lines=head_lines,
-        tail_lines=tail_lines,
-        enable_cache=False,
+    target_lines = max(4, max_tokens // 12)
+    compacted = compact_terminal_output(
+        cleaned,
+        CleanerOptions(
+            max_lines=target_lines,
+            head_lines=max(1, target_lines // 3),
+            tail_lines=max(2, target_lines * 2 // 3),
+            enable_cache=False,
+        ),
     )
-    compacted = compact_terminal_output(cleaned, opts)
+    if size(compacted + marker + suffix) <= max_tokens:
+        return compacted + marker + suffix
 
-    tok_info = count_tokens(compacted)
-    current_tokens = getattr(tok_info, provider, tok_info.avg)
-    if current_tokens <= max_tokens:
-        return f"{compacted}\n[tokencut: fitted to {max_tokens} token budget. Ref: {ref_id}]"
-
-    # Level 3: Character/word-level hard slicing if lines are too long
-    # Roughly 3.5 chars per token for English/code
-    ref_suffix = f"\n[... omitted to fit {max_tokens} tokens. Ref: {ref_id}]"
-
-    # avail_tokens = max(5, max_tokens - suffix_tokens)
-
-    # Binary search slice on character length
-    low = 10
-    high = len(compacted)
-    best_slice = compacted[:low]
-
+    # Retain both the start and final diagnostics, even for a single huge line.
+    # Only measured candidates are returned: BPE counts need not be monotonic.
+    best = marker + suffix
+    low, high = 0, len(compacted)
     while low <= high:
-        mid = (low + high) // 2
-        candidate = compacted[:mid] + ref_suffix
-        c_tok = getattr(count_tokens(candidate), provider, count_tokens(candidate).avg)
-
-        if c_tok <= max_tokens:
-            best_slice = candidate
-            low = mid + 1
+        keep = (low + high) // 2
+        head = keep // 3
+        tail = keep - head
+        candidate = compacted[:head] + marker
+        if tail:
+            candidate += "\n" + compacted[-tail:]
+        candidate += suffix
+        if size(candidate) <= max_tokens:
+            best = candidate
+            low = keep + 1
         else:
-            high = mid - 1
-
-    return best_slice
+            high = keep - 1
+    return best

@@ -1,3 +1,7 @@
+import json
+import os
+import sys
+
 from typer.testing import CliRunner
 
 from tokencut.cli import app
@@ -15,15 +19,87 @@ def test_cli_help():
 def test_cli_demo():
     res = runner.invoke(app, ["demo"])
     assert res.exit_code == 0
-    assert "Anthropic Claude" in res.output
-    assert "OpenAI GPT-4o" in res.output
-    assert "Google Gemini" in res.output
+    assert "verify your installation" in res.output
+    assert "PASS" in res.output
+    assert "No model calls" in res.output
+
+
+def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
+    cache_path = os.environ["TOKENCUT_CACHE_DIR"]
+    cache = ContextCache()
+    ref = cache.store("existing user output", source="test")
+    before = cache.get_stats()["count"]
+    empty_directory = tmp_path / "empty-project"
+    empty_directory.mkdir()
+    monkeypatch.chdir(empty_directory)
+    res = runner.invoke(app, ["demo", "--json"])
+    assert res.exit_code == 0
+    data = json.loads(res.stdout)
+    assert data["passed"] and all(data["checks"].values())
+    assert data["model_calls"] == 0
+    assert 0 < data["output_tokens"] < data["raw_tokens"]
+    assert os.environ["TOKENCUT_CACHE_DIR"] == cache_path
+    assert cache.get_stats()["count"] == before
+    assert cache.retrieve(ref) == "existing user output"
+
+
+def test_demo_fails_if_compaction_drops_diagnostics(monkeypatch):
+    monkeypatch.setattr("tokencut.cli.safe_compact_output", lambda text, **kw: "everything passed")
+    res = runner.invoke(app, ["demo", "--json"])
+    assert res.exit_code == 1
+    data = json.loads(res.stdout)
+    assert not data["passed"]
+    assert not data["checks"]["complete_failure_tail_preserved"]
+    assert not data["checks"]["original_recovered_exactly"]
+
+
+def test_invalid_run_budget_is_rejected_before_execution(tmp_path):
+    marker = tmp_path / "must-not-execute"
+    script = f"from pathlib import Path; Path({str(marker)!r}).touch()"
+    for budget in ("0", "-1"):
+        res = runner.invoke(app, ["run", "--budget", budget, "--", sys.executable, "-c", script])
+        assert res.exit_code == 2
+        assert not marker.exists()
 
 
 def test_cli_run():
     res = runner.invoke(app, ["run", "echo", "testing 1 2 3"])
     assert res.exit_code == 0
     assert "testing 1 2 3" in res.output
+
+
+def test_run_preserves_literal_arguments_and_markup(tmp_path):
+    unwanted = tmp_path / "should-not-exist"
+    literal = f"[bold]two words[/bold] ; touch {unwanted} $(echo expanded)"
+    res = runner.invoke(
+        app, ["run", "--", sys.executable, "-c", "import sys; print(sys.argv[1])", literal]
+    )
+    assert res.exit_code == 0
+    assert res.stdout == literal + "\n"
+    assert not unwanted.exists()
+
+
+def test_run_preserves_complete_failed_output_and_exit_status():
+    output = (
+        "Traceback (most recent call last):\n"
+        + "detail\n" * 200
+        + "AssertionError: original failure\n"
+    )
+    script = f"import sys; print({output!r}, end='', file=sys.stderr); sys.exit(7)"
+    res = runner.invoke(app, ["run", "--", sys.executable, "-c", script])
+    assert res.exit_code == 7
+    assert res.stdout == output
+
+
+def test_retrieve_preserves_original_format_and_charges_readback():
+    from tokencut.core.telemetry import TelemetryStore
+
+    raw = "[bold]literal[/bold] " + "long-line " * 40
+    ref = ContextCache().store(raw, source="test")
+    res = runner.invoke(app, ["retrieve", ref])
+    assert res.exit_code == 0
+    assert res.stdout == raw + "\n"
+    assert TelemetryStore().get_stats().saved_openai < 0
 
 
 def test_cli_cat(tmp_path):
@@ -90,10 +166,34 @@ def test_cli_doctor():
     assert "tokencut System & Integration Diagnostics" in res.output
 
 
+def test_cli_install_desktop_honors_installer_failure(monkeypatch):
+    monkeypatch.setattr(
+        "tokencut.cli.configure_claude_desktop_mcp",
+        lambda: (False, "Malformed existing config; unchanged"),
+    )
+    result = runner.invoke(app, ["install", "--claude-desktop"])
+    assert result.exit_code == 1
+    assert "unchanged" in result.output
+    assert "configured in" not in result.output
+
+
+def test_cli_install_desktop_selects_only_desktop(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "tokencut.cli.configure_claude_desktop_mcp",
+        lambda: (calls.append("desktop") or True, "/tmp/claude.json"),
+    )
+    monkeypatch.setattr("tokencut.cli.configure_cursor_mcp", lambda: calls.append("cursor"))
+    monkeypatch.setattr("tokencut.cli.configure_shell_alias", lambda: calls.append("alias"))
+    result = runner.invoke(app, ["install", "--claude-desktop"])
+    assert result.exit_code == 0
+    assert calls == ["desktop"]
+
+
 def test_cli_stats_formats():
     res_table = runner.invoke(app, ["stats", "--format", "table"])
     assert res_table.exit_code == 0
-    assert "Telemetry" in res_table.output
+    assert "local output estimates" in res_table.output
 
     res_json = runner.invoke(app, ["stats", "--format", "json"])
     assert res_json.exit_code == 0

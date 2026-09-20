@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import os
 import sqlite3
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from tokencut.core.cache import DEFAULT_CACHE_DB
+from tokencut.core.companion_state import client_name, project_for
 from tokencut.metrics.pricing import estimate_savings
 
 
@@ -21,15 +25,15 @@ class LifetimeStats:
 
     @property
     def saved_claude(self) -> int:
-        return max(0, self.raw_claude_tokens - self.compact_claude_tokens)
+        return self.raw_claude_tokens - self.compact_claude_tokens
 
     @property
     def saved_openai(self) -> int:
-        return max(0, self.raw_openai_tokens - self.compact_openai_tokens)
+        return self.raw_openai_tokens - self.compact_openai_tokens
 
     @property
     def saved_gemini(self) -> int:
-        return max(0, self.raw_gemini_tokens - self.compact_gemini_tokens)
+        return self.raw_gemini_tokens - self.compact_gemini_tokens
 
     @property
     def saved_avg(self) -> int:
@@ -48,31 +52,84 @@ class LifetimeStats:
         return savings.avg_saved_usd
 
 
+# This database never stores commands, output, recovery references or conversations.
+# Recovery content remains exclusively in cache.db.
+EVENT_COLUMNS = (
+    "event_id",
+    "timestamp",
+    "client",
+    "project",
+    "engine",
+    "operation",
+    "method",
+    "delivery",
+    "raw_openai",
+    "compact_openai",
+    "raw_claude",
+    "compact_claude",
+    "raw_gemini",
+    "compact_gemini",
+    "raw_bytes",
+    "compact_bytes",
+    "duration_s",
+)
+
+
 class TelemetryStore:
-    """Tracks local lifetime token savings in ~/.tokencut/cache.db."""
-
     def __init__(self, db_path: Path | None = None):
-        self.db_path = db_path or DEFAULT_CACHE_DB
-        self._ensure_table()
-
-    def _ensure_table(self):
+        cache_dir = Path(os.environ.get("TOKENCUT_CACHE_DIR", str(DEFAULT_CACHE_DB.parent)))
+        self.db_path = db_path or cache_dir / "telemetry.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with self.connect() as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS events (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE NOT NULL, timestamp REAL NOT NULL,
+                client TEXT, project TEXT, engine TEXT NOT NULL, operation TEXT NOT NULL,
+                method TEXT NOT NULL, delivery TEXT NOT NULL,
+                raw_openai INTEGER, compact_openai INTEGER,
+                raw_claude INTEGER, compact_claude INTEGER,
+                raw_gemini INTEGER, compact_gemini INTEGER,
+                raw_bytes INTEGER, compact_bytes INTEGER, duration_s REAL
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS events_time ON events(timestamp)")
             conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS telemetry_events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp REAL,
-                    raw_claude INT,
-                    compact_claude INT,
-                    raw_openai INT,
-                    compact_openai INT,
-                    raw_gemini INT,
-                    compact_gemini INT
-                )
-                """
+                "CREATE TABLE IF NOT EXISTS imports (source TEXT PRIMARY KEY, last_id INTEGER NOT NULL)"
             )
-            conn.commit()
+        if db_path is None:
+            self.import_legacy(cache_dir / "cache.db")
+
+    def connect(self):
+        return sqlite3.connect(self.db_path, timeout=5)
+
+    def import_legacy(self, path: Path):
+        if not path.is_file():
+            return
+        try:
+            with self.connect() as conn:
+                previous = conn.execute(
+                    "SELECT last_id FROM imports WHERE source=?", (str(path.resolve()),)
+                ).fetchone()
+            with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as old:
+                rows = old.execute(
+                    "SELECT id, timestamp, raw_claude, compact_claude, raw_openai, compact_openai, raw_gemini, compact_gemini FROM telemetry_events WHERE id > ? ORDER BY id",
+                    (previous[0] if previous else 0,),
+                ).fetchall()
+            # Retain legacy history with unknown client/project, never guessed cwd.
+            prefix = hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:24]
+            with self.connect() as conn:
+                conn.executemany(
+                    """INSERT OR IGNORE INTO events
+                    (event_id,timestamp,client,project,engine,operation,method,delivery,
+                     raw_claude,compact_claude,raw_openai,compact_openai,raw_gemini,compact_gemini)
+                    VALUES (?,?,NULL,NULL,'tokencut','legacy','legacy-estimate','legacy',?,?,?,?,?,?)""",
+                    [(f"legacy:{prefix}:{r[0]}", r[1] or 0, *r[2:]) for r in rows],
+                )
+                if rows:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO imports VALUES (?, ?)",
+                        (str(path.resolve()), rows[-1][0]),
+                    )
+        except (OSError, sqlite3.Error):
+            pass
 
     def record(
         self,
@@ -87,60 +144,127 @@ class TelemetryStore:
         saved_gemini: int | None = None,
         command: str | None = None,
         duration_s: float | None = None,
+        *,
+        event_id: str | None = None,
+        client: str | None = None,
+        project: str | None = None,
+        engine: str = "tokencut",
+        operation: str = "exec",
+        method: str = "o200k_base",
+        delivery: str = "returned",
+        raw_bytes: int | None = None,
+        compact_bytes: int | None = None,
         **kwargs,
     ):
+        # `command` is accepted for compatibility, deliberately never persisted.
         if saved_claude is not None:
             compact_claude = max(0, raw_claude - saved_claude)
         if saved_openai is not None:
             compact_openai = max(0, raw_openai - saved_openai)
         if saved_gemini is not None:
             compact_gemini = max(0, raw_gemini - saved_gemini)
-        with sqlite3.connect(self.db_path) as conn:
+        event = (
+            event_id or str(uuid.uuid4()),
+            time.time(),
+            client or client_name(),
+            project,
+            engine,
+            operation,
+            method,
+            delivery,
+            raw_openai,
+            compact_openai,
+            raw_claude,
+            compact_claude,
+            raw_gemini,
+            compact_gemini,
+            raw_bytes,
+            compact_bytes,
+            duration_s,
+        )
+        with self.connect() as conn:
             conn.execute(
-                """
-                INSERT INTO telemetry_events (
-                    timestamp, raw_claude, compact_claude, raw_openai, compact_openai, raw_gemini, compact_gemini
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    time.time(),
-                    raw_claude,
-                    compact_claude,
-                    raw_openai,
-                    compact_openai,
-                    raw_gemini,
-                    compact_gemini,
-                ),
+                f"INSERT OR IGNORE INTO events ({','.join(EVENT_COLUMNS)}) VALUES ({','.join('?' for _ in EVENT_COLUMNS)})",
+                event,
             )
-            conn.commit()
 
     def get_stats(self) -> LifetimeStats:
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT
-                    COUNT(*),
-                    COALESCE(SUM(raw_claude), 0),
-                    COALESCE(SUM(compact_claude), 0),
-                    COALESCE(SUM(raw_openai), 0),
-                    COALESCE(SUM(compact_openai), 0),
-                    COALESCE(SUM(raw_gemini), 0),
-                    COALESCE(SUM(compact_gemini), 0)
-                FROM telemetry_events
-                """
-            ).fetchone()
-
-        return LifetimeStats(
-            total_runs=row[0],
-            raw_claude_tokens=row[1],
-            compact_claude_tokens=row[2],
-            raw_openai_tokens=row[3],
-            compact_openai_tokens=row[4],
-            raw_gemini_tokens=row[5],
-            compact_gemini_tokens=row[6],
-        )
+        with self.connect() as conn:
+            row = conn.execute("""SELECT COUNT(*), COALESCE(SUM(raw_claude),0),
+                COALESCE(SUM(compact_claude),0), COALESCE(SUM(raw_openai),0),
+                COALESCE(SUM(compact_openai),0), COALESCE(SUM(raw_gemini),0),
+                COALESCE(SUM(compact_gemini),0) FROM events
+                WHERE engine='tokencut' AND delivery != 'prepared'""").fetchone()
+        return LifetimeStats(*row)
 
     def clear(self):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("DELETE FROM telemetry_events")
-            conn.commit()
+        with self.connect() as conn:
+            conn.execute("DELETE FROM events")
+
+
+def record_text(
+    raw: str,
+    output: str,
+    *,
+    operation="exec",
+    project=None,
+    duration_s=None,
+    delivery="returned",
+    event_id=None,
+    client=None,
+    engine="tokencut",
+) -> None:
+    """Best effort telemetry must never make a working tool fail."""
+    try:
+        from tokencut.metrics.tokenizer import count_tokens, get_o200k
+
+        before, after = count_tokens(raw), count_tokens(output)
+        if engine == "rtk":
+            TelemetryStore().record(
+                0,
+                raw_openai=(len(raw.encode()) + 3) // 4,
+                compact_openai=(len(output.encode()) + 3) // 4,
+                engine="rtk",
+                method="bytes/4",
+                operation=operation,
+                project=project_for(project),
+                client=client,
+                duration_s=duration_s,
+                delivery=delivery,
+                event_id=event_id,
+                raw_bytes=len(raw.encode()),
+                compact_bytes=len(output.encode()),
+            )
+            return
+        TelemetryStore().record(
+            before.claude,
+            after.claude,
+            before.openai,
+            after.openai,
+            before.gemini,
+            after.gemini,
+            operation=operation,
+            project=project_for(project),
+            duration_s=duration_s,
+            delivery=delivery,
+            event_id=event_id,
+            client=client,
+            engine=engine,
+            method=get_o200k().name,
+            raw_bytes=len(raw.encode("utf-8")),
+            compact_bytes=len(output.encode("utf-8")),
+        )
+    except Exception:
+        pass
+
+
+def recovery_engine(ref_id: str) -> str:
+    try:
+        path = Path(os.environ.get("TOKENCUT_CACHE_DIR", str(DEFAULT_CACHE_DB.parent))) / "cache.db"
+        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as conn:
+            row = conn.execute(
+                "SELECT source FROM output_cache WHERE ref_id=?", (ref_id,)
+            ).fetchone()
+        return "rtk" if row and row[0] == "rtk" else "tokencut"
+    except (OSError, sqlite3.Error):
+        return "tokencut"

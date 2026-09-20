@@ -45,3 +45,7 @@ htmlcov/
 
 # Tokencut local stats
 .tokencut_history.json
+
+# Local macOS companion builds
+macos/.build/
+macos/build/

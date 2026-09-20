@@ -1,4 +1,9 @@
+import re
+
+import pytest
+
 from tokencut.core.adaptive import compress_to_budget
+from tokencut.core.cache import ContextCache
 from tokencut.core.specialized import (
     auto_specialize_command_output,
     filter_git_log,
@@ -68,3 +73,36 @@ def test_compress_to_budget():
 
     assert fitted_tokens <= 60
     assert "Ref: tc_" in budget_fitted
+
+
+@pytest.mark.parametrize("provider", ["claude", "openai", "gemini"])
+@pytest.mark.parametrize("budget", [64, 100, 500])
+@pytest.mark.parametrize(
+    "raw", ["word " * 3000, "漢字🙂é" * 2000, "\n".join(f"step {i}" for i in range(300))]
+)
+def test_budget_includes_reference_and_suffix(provider, budget, raw):
+    output = compress_to_budget(raw, budget, provider, suffix="\n[exit code: 1]")
+    assert getattr(count_tokens(output), provider) <= budget
+    assert output.endswith("[exit code: 1]")
+    ref = re.search(r"tc_[a-f0-9]+", output).group()
+    assert ContextCache().retrieve(ref) == raw
+
+
+def test_budget_redacts_even_when_input_fits():
+    secret = "sk-proj-" + "a" * 30
+    output = compress_to_budget(f"token={secret}", 100)
+    assert secret not in output
+    assert "REDACTED" in output
+
+
+def test_small_budget_cannot_silently_drop_recovery():
+    with pytest.raises(ValueError, match="recovery reference"):
+        compress_to_budget("long text " * 100, 1)
+
+
+def test_cleaning_still_returns_recoverable_reference():
+    raw = "\x1b[31mred\x1b[0m\n" * 100
+    output = compress_to_budget(raw, 100)
+    assert count_tokens(output).claude <= 100
+    ref = re.search(r"tc_[a-f0-9]+", output).group()
+    assert ContextCache().retrieve(ref) == raw
