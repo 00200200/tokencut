@@ -6,7 +6,7 @@ from typing import NamedTuple
 
 class ModelPricing(NamedTuple):
     name: str
-    input_per_million: float   # USD per 1M input tokens
+    input_per_million: float  # USD per 1M input tokens
     output_per_million: float  # USD per 1M output tokens
     cache_read_per_million: float | None = None  # USD if prompt cached
 
@@ -47,11 +47,17 @@ class CostSavings:
         return f"${self.avg_saved_usd:.4f}"
 
 
-def estimate_savings(saved_claude_tokens: int, saved_openai_tokens: int, saved_gemini_tokens: int) -> CostSavings:
+def estimate_savings(
+    saved_claude_tokens: int, saved_openai_tokens: int, saved_gemini_tokens: int
+) -> CostSavings:
     # Baseline comparison: Claude 3.5/3.7 Sonnet ($3.00/1M input), GPT-4o ($2.50/1M input), Gemini 1.5 Pro ($1.25/1M input)
-    claude_usd = (saved_claude_tokens / 1_000_000.0) * PRICING_TABLE["claude-3-7-sonnet"].input_per_million
+    claude_usd = (saved_claude_tokens / 1_000_000.0) * PRICING_TABLE[
+        "claude-3-7-sonnet"
+    ].input_per_million
     openai_usd = (saved_openai_tokens / 1_000_000.0) * PRICING_TABLE["gpt-4o"].input_per_million
-    gemini_usd = (saved_gemini_tokens / 1_000_000.0) * PRICING_TABLE["gemini-1.5-pro"].input_per_million
+    gemini_usd = (saved_gemini_tokens / 1_000_000.0) * PRICING_TABLE[
+        "gemini-1.5-pro"
+    ].input_per_million
 
     return CostSavings(
         claude_saved_usd=claude_usd,

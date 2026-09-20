@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 from rich.console import Console
 from rich.table import Table
 
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.skeleton import skeletonize_python
-from tokencut.metrics.pricing import estimate_savings
 from tokencut.metrics.tokenizer import compute_metrics
 
 console = Console()
 
+
 def run_benchmarks():
     # Scenario 1: Pytest failure log with 120 tests
-    pytest_raw = "pytest -v tests/\n" + "\n".join([f"tests/test_{i}.py::test_{i} PASSED [ {i % 100}%]" for i in range(1, 121)])
+    pytest_raw = "pytest -v tests/\n" + "\n".join(
+        [f"tests/test_{i}.py::test_{i} PASSED [ {i % 100}%]" for i in range(1, 121)]
+    )
     pytest_raw += """
 =================================== FAILURES ===================================
 ________________________________ test_database _________________________________
@@ -32,7 +35,9 @@ FAILED tests/test_db.py::test_database - ConnectionRefusedError
 
     # Scenario 2: Webpack / Vite build logs with ANSI and spinners
     build_raw = "\x1b[36mvite v5.4.0 building for production...\x1b[0m\n"
-    build_raw += "\n".join([f"transforming ({i}/250) src/components/Widget_{i}.tsx" for i in range(1, 251)])
+    build_raw += "\n".join(
+        [f"transforming ({i}/250) src/components/Widget_{i}.tsx" for i in range(1, 251)]
+    )
     build_raw += """
 ✓ 250 modules transformed.
 dist/index.html                   0.45 kB │ gzip:  0.29 kB
@@ -90,6 +95,7 @@ index 3333333..4444444 100644
         )
 
     console.print(table)
+
 
 if __name__ == "__main__":
     run_benchmarks()

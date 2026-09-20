@@ -17,7 +17,9 @@ ERROR_SIGNATURES = [
     re.compile(r"Traceback \(most recent call last\):", re.IGNORECASE),
     re.compile(r"={3,}\s*(?:FAILURES|ERRORS)\s*={3,}", re.IGNORECASE),
     re.compile(r"\bFAILED\s*(?:\(|\[)", re.IGNORECASE),
-    re.compile(r"\b(?:AssertionError|ValueError|TypeError|KeyError|AttributeError|RuntimeError|Exception):"),
+    re.compile(
+        r"\b(?:AssertionError|ValueError|TypeError|KeyError|AttributeError|RuntimeError|Exception):"
+    ),
     re.compile(r"\b(?:panic:|fatal error:|NullPointerException|Segmentation fault)", re.IGNORECASE),
     re.compile(r"\b(?:npm ERR!|yarn error|error\[E\d+\]:|TS\d+:)", re.IGNORECASE),
     re.compile(r"^(?:Error|FATAL|CRITICAL):", re.IGNORECASE | re.MULTILINE),
@@ -151,7 +153,11 @@ def compact_terminal_output(raw_text: str, options: CleanerOptions | None = None
             if err_idx < head_count:
                 # Error started early, keep everything up to head_count + tail_count
                 kept_head = lines[:head_count]
-                kept_tail = lines[-tail_count:] if total_lines > head_count + tail_count else lines[head_count:]
+                kept_tail = (
+                    lines[-tail_count:]
+                    if total_lines > head_count + tail_count
+                    else lines[head_count:]
+                )
                 omitted = max(0, total_lines - len(kept_head) - len(kept_tail))
                 if omitted > 0:
                     summary_line = f"\n[... {omitted} lines of logs omitted by tokencut ...]\n"
@@ -164,12 +170,16 @@ def compact_terminal_output(raw_text: str, options: CleanerOptions | None = None
                 # Tail covers from error start onwards, up to max tail_count * 2
                 error_lines = lines[err_idx:]
                 if len(error_lines) > tail_count * 2:
-                    error_lines = lines[err_idx:err_idx + 20] + [
-                        f"\n[... {len(lines) - err_idx - 50} lines inside error omitted ...]\n"
-                    ] + lines[-30:]
+                    error_lines = (
+                        lines[err_idx : err_idx + 20]
+                        + [f"\n[... {len(lines) - err_idx - 50} lines inside error omitted ...]\n"]
+                        + lines[-30:]
+                    )
 
                 omitted = max(0, err_idx - head_count)
-                summary_line = f"\n[... {omitted} lines of routine output omitted by tokencut ...]\n"
+                summary_line = (
+                    f"\n[... {omitted} lines of routine output omitted by tokencut ...]\n"
+                )
                 res = kept_head + [summary_line] + error_lines
 
             cleaned = "\n".join(res)

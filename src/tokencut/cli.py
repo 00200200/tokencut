@@ -74,8 +74,12 @@ def run(
 @app.command()
 def cat(
     file_path: Annotated[Path, typer.Argument(help="Path to code file")],
-    skeleton: Annotated[bool, typer.Option("--skeleton", "-s", help="Extract structural AST outline")] = False,
-    lines: Annotated[str | None, typer.Option("--lines", "-l", help="Line range (e.g. 10-40)")] = None,
+    skeleton: Annotated[
+        bool, typer.Option("--skeleton", "-s", help="Extract structural AST outline")
+    ] = False,
+    lines: Annotated[
+        str | None, typer.Option("--lines", "-l", help="Line range (e.g. 10-40)")
+    ] = None,
     symbol: Annotated[str | None, typer.Option("--symbol", "-y", help="Target symbol name")] = None,
 ):
     """View file with intelligent token compaction or AST skeleton extraction."""
@@ -134,8 +138,12 @@ def diff(
 
 @app.command()
 def lint(
-    file_path: Annotated[Path, typer.Argument(help="Path to CLAUDE.md or rules file")] = Path("CLAUDE.md"),
-    minify: Annotated[bool, typer.Option("--minify", "-m", help="Write out minified version")] = False,
+    file_path: Annotated[Path, typer.Argument(help="Path to CLAUDE.md or rules file")] = Path(
+        "CLAUDE.md"
+    ),
+    minify: Annotated[
+        bool, typer.Option("--minify", "-m", help="Write out minified version")
+    ] = False,
 ):
     """Audit CLAUDE.md / .cursorrules for prompt cache busting and token bloat."""
     if not file_path.exists():
@@ -151,7 +159,11 @@ def lint(
 
     table.add_row("Token Footprint", f"~{result.token_count:,} tokens")
     table.add_row("Line Count", f"{result.line_count} lines")
-    cache_status = "[green]YES[/green]" if result.is_cache_friendly else "[red]NO (Cache Busting Detected!)[/red]"
+    cache_status = (
+        "[green]YES[/green]"
+        if result.is_cache_friendly
+        else "[red]NO (Cache Busting Detected!)[/red]"
+    )
     table.add_row("Cache Friendly?", cache_status)
 
     console.print(table)
@@ -167,7 +179,9 @@ def lint(
         file_path.write_text(minified, encoding="utf-8")
         before_tok = count_tokens(content).avg
         after_tok = count_tokens(minified).avg
-        console.print(f"\n[green]Successfully minified {file_path}: {before_tok} -> {after_tok} tokens![/green]")
+        console.print(
+            f"\n[green]Successfully minified {file_path}: {before_tok} -> {after_tok} tokens![/green]"
+        )
 
 
 @app.command()
@@ -190,7 +204,9 @@ def demo():
     # Simulated realistic pytest output with massive noisy passes + failing assertion
     noisy_pytest = (
         "pytest -v tests/\n"
-        + "\n".join([f"tests/test_mod_{i}.py::test_feature_ok PASSED [ {i}%]" for i in range(1, 85)])
+        + "\n".join(
+            [f"tests/test_mod_{i}.py::test_feature_ok PASSED [ {i}%]" for i in range(1, 85)]
+        )
         + "\n\n"
         + "=================================== FAILURES ===================================\n"
         + "_________________________________ test_payment _________________________________\n"
@@ -209,7 +225,9 @@ def demo():
     opts = CleanerOptions(max_lines=30)
     compacted = compact_terminal_output(noisy_pytest, opts)
     metrics = compute_metrics(noisy_pytest, compacted)
-    savings = estimate_savings(metrics.saved_tokens.claude, metrics.saved_tokens.openai, metrics.saved_tokens.gemini)
+    savings = estimate_savings(
+        metrics.saved_tokens.claude, metrics.saved_tokens.openai, metrics.saved_tokens.gemini
+    )
 
     table = Table(title="Scenario: Pytest Failure with 85 test items")
     table.add_column("Harness / Model", style="cyan")

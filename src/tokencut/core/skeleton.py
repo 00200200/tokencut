@@ -110,7 +110,9 @@ def _skeletonize_by_regex(source: str) -> str:
 
     # Signature patterns (TS/JS/Go/Rust/Python)
     sig_patterns = [
-        re.compile(r"^\s*(?:export\s+)?(?:async\s+)?(?:function|def|class|interface|type|enum|struct)\b"),
+        re.compile(
+            r"^\s*(?:export\s+)?(?:async\s+)?(?:function|def|class|interface|type|enum|struct)\b"
+        ),
         re.compile(r"^\s*(?:pub\s+)?(?:fn|struct|enum|trait|impl)\b"),
         re.compile(r"^\s*func\s+(?:\([^)]+\)\s+)?[A-Za-z0-9_]+\s*\("),
         re.compile(r"^\s*(?:public|private|protected|static|readonly|override|\bget\b|\bset\b)\s+"),
@@ -205,7 +207,9 @@ def extract_symbol_or_range(
                 pass
 
         # Fallback to regex search for symbol definition
-        sym_pattern = re.compile(rf"(?:def|class|function|interface|fn|func)\s+{re.escape(symbol)}\b")
+        sym_pattern = re.compile(
+            rf"(?:def|class|function|interface|fn|func)\s+{re.escape(symbol)}\b"
+        )
         lines = content.splitlines()
         for idx, line in enumerate(lines):
             if sym_pattern.search(line):

@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 
 LOCKFILE_PATTERNS = [
-    re.compile(r"(?:package-lock\.json|yarn\.lock|pnpm-lock\.yaml|uv\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock)"),
+    re.compile(
+        r"(?:package-lock\.json|yarn\.lock|pnpm-lock\.yaml|uv\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock)"
+    ),
     re.compile(r"\.(?:min\.js|min\.css|map|svg)$"),
 ]
 

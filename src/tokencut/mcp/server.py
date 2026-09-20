@@ -123,7 +123,11 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
     _SESSION_SAVED_OPENAI += saved_openai
     _SESSION_SAVED_GEMINI += saved_gemini
 
-    pct = round(((raw_tokens.avg - comp_tokens.avg) / raw_tokens.avg * 100), 1) if raw_tokens.avg > 0 else 0.0
+    pct = (
+        round(((raw_tokens.avg - comp_tokens.avg) / raw_tokens.avg * 100), 1)
+        if raw_tokens.avg > 0
+        else 0.0
+    )
     footer = f"\n\n[tokencut: saved ~{raw_tokens.avg - comp_tokens.avg} tokens (-{pct}%), exit code: {proc.returncode}]"
     return compacted + footer
 
@@ -137,7 +141,9 @@ def handle_tokencut_read(arguments: dict[str, Any]) -> str:
 
     try:
         full_content = Path(path).read_text(encoding="utf-8", errors="replace")
-        extracted = extract_symbol_or_range(path, symbol=symbol, lines_range=lines, skeleton=skeleton)
+        extracted = extract_symbol_or_range(
+            path, symbol=symbol, lines_range=lines, skeleton=skeleton
+        )
 
         raw_tok = count_tokens(full_content)
         comp_tok = count_tokens(extracted)
