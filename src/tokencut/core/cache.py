@@ -5,6 +5,7 @@ import os
 import sqlite3
 import time
 from pathlib import Path
+from typing import Any
 
 from tokencut.core.redactor import redact_secrets
 
@@ -108,3 +109,9 @@ class ContextCache:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM output_cache")
             conn.commit()
+
+    def get_stats(self) -> dict[str, Any]:
+        with sqlite3.connect(self.db_path) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM output_cache").fetchone()[0]
+        size_kb = self.db_path.stat().st_size / 1024 if self.db_path.exists() else 0
+        return {"count": count, "size_kb": size_kb, "path": str(self.db_path)}

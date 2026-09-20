@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import sys
 
 import pytest
@@ -9,9 +10,11 @@ from tokencut.mcp import server
 from tokencut.mcp.server import (
     handle_tokencut_diff,
     handle_tokencut_exec,
+    handle_tokencut_json,
     handle_tokencut_read,
     handle_tokencut_retrieve,
     handle_tokencut_stats,
+    handle_tokencut_tree,
     run_mcp_stdio_server,
 )
 from tokencut.metrics.tokenizer import count_tokens
@@ -21,6 +24,14 @@ def test_handle_tokencut_exec():
     res = handle_tokencut_exec({"command": "echo 'Hello tokencut!'"})
     assert "Hello tokencut!" in res
     assert "exit code: 0" in res
+
+
+def test_handle_tokencut_exec_budget():
+    res = handle_tokencut_exec({"command": "printf '%10000s' x; exit 7", "budget": 100})
+    assert count_tokens(res).claude <= 100
+    assert "exit code: 7" in res
+    ref = re.search(r"tc_[a-f0-9]+", res).group()
+    assert ContextCache().retrieve(ref).endswith("x")
 
 
 def test_handle_tokencut_read(tmp_path):
@@ -39,6 +50,108 @@ def test_handle_tokencut_retrieve():
 def test_handle_tokencut_diff():
     res = handle_tokencut_diff({})
     assert isinstance(res, str)
+
+
+def test_handle_tokencut_tree(tmp_path):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "a.py").write_text("print(1)")
+    res = handle_tokencut_tree({"path": str(tmp_path), "max_depth": 2})
+    assert "a.py" in res
+
+
+def test_handle_tokencut_json():
+    raw = '[{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]'
+    res = handle_tokencut_json({"json_str": raw, "max_items": 2})
+    assert "omitted by tokencut" in res
+
+
+def test_json_small_lossy_preview_still_has_recoverable_original():
+    raw = '[{"id":1},{"id":2},{"unique_schema":true}]'
+    output = handle_tokencut_json({"json_str": raw, "max_items": 2})
+    ref = re.search(r"tc_[a-f0-9]+", output).group()
+    assert ContextCache().retrieve(ref) == raw
+
+
+def test_json_protocol_bounds_redacts_and_accounts_for_returned_text(tmp_path, monkeypatch):
+    raw = json.dumps(
+        {
+            "token": "ghp_" + "a" * 36,
+            "entries": [{"id": i, "details": "diagnostic " * 50} for i in range(20)],
+        }
+    )
+    path = tmp_path / "response.json"
+    path.write_text(raw)
+    monkeypatch.setattr(server, "_SESSION_SAVED_OPENAI", 0)
+    response = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "tokencut_json",
+                "arguments": {"path": str(path), "max_tokens": 100},
+            },
+        }
+    )
+    assert not response["result"]["isError"]
+    output = response["result"]["content"][0]["text"]
+    assert count_tokens(output).claude <= 100
+    ref = re.search(r"tc_[a-f0-9]+", output).group()
+    recovered = ContextCache().retrieve(ref)
+    assert "ghp_" + "a" * 36 not in output + recovered
+    assert '"id": 19' in recovered
+    assert server._SESSION_SAVED_OPENAI == count_tokens(raw).openai - count_tokens(output).openai
+
+
+def test_tree_protocol_budget_and_recovery_do_not_claim_file_content_savings(tmp_path, monkeypatch):
+    for i in range(30):
+        (tmp_path / f"source_module_{i:02d}.py").write_text("print('hello')\n")
+    root, _ = server.scan_directory(tmp_path, max_depth=2)
+    raw = server.format_tree_as_text(root, root.tokens)
+    monkeypatch.setattr(server, "_SESSION_SAVED_OPENAI", 0)
+    response = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "tokencut_tree",
+                "arguments": {
+                    "path": str(tmp_path),
+                    "max_depth": 2,
+                    "max_tokens": 100,
+                },
+            },
+        }
+    )
+    assert not response["result"]["isError"]
+    output = response["result"]["content"][0]["text"]
+    assert count_tokens(output).claude <= 100
+    ref = re.search(r"tc_[a-f0-9]+", output).group()
+    assert ContextCache().retrieve(ref) == raw
+    assert server._SESSION_SAVED_OPENAI == count_tokens(raw).openai - count_tokens(output).openai
+
+
+@pytest.mark.parametrize(
+    "name,arguments",
+    [
+        ("tokencut_json", {"json_str": "[1,2,3]", "max_items": -1}),
+        ("tokencut_json", {"json_str": "[1,2,3]", "max_tokens": 0}),
+        ("tokencut_tree", {"max_depth": -1}),
+        ("tokencut_tree", {"max_depth": True}),
+        ("tokencut_tree", {"max_tokens": 0}),
+    ],
+)
+def test_new_tools_reject_invalid_limits(name, arguments):
+    response = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        }
+    )
+    assert response["result"]["isError"]
 
 
 def test_handle_tokencut_stats():
@@ -72,7 +185,15 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
     assert responses[0]["id"] == 1
     assert responses[0]["result"]["serverInfo"]["name"] == "tokencut"
     assert responses[1]["id"] == 2
-    assert len(responses[1]["result"]["tools"]) == 5
+    assert {tool["name"] for tool in responses[1]["result"]["tools"]} == {
+        "tokencut_exec",
+        "tokencut_read",
+        "tokencut_retrieve",
+        "tokencut_diff",
+        "tokencut_tree",
+        "tokencut_json",
+        "tokencut_stats",
+    }
     assert responses[2]["id"] == 3
     assert "tokencut Session Savings" in responses[2]["result"]["content"][0]["text"]
 
@@ -155,6 +276,8 @@ def test_short_output_overhead_and_retrieval_are_counted(monkeypatch):
         {},
         {"command": 42},
         {"command": "echo hi", "max_tokens": 1},
+        {"command": "echo hi", "budget": 1},
+        {"command": "echo hi", "budget": True},
         {"command": "echo hi", "max_lines": True},
     ],
 )

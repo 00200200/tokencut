@@ -10,9 +10,11 @@ from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
+from tokencut.core.json_slimmer import slim_json
 from tokencut.core.redactor import redact_secrets
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
+from tokencut.core.tree_scanner import format_tree_as_text, scan_directory
 from tokencut.metrics.tokenizer import count_tokens
 
 # Global session metrics accumulator
@@ -35,6 +37,10 @@ TOOLS_DEFINITIONS = [
                 "max_lines": {
                     "type": "integer",
                     "description": "Opt into truncation with this line limit. Omit to preserve diagnostics and unknown output.",
+                },
+                "budget": {
+                    "type": "integer",
+                    "description": "Compatibility alias for max_tokens; explicitly permits truncation.",
                 },
             },
             "required": ["command"],
@@ -100,6 +106,47 @@ TOOLS_DEFINITIONS = [
         },
     },
     {
+        "name": "tokencut_tree",
+        "description": "Analyze directory token distribution and locate oversized files/directories (e.g. lockfiles, test fixtures) that consume disproportionate context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Root directory to scan (default '.').",
+                    "default": ".",
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum folder depth (default 3).",
+                    "default": 3,
+                },
+            },
+        },
+    },
+    {
+        "name": "tokencut_json",
+        "description": "Preview JSON arrays, strings and nested data with bounded output. Omitted values and schema variants must be recovered from the redacted cache before relying on them.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "json_str": {
+                    "type": "string",
+                    "description": "Raw JSON string to compact.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Optional file path containing JSON to compact.",
+                },
+                "max_items": {
+                    "type": "integer",
+                    "description": "Maximum array items to keep per list (default 3).",
+                    "default": 3,
+                },
+            },
+        },
+    },
+    {
         "name": "tokencut_stats",
         "description": "Report estimated net output reduction, including footers and retrievals. Not model billing or subscription quota.",
         "inputSchema": {
@@ -136,7 +183,7 @@ for _tool in TOOLS_DEFINITIONS:
 
 
 def _budget(arguments: dict[str, Any]) -> int:
-    value = arguments.get("max_tokens", 2000)
+    value = arguments.get("max_tokens", arguments.get("budget", 2000))
     if type(value) is not int or not 64 <= value <= 32000:
         raise ValueError("max_tokens must be an integer between 64 and 32000")
     return value
@@ -186,7 +233,7 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
             combined_raw = combined_raw.decode("utf-8", errors="replace")
         footer = "\n[command timed out after 120s; output may be partial]"
 
-    if "max_tokens" in arguments or "max_lines" in arguments:
+    if any(key in arguments for key in ("max_tokens", "max_lines", "budget")):
         opts = CleanerOptions(max_lines=max_lines, enable_cache=False)
         compacted = compact_terminal_output(combined_raw, opts)
         output = compress_to_budget(
@@ -249,6 +296,39 @@ def handle_tokencut_diff(arguments: dict[str, Any]) -> str:
         else "No git changes detected."
     )
     return _record(raw_diff, output)
+
+
+def handle_tokencut_tree(arguments: dict[str, Any]) -> str:
+    budget = _budget(arguments)
+    path_str = arguments.get("path", ".")
+    max_depth = arguments.get("max_depth", 3)
+    if type(max_depth) is not int or not 0 <= max_depth <= 64:
+        raise ValueError("max_depth must be an integer between 0 and 64")
+    target = Path(path_str).resolve()
+    if not target.exists():
+        raise ValueError(f"Path does not exist: {path_str}")
+
+    root_node, _ = scan_directory(target, max_depth=max_depth)
+    raw = format_tree_as_text(root_node, root_node.tokens)
+    return _record(raw, compress_to_budget(raw, budget, source="tree"))
+
+
+def handle_tokencut_json(arguments: dict[str, Any]) -> str:
+    budget = _budget(arguments)
+    max_items = arguments.get("max_items", 3)
+    if type(max_items) is not int or max_items < 0:
+        raise ValueError("max_items must be a nonnegative integer")
+    raw_str = arguments.get("json_str")
+    path_str = arguments.get("path")
+    if path_str:
+        raw_str = Path(path_str).read_text(encoding="utf-8", errors="replace")
+
+    if not raw_str:
+        return "Error: either json_str or path must be provided."
+
+    preview = slim_json(raw_str, max_array_items=max_items, cache_full=False)
+    output = compress_to_budget(preview, budget, original_text=raw_str, source="json")
+    return _record(raw_str, output)
 
 
 def handle_tokencut_stats() -> str:
@@ -316,6 +396,8 @@ def _respond(req: Any) -> dict[str, Any] | None:
         "tokencut_read": handle_tokencut_read,
         "tokencut_retrieve": handle_tokencut_retrieve,
         "tokencut_diff": handle_tokencut_diff,
+        "tokencut_tree": handle_tokencut_tree,
+        "tokencut_json": handle_tokencut_json,
         "tokencut_stats": lambda _: handle_tokencut_stats(),
     }
     name, arguments = params.get("name"), params.get("arguments", {})

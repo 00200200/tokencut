@@ -1,0 +1,53 @@
+name: 'tokencut Context Optimizer & Token Gate'
+description: 'Token optimization engine and PR context impact gate for AI coding workflows.'
+author: '00200200'
+
+inputs:
+  command:
+    description: 'Command to run through tokencut'
+    required: false
+    default: ''
+  pr-check:
+    description: 'Analyze PR token delta and post summary'
+    required: false
+    default: 'false'
+  max-token-delta:
+    description: 'Maximum allowable net token increase before failing'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        version: "latest"
+
+    - name: Install tokencut
+      shell: bash
+      run: uv pip install --system "$GITHUB_ACTION_PATH"
+
+    - name: Run command with tokencut
+      if: ${{ inputs.command != '' }}
+      shell: bash
+      env:
+        TOKENCUT_COMMAND: ${{ inputs.command }}
+      run: tokencut run -- bash -e -o pipefail -c "$TOKENCUT_COMMAND"
+
+    - name: Analyze PR Token Impact
+      if: ${{ inputs.pr-check == 'true' }}
+      shell: bash
+      env:
+        TOKENCUT_MAX_DELTA: ${{ inputs.max-token-delta }}
+      run: |
+        ARGS=()
+        if [ -n "$TOKENCUT_MAX_DELTA" ]; then
+          ARGS=(--max-delta "$TOKENCUT_MAX_DELTA")
+        fi
+        tokencut pr --markdown "${ARGS[@]}"

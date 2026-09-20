@@ -93,7 +93,7 @@ CLI dollar figures use fixed example prices, not your actual bill.
 
 ## Architecture
 
-`tokencut` is designed around six core mechanisms:
+`tokencut` provides these local context tools:
 
 ### 1. Compress-Cache-Retrieve (CCR)
 `tokencut run` and MCP `tokencut_exec` default to conservative filtering: fold
@@ -160,6 +160,21 @@ Best-effort pattern matching redacts recognized API keys, JWTs, and password-bea
 ### 6. Prompt Cache Optimization (`tokencut lint`)
 Cache behavior and pricing depend on the provider and model. `tokencut lint` analyzes system instruction files (`CLAUDE.md`, `.cursorrules`, system prompts) to identify dynamic timestamps, non-deterministic paths, and volatile headers that invalidate prompt caches.
 
+### 7. Structured JSON & API Payload Compaction (`tokencut json`)
+Folds arrays, long strings, and deeply nested values into a preview with sample
+items. The redacted original is cached for recovery. Omitted items may contain
+different fields or important values; retrieve them before drawing conclusions.
+
+### 8. System Diagnostics & Auto-Configuration (`tokencut doctor`)
+Checks the Python runtime, cache, client configuration, and shell aliases.
+`tokencut doctor --fix` and `tokencut install` configure supported integrations.
+A successful configuration check does not establish that a live agent used the tools.
+
+### 9. Pull Request Token Impact Analyzer (`tokencut pr`)
+Estimates token changes against a Git base ref, grouped into code, documentation,
+and lockfiles. `--markdown` emits a review summary; `--max-delta <N>` sets a CI
+threshold. This measures repository text, not model usage during a task.
+
 ---
 
 ## Quickstart
@@ -191,6 +206,15 @@ tokencut cat src/server.py --skeleton
 # Inspect git diff with folded lockfiles
 tokencut diff
 
+# Preview a large JSON response with recovery references
+tokencut json api_response.json
+
+# Check local integration configuration
+tokencut doctor
+
+# Estimate the token impact of a change
+tokencut pr --base main --markdown
+
 # Audit CLAUDE.md for prompt cache busting
 tokencut lint CLAUDE.md
 
@@ -208,26 +232,38 @@ uv sync --all-extras
 
 ---
 
-## Integrations
+## Integrations & Supported Platforms
 
-### Claude Code
-Register `tokencut` as a native MCP server:
+`tokencut` operates across desktop applications, AI-enabled IDEs, coding agents, and terminal command-line pipelines.
+
+### Configuration helpers
+
+After installing this repository, configure supported targets or inspect their status:
+
+```bash
+tokencut install --all
+tokencut doctor
+```
+
+Use individual install flags for specific clients. These commands expose tools;
+they do not make every client route all output through TokenCut.
+
+### Claude Code CLI
+
+Register the MCP server:
 
 ```bash
 claude mcp add --scope user tokencut -- tokencut mcp
 ```
 
-This exposes five tools directly to Claude:
+This exposes seven tools:
 - `tokencut_exec`: Runs bash commands with output compaction and CCR caching.
 - `tokencut_read`: Reads files with support for AST skeletons, symbol extraction, and line ranges.
 - `tokencut_retrieve`: Retrieves omitted slices from cached terminal runs by reference ID.
 - `tokencut_diff`: Generates slim git diffs with lockfile folding.
+- `tokencut_tree`: Profiles repository token distribution.
+- `tokencut_json`: Previews JSON with folded arrays and recoverable omitted values.
 - `tokencut_stats`: Reports estimated net session output reduction, including retrieval overhead.
-
-You can also wrap commands directly:
-```bash
-tokencut run -- npm test
-```
 
 To filter native Bash output automatically, opt in to the Claude Code hook:
 
@@ -242,16 +278,22 @@ the remaining result fields, including exit status. It does not approve commands
 or rewrite their inputs. Commands reported through `PostToolUseFailure` keep their
 original diagnostics. This is a Claude Code integration, not a Claude Desktop chat hook.
 
-### Claude Desktop
+### Claude Desktop (macOS)
 
-On macOS, merge the `mcpServers` entry shown below into
+```bash
+tokencut install --claude-desktop
+```
+
+Or merge the `mcpServers` entry shown below into
 `~/Library/Application Support/Claude/claude_desktop_config.json`. Use an absolute
 binary path from `command -v tokencut`, restart Claude Desktop, and check
 **Settings → Developer** or **+ → Connectors** for the connected server.
 This exposes tools; it does not filter every conversation or other tool result.
 
 ### Cursor & Windsurf
-Add to your `mcp.json` (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
+
+Use `tokencut install --cursor` for `~/.cursor/mcp.json`, or merge this entry
+into the client's MCP configuration:
 
 ```json
 {
@@ -264,7 +306,7 @@ Add to your `mcp.json` (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
 }
 ```
 
-### Codex
+### Codex / local ChatGPT desktop
 
 ```bash
 codex mcp add tokencut -- tokencut mcp
@@ -295,7 +337,7 @@ Keep guidance short and conditional on TokenCut being available:
 
 - Codex: add to `~/.codex/AGENTS.md`, then start a new session.
 - Claude Code: add to `~/.claude/CLAUDE.md`; reload through `/memory` or start a new session.
-- Claude Desktop: save in **Settings → General → Instructions for Claude**
+- Claude Desktop: save in **Settings → Account → Instructions for Claude**
   (called profile preferences in older versions).
 
 These are tool-selection preferences, not guaranteed interception. Local MCP
@@ -318,9 +360,42 @@ older IDE versions may use `~/.gemini/antigravity/mcp_config.json`. Gemini CLI u
 For exec/diff, pass the target project's absolute `cwd`. Prefer absolute file paths.
 Installation exposes tools; it does not automatically rewrite native shell calls.
 
-Optional shell wrapper:
+### Terminal CLI & POSIX Pipelines (Gemini CLI, Codex, bash, zsh)
+`tokencut` integrates into standard terminal workflows:
 ```bash
-alias cc="tokencut run --"
+# Add 'cc' shortcut to ~/.zshrc or ~/.bashrc
+tokencut install --alias
+
+# Run commands with automatic token compaction
+cc pytest -v tests/
+cc npm test
+
+# Pipe stdout/stderr through tokencut
+cargo test 2>&1 | tokencut pipe
+curl https://api.github.com/repos/00200200/tokencut/commits | tokencut json
+```
+
+### GitHub Actions CI Gatekeeper
+The composite action can audit PR token delta or wrap test steps:
+
+```yaml
+- name: Check PR Token Impact
+  uses: 00200200/tokencut@main
+  with:
+    pr-check: 'true'
+    max-token-delta: '25000'
+```
+
+### Pre-Commit Hook
+Add audits to your `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/00200200/tokencut
+    rev: main
+    hooks:
+      - id: tokencut-lint
+      - id: tokencut-pr
 ```
 
 ---
@@ -335,12 +410,17 @@ alias cc="tokencut run --"
 | `tokencut cat <file> -y <sym>` | Extracts a specific class, method, or function by name. |
 | `tokencut cat <file> -l <range>` | Extracts a specific line range with file context. |
 | `tokencut retrieve <ref_id>` | Retrieves uncompressed output from the CCR cache. |
+| `tokencut json [path]` | Compacts large JSON payloads, folding arrays and caching raw data. |
 | `tokencut pipe` | POSIX stdin filter for shell integration. |
 | `tokencut diff [--staged]` | Slims git diffs by folding lockfiles and condensing whitespace. |
+| `tokencut doctor [--fix]` | Checks local integration configuration and optionally applies fixes. |
+| `tokencut install [--all]` | Configures supported MCP clients and shell aliases. |
+| `tokencut pr [--base] [-m]` | Analyzes PR token delta and formats Markdown summaries for CI. |
+| `tokencut cache [stats\|clear]` | Manages the local SQLite Compress-Cache-Retrieve store. |
 | `tokencut lint [file]` | Lints agent instruction files for prompt cache-busting elements. |
 | `tokencut mcp` | Starts the stdio JSON-RPC Model Context Protocol server. |
 | `tokencut hook --install --client claude` | Opts in to conservative filtering of Claude Code Bash results. |
-| `tokencut stats` | Displays lifetime token savings and estimated dollar savings. |
+| `tokencut stats [--format]` | Displays estimated lifetime savings in table, JSON, or Markdown. |
 | `tokencut demo` | Interactive visual demo benchmarking token savings on realistic failures. |
 
 ---

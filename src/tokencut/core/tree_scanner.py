@@ -116,3 +116,13 @@ def render_tree(node: FileTokenNode, total_tokens: int, rich_tree: Tree | None =
             tree.add(f"[dim]{child.path.name}[/dim] · {c_badge}")
 
     return tree
+
+
+def format_tree_as_text(node: FileTokenNode, total_tokens: int, indent: str = "") -> str:
+    """Format token tree hierarchy as plain indented text (ideal for LLM context & MCP)."""
+    pct = (node.tokens / total_tokens * 100) if total_tokens > 0 else 0
+    name = f"{node.path.name}/" if node.is_dir else node.path.name
+    lines = [f"{indent}{name} · {node.tokens:,} tok ({pct:.1f}%)"]
+    for child in node.children:
+        lines.append(format_tree_as_text(child, total_tokens, indent + "  "))
+    return "\n".join(lines)

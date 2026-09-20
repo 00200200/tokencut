@@ -79,12 +79,24 @@ class TelemetryStore:
     def record(
         self,
         raw_claude: int,
-        compact_claude: int,
-        raw_openai: int,
-        compact_openai: int,
-        raw_gemini: int,
-        compact_gemini: int,
+        compact_claude: int = 0,
+        raw_openai: int = 0,
+        compact_openai: int = 0,
+        raw_gemini: int = 0,
+        compact_gemini: int = 0,
+        saved_claude: int | None = None,
+        saved_openai: int | None = None,
+        saved_gemini: int | None = None,
+        command: str | None = None,
+        duration_s: float | None = None,
+        **kwargs,
     ):
+        if saved_claude is not None:
+            compact_claude = max(0, raw_claude - saved_claude)
+        if saved_openai is not None:
+            compact_openai = max(0, raw_openai - saved_openai)
+        if saved_gemini is not None:
+            compact_gemini = max(0, raw_gemini - saved_gemini)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
