@@ -49,13 +49,13 @@ struct Snapshot: Decodable {
 
 func compact(_ value: Int) -> String {
     let formatter = NumberFormatter()
-    formatter.locale = Locale(identifier: "pl_PL")
+    formatter.locale = Locale(identifier: "en_US")
     formatter.maximumFractionDigits = abs(value) >= 1000 ? 1 : 0
     let number = abs(value) >= 1000 ? Double(value) / 1000 : Double(value)
     return (formatter.string(from: NSNumber(value: number)) ?? String(value)) + (abs(value) >= 1000 ? "k" : "")
 }
 func count(_ value: Int) -> String {
-    value.formatted(.number.locale(Locale(identifier: "pl_PL")))
+    value.formatted(.number.locale(Locale(identifier: "en_US")))
 }
 
 /// One serial pipe connection; no server socket and no work on the UI thread.
@@ -104,12 +104,12 @@ actor MonitorBridge {
             let chunk = output?.availableData ?? Data()
             guard !chunk.isEmpty else {
                 process = nil
-                throw NSError(domain: "TokenCut", code: 1, userInfo: [NSLocalizedDescriptionKey: "Proces monitora zakończył pracę. Ponawiam połączenie przy odświeżeniu."])
+                throw NSError(domain: "TokenCut", code: 1, userInfo: [NSLocalizedDescriptionKey: "The monitor stopped. Reconnecting on the next refresh."])
             }
             buffer.append(chunk)
             guard buffer.count < 8 * 1024 * 1024 else {
                 process?.terminate()
-                throw NSError(domain: "TokenCut", code: 2, userInfo: [NSLocalizedDescriptionKey: "Odpowiedź monitora jest zbyt duża."])
+                throw NSError(domain: "TokenCut", code: 2, userInfo: [NSLocalizedDescriptionKey: "The monitor response is too large."])
             }
         }
         let end = buffer.firstIndex(of: 10)!
@@ -117,7 +117,7 @@ actor MonitorBridge {
         buffer.removeSubrange(...end)
         let envelope = try JSONSerialization.jsonObject(with: line) as? [String: Any]
         guard let result = envelope?["result"], (envelope?["id"] as? Int) == sequence else {
-            throw NSError(domain: "TokenCut", code: 3, userInfo: [NSLocalizedDescriptionKey: "Monitor nie mógł wykonać operacji. Sprawdź dostęp do lokalnych statystyk."])
+            throw NSError(domain: "TokenCut", code: 3, userInfo: [NSLocalizedDescriptionKey: "The monitor could not complete the request. Check access to local statistics."])
         }
         return try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
     }
@@ -200,7 +200,7 @@ actor MonitorBridge {
                 decoder.keyDecodingStrategy = .convertFromSnakeCase
                 if method == "check" {
                     let check = try decoder.decode(Check.self, from: data)
-                    message = (check.ok ? "Test zakończony: " : "Test nieudany: ") + check.detail
+                    message = (check.ok ? "Check complete: " : "Check failed: ") + check.detail
                     let update = try await bridge.request("snapshot")
                     snapshot = try decoder.decode(Snapshot.self, from: update)
                 } else {
@@ -217,9 +217,9 @@ actor MonitorBridge {
         guard !busy else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "TokenCut-statystyki.json"
-        panel.title = "Eksportuj lokalne statystyki"
-        panel.prompt = "Eksportuj"
+        panel.nameFieldStringValue = "TokenCut-statistics.json"
+        panel.title = "Export local statistics"
+        panel.prompt = "Export"
         NSApp.activate(ignoringOtherApps: true)
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
@@ -227,7 +227,7 @@ actor MonitorBridge {
                 do {
                     let data = try await self.bridge.request("export")
                     try data.write(to: url, options: .atomic)
-                    self.message = "Statystyki zapisane. Eksport zawiera wyłącznie liczniki i metadane."
+                    self.message = "Statistics saved. The export contains only counters and metadata."
                 } catch { self.error = error.localizedDescription }
             }
         }
@@ -253,44 +253,44 @@ struct PanelView: View {
                 Image(systemName: "leaf.fill").font(.title2).foregroundStyle(green)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("TokenCut").font(.title3.bold())
-                    Text("Mniej kontekstu. Więcej przejrzystości.").font(.caption).foregroundStyle(.secondary)
+                    Text("Less context. More clarity.").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if model.busy { ProgressView().controlSize(.small) }
                 Circle().fill(model.error != nil ? Color.orange : green).frame(width: 7, height: 7)
-                    .accessibilityLabel(model.error == nil ? "Monitor lokalny" : "Problem z monitorem")
+                    .accessibilityLabel(model.error == nil ? "Local monitor" : "Monitor unavailable")
             }.padding(20)
-            Picker("Widok", selection: $model.tab) {
-                Text("Oszczędności").tag(0)
-                Text("Integracje").tag(1)
-                Text("Limity").tag(2)
+            Picker("View", selection: $model.tab) {
+                Text("Savings").tag(0)
+                Text("Integrations").tag(1)
+                Text("Limits").tag(2)
             }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 16)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if let error = model.error { notice(error, icon: "exclamationmark.triangle", color: .orange) }
                     if let message = model.message { notice(message, icon: "checkmark.circle", color: green) }
                     if let data = model.snapshot {
-                        if data.paused { notice("Optymalizacja wstrzymana. Narzędzia zwracają pełny wynik. Odzyskiwanie nadal jest dostępne.", icon: "pause.circle", color: .orange) }
+                        if data.paused { notice("Optimization paused. Tools return full output. Recovery is still available.", icon: "pause.circle", color: .orange) }
                         if model.tab == 0 { savings(data) }
                         else if model.tab == 1 { integrations(data) }
                         else { QuotaDetails(model: model) }
                     } else if model.error == nil {
-                        Card { Text("Wczytywanie lokalnych pomiarów…").foregroundStyle(.secondary) }
+                        Card { Text("Loading local measurements…").foregroundStyle(.secondary) }
                     }
                 }.padding(.horizontal, 20).padding(.bottom, 16)
             }.frame(height: 480)
             Divider()
             HStack {
                 Button(action: model.togglePause) {
-                    Label(model.snapshot?.paused == true ? "Wznów" : "Wstrzymaj", systemImage: model.snapshot?.paused == true ? "play" : "pause")
+                    Label(model.snapshot?.paused == true ? "Resume" : "Pause", systemImage: model.snapshot?.paused == true ? "play" : "pause")
                 }.keyboardShortcut("p").disabled(model.busy || model.snapshot == nil)
                 Spacer()
-                Button("Eksportuj", action: model.export).keyboardShortcut("e").disabled(model.busy || model.snapshot == nil)
+                Button("Export", action: model.export).keyboardShortcut("e").disabled(model.busy || model.snapshot == nil)
                 Menu {
-                    Button("Otwórz w oknie") { PanelWindow.show(model) }
-                    Button("Pokaż pupila") { PetWindow.show(model) }
-                    Button("Odśwież", action: model.refresh).keyboardShortcut("r")
-                    Button("Zakończ TokenCut") { NSApp.terminate(nil) }.keyboardShortcut("q")
+                    Button("Open dashboard") { PanelWindow.show(model) }
+                    Button("Show pet") { PetWindow.show(model) }
+                    Button("Refresh", action: model.refresh).keyboardShortcut("r")
+                    Button("Quit TokenCut") { NSApp.terminate(nil) }.keyboardShortcut("q")
                 } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).frame(width: 20)
             }.padding(16)
         }.frame(width: 440)
@@ -306,7 +306,7 @@ struct PanelView: View {
     @ViewBuilder private func savings(_ data: Snapshot) -> some View {
         Card {
             HStack {
-                Text("DZISIAJ · TOKENCUT").font(.caption.bold()).foregroundStyle(.secondary)
+                Text("TODAY · TOKENCUT").font(.caption.bold()).foregroundStyle(.secondary)
                 Spacer()
                 Text("o200k_base").font(.caption2.monospaced()).foregroundStyle(.secondary)
             }
@@ -314,59 +314,59 @@ struct PanelView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("\(total.net >= 0 ? "↓" : "↑") \(count(abs(total.net)))")
                         .font(.system(size: 38, weight: .semibold, design: .rounded)).foregroundStyle(total.net >= 0 ? green : .orange)
-                    Text(total.net >= 0 ? "mniej tokenów" : "narzutu netto").font(.caption).foregroundStyle(.secondary)
+                    Text(total.net >= 0 ? "fewer tokens" : "net overhead").font(.caption).foregroundStyle(.secondary)
                 }.minimumScaleFactor(0.65).lineLimit(1)
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Przed → po").font(.caption).foregroundStyle(.secondary)
+                        Text("Before → after").font(.caption).foregroundStyle(.secondary)
                         Text("\(count(total.before)) → \(count(total.after))").font(.headline.monospacedDigit())
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
-                        Text("Koszt odzyskiwania").font(.caption).foregroundStyle(.secondary)
+                        Text("Recovery cost").font(.caption).foregroundStyle(.secondary)
                         Text("\(count(total.recovery))").font(.headline.monospacedDigit())
                     }
                 }
-                Text("\(total.events) pomiarów · odzyskiwanie uwzględnione w wyniku netto")
+                Text("\(total.events) measurements · recovery included in the net result")
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
-                Text("Jeszcze bez pomiarów").font(.title2.weight(.semibold))
-                Text("Wyniki pojawią się po użyciu wrappera lub MCP TokenCut.")
+                Text("No measurements yet").font(.title2.weight(.semibold))
+                Text("Results appear after using the TokenCut wrapper or MCP tools.")
                     .font(.callout).foregroundStyle(.secondary)
             }
-            Text("Szacunek tekstu narzędzi. Nie jest miarą wykorzystania abonamentu ani rozumowania modelu.")
+            Text("Estimated tool text. This does not measure subscription usage or model reasoning.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Card {
-            Text("Ostatnie 7 dni").font(.headline)
+            Text("Last 7 days").font(.headline)
             if data.days.contains(where: { $0.net != nil }) {
                 Chart(data.days) { day in
                     if let net = day.net {
-                        BarMark(x: .value("Dzień", day.short), y: .value("Redukcja netto", net))
+                        BarMark(x: .value("Day", day.short), y: .value("Net reduction", net))
                             .foregroundStyle(net >= 0 ? green.gradient : Color.orange.gradient)
                             .cornerRadius(4)
-                            .accessibilityLabel("\(day.date): \(net) tokenów netto")
+                            .accessibilityLabel("\(day.date): \(net) net tokens")
                     }
                 }.chartXScale(domain: data.days.map(\.short)).frame(height: 105)
             } else {
-                Text("Brak danych do wykresu").font(.callout).foregroundStyle(.secondary).frame(height: 65)
+                Text("No chart data yet").font(.callout).foregroundStyle(.secondary).frame(height: 65)
             }
-            Text("Dni bez pomiarów nie mają słupka.").font(.caption2).foregroundStyle(.secondary)
+            Text("Days without measurements have no bar.").font(.caption2).foregroundStyle(.secondary)
         }
         Card {
-            Picker("Podział dzisiejszych pomiarów", selection: $model.grouping) {
-                Text("Aplikacje").tag("client")
-                Text("Projekty").tag("project")
-                Text("Narzędzia").tag("operation")
+            Picker("Today's measurements by", selection: $model.grouping) {
+                Text("Apps").tag("client")
+                Text("Projects").tag("project")
+                Text("Tools").tag("operation")
             }.pickerStyle(.segmented)
             let groups = data.breakdown[model.grouping] ?? []
-            if groups.isEmpty { Text("Brak przypisanych pomiarów").font(.caption).foregroundStyle(.secondary) }
+            if groups.isEmpty { Text("No attributed measurements").font(.caption).foregroundStyle(.secondary) }
             ForEach(groups) { group in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.grouping == "project" && group.name.hasPrefix("/") ? URL(fileURLWithPath: group.name).lastPathComponent : group.name)
                             .font(.callout).lineLimit(1).help(group.name)
-                        Text("\(count(group.before)) → \(count(group.after)) · \(group.events) pomiarów")
+                        Text("\(count(group.before)) → \(count(group.after)) · \(group.events) measurements")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -377,18 +377,18 @@ struct PanelView: View {
         }
         if let prepared = data.prepared {
             Card {
-                Label("Hook Claude · przygotowane", systemImage: "clock.arrow.circlepath").font(.headline)
-                Text("\(count(prepared.before)) → \(count(prepared.after)) · netto \(count(prepared.net))")
-                Text("Klient nie potwierdza przyjęcia podmiany. Te pomiary są poza głównym licznikiem.")
+                Label("Claude hook · prepared", systemImage: "clock.arrow.circlepath").font(.headline)
+                Text("\(count(prepared.before)) → \(count(prepared.after)) · net \(count(prepared.net))")
+                Text("The client does not confirm replacement delivery. These measurements stay outside the main counter.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         if data.legacy.events > 0 {
-            Text("Historia: \(data.legacy.events) dawnych pomiarów bez przypisania. Szacowana redukcja: \(count(data.legacy.net ?? 0)). Osobno od bieżącego licznika.")
+            Text("History: \(data.legacy.events) unattributed legacy measurements. Estimated reduction: \(count(data.legacy.net ?? 0)). Separate from the current counter.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         if data.otherMethodEvents > 0 {
-            Text("\(data.otherMethodEvents) pomiarów inną metodą; poza licznikiem o200k_base.").font(.caption).foregroundStyle(.secondary)
+            Text("\(data.otherMethodEvents) measurements using another method; excluded from o200k_base.").font(.caption).foregroundStyle(.secondary)
         }
     }
     @ViewBuilder private func integrations(_ data: Snapshot) -> some View {
@@ -397,41 +397,41 @@ struct PanelView: View {
                 HStack {
                     Text(item.name).font(.headline)
                     Spacer()
-                    Text(item.installed ? "Zainstalowane" : "Niedostępne")
+                    Text(item.installed ? "Installed" : "Unavailable")
                         .font(.caption).foregroundStyle(item.installed ? green : .secondary)
                 }
-                Text(item.clients.isEmpty ? "Brak konfiguracji" : "Skonfigurowane: " + item.clients.joined(separator: ", "))
+                Text(item.clients.isEmpty ? "Not configured" : "Configured: " + item.clients.joined(separator: ", "))
                     .font(.caption)
                 if let timestamp = item.lastEvent {
-                    Label("Zaobserwowano pomiar: " + Date(timeIntervalSince1970: timestamp).formatted(.dateTime.day().month().hour().minute().locale(Locale(identifier: "pl_PL"))), systemImage: "checkmark.circle")
+                    Label("Last observed measurement: " + Date(timeIntervalSince1970: timestamp).formatted(.dateTime.day().month().hour().minute().locale(Locale(identifier: "en_US"))), systemImage: "checkmark.circle")
                         .font(.caption).foregroundStyle(green)
                 } else {
-                    Text("Brak potwierdzonego pomiaru").font(.caption).foregroundStyle(.secondary)
+                    Text("No confirmed measurement").font(.caption).foregroundStyle(.secondary)
                 }
                 Text(item.detail).font(.caption).foregroundStyle(.secondary)
                 if item.name == "RTK", let total = data.rtk {
-                    Text("Dzisiaj: \(count(total.before)) → \(count(total.after)) · netto \(count(total.net))")
+                    Text("Today: \(count(total.before)) → \(count(total.after)) · net \(count(total.net))")
                         .font(.callout.monospacedDigit())
-                    Text("Bajty / 4. Nie sumujemy z TokenCut.").font(.caption2).foregroundStyle(.secondary)
+                    Text("Bytes / 4. Not added to TokenCut.").font(.caption2).foregroundStyle(.secondary)
                 }
                 if item.name == "Serena" {
-                    Link("Konfiguracja Sereny ↗", destination: URL(string: "https://oraios.github.io/serena/02-usage/030_clients.html")!).font(.caption)
+                    Link("Serena setup ↗", destination: URL(string: "https://oraios.github.io/serena/02-usage/030_clients.html")!).font(.caption)
                 }
             }
         }
         Button(action: model.check) {
-            Label("Sprawdź integrację", systemImage: "checkmark.shield")
+            Label("Check integration", systemImage: "checkmark.shield")
                 .frame(maxWidth: .infinity)
         }.buttonStyle(.borderedProminent).tint(green).disabled(model.busy).keyboardShortcut("t")
         if let check = data.lastCheck {
-            Text((check.ok ? "Lokalny test MCP: OK. " : "Lokalny test MCP: błąd. ") + check.detail)
+            Text((check.ok ? "Local MCP check: OK. " : "Local MCP check: failed. ") + check.detail)
                 .font(.caption).foregroundStyle(.secondary)
         }
         ForEach(data.issues, id: \.self) { notice($0, icon: "exclamationmark.triangle", color: .orange) }
-        DisclosureGroup("Lokalne źródła danych (\(data.sources.count))") {
+        DisclosureGroup("Local data sources (\(data.sources.count))") {
             ForEach(data.sources, id: \.self) { Text($0).font(.caption2.monospaced()).textSelection(.enabled) }
         }.font(.caption)
-        Text("Monitor: co 5 s przy otwartym panelu, co 30 s w tle. Bez wywołań AI i bez serwera sieciowego.")
+        Text("Monitor: every 5 s with the panel open, 30 s in the background. No AI calls or network listener.")
             .font(.caption).foregroundStyle(.secondary)
     }
 }
@@ -452,7 +452,7 @@ struct PanelView: View {
             panel.title = "TokenCut"
             panel.isReleasedWhenClosed = false
             panel.delegate = delegate
-            panel.contentView = NSHostingView(rootView: PanelView(model: model, visibilityKey: "window").environment(\.locale, Locale(identifier: "pl_PL")))
+            panel.contentView = NSHostingView(rootView: PanelView(model: model, visibilityKey: "window").environment(\.locale, Locale(identifier: "en_US")))
             panel.center()
             window = panel
         }
@@ -480,7 +480,7 @@ struct PanelView: View {
     @AppStorage("showMenuBar") private var showMenuBar = false
     var body: some Scene {
         MenuBarExtra(isInserted: $showMenuBar) {
-            PanelView(model: model).environment(\.locale, Locale(identifier: "pl_PL"))
+            PanelView(model: model).environment(\.locale, Locale(identifier: "en_US"))
         } label: {
             Text(model.title).monospacedDigit()
         }.menuBarExtraStyle(.window)

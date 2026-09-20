@@ -26,10 +26,10 @@ def test_codex_weekly_primary_null_secondary_and_multi_bucket():
     }
     windows = usage.codex_windows(payload)
     assert len(windows) == 2
-    assert windows[0]["label"] == "Tydzień"
+    assert windows[0]["label"] == "Weekly"
     assert windows[0]["remaining_percent"] == 61
     assert windows[1]["remaining_percent"] == 100
-    assert windows[1]["label"] == "Extra · 5 godzin"
+    assert windows[1]["label"] == "Extra · 5 hours"
     assert "private-account" not in json.dumps(windows)
 
 
@@ -84,7 +84,7 @@ def test_collector_throttles_coalesces_and_clears_failed_refresh():
         return [
             {
                 "id": "primary",
-                "label": "Tydzień",
+                "label": "Weekly",
                 "remaining_percent": 61,
                 "used_percent": 39,
                 "resets_at": None,

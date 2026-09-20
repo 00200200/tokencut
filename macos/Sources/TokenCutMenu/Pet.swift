@@ -17,80 +17,64 @@ struct QuotaEnvelope: Decodable { let providers: [QuotaProvider] }
 
 private let petGreen = Color(red: 0.12, green: 0.63, blue: 0.47)
 
-struct PetFace: View {
-    var paused: Bool
-    var body: some View {
-        ZStack {
-            Ellipse().fill(petGreen.opacity(0.15)).frame(width: 62, height: 12).offset(y: 35)
-            Image(systemName: "leaf.fill").font(.system(size: 24)).foregroundStyle(petGreen).rotationEffect(.degrees(-30)).offset(x: 6, y: -34)
-            RoundedRectangle(cornerRadius: 22).fill((paused ? Color.secondary : petGreen).gradient)
-                .frame(width: 66, height: 63)
-            HStack(spacing: 16) {
-                Capsule().frame(width: 6, height: paused ? 3 : 12)
-                Capsule().frame(width: 6, height: paused ? 3 : 12)
-            }.foregroundStyle(.white).offset(y: -4)
-            Capsule().fill(.white.opacity(0.85)).frame(width: 13, height: 3).offset(y: 13)
-        }.frame(width: 78, height: 84)
-            .accessibilityLabel(paused ? "Pupil TokenCut, optymalizacja wstrzymana" : "Pupil TokenCut. Przeciągnij, aby zmienić położenie.")
-    }
-}
-
 struct PetView: View {
     @ObservedObject var model: Model
     @AppStorage("showMenuBar") private var showMenuBar = false
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: -4) {
             PetFace(paused: model.snapshot?.paused == true)
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 9) {
                 HStack {
                     Button { showLimits() } label: {
                         Text("TokenCut").font(.system(size: 13, weight: .bold, design: .rounded))
-                    }.buttonStyle(.plain).help("Otwórz limity i oszczędności")
+                    }.buttonStyle(.plain).help("Open limits and savings")
                     Spacer(minLength: 6)
-                    Text("zostało").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text("LEFT").font(.system(size: 8, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
                     Menu {
-                        Button("Limity i reset") { showLimits() }
-                        Button("Oszczędności") { model.tab = 0; PanelWindow.show(model) }
-                        Button("Odśwież limity") { model.refreshUsage(force: true) }
-                        Button(model.snapshot?.paused == true ? "Wznów optymalizację" : "Wstrzymaj optymalizację", action: model.togglePause)
+                        Button("Limits and reset") { showLimits() }
+                        Button("Savings") { model.tab = 0; PanelWindow.show(model) }
+                        Button("Refresh limits") { model.refreshUsage(force: true) }
+                        Button(model.snapshot?.paused == true ? "Resume optimization" : "Pause optimization", action: model.togglePause)
                         Divider()
-                        Toggle("Pokaż także pasek menu", isOn: $showMenuBar)
-                        Button("Przenieś do rogu") { PetWindow.resetPosition() }
-                        Button("Ukryj pupila") { PetWindow.hide() }
-                        Button("Zakończ TokenCut") { NSApp.terminate(nil) }
+                        Toggle("Also show menu bar", isOn: $showMenuBar)
+                        Button("Move to corner") { PetWindow.resetPosition() }
+                        Button("Hide pet") { PetWindow.hide() }
+                        Button("Quit TokenCut") { NSApp.terminate(nil) }
                     } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).frame(width: 22).help("Opcje pupila").accessibilityLabel("Opcje pupila")
+                    .menuStyle(.borderlessButton).frame(width: 22).help("Pet options").accessibilityLabel("Pet options")
                 }
                 ForEach(["codex", "claude"], id: \.self) { provider in
                     let row = model.quotas.first { $0.provider == provider }
                     Button { showLimits() } label: {
                         HStack(spacing: 4) {
+                            Circle().fill(provider == "codex" ? petGreen : Color.orange.opacity(0.8)).frame(width: 5, height: 5)
                             Text(provider == "codex" ? "Codex" : "Claude").foregroundStyle(.secondary)
                             Spacer(minLength: 4)
                             if let quota = row?.tightest, row?.status == "ok" {
                                 Text("\(quota.remainingPercent.formatted(.number.precision(.fractionLength(0))))%")
                                     .foregroundStyle(quota.remainingPercent <= 15 ? .orange : petGreen).monospacedDigit().bold()
                             } else {
-                                Text(row?.status == "loading" ? "…" : "brak danych").foregroundStyle(.secondary)
+                                Text(row?.status == "loading" ? "…" : "unavailable").foregroundStyle(.secondary)
                             }
-                        }.font(.system(size: 11))
+                        }.font(.system(size: 11)).padding(.vertical, 2)
                     }.buttonStyle(.plain)
-                    .help("Pozostały limit najbardziej wykorzystanego okna. Kliknij, aby zobaczyć wszystkie okna i czas odczytu.")
+                    .help("Remaining allowance in the most constrained window. Click for all windows and read times.")
                 }
                 Text(savings).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-            }.frame(width: 152)
+            }.frame(width: 154)
+                .padding(13)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 21))
+                .overlay(RoundedRectangle(cornerRadius: 21).strokeBorder(.primary.opacity(0.09)))
+                .shadow(color: .black.opacity(0.10), radius: 8, x: 0, y: 4)
         }
-        .padding(.horizontal, 12).padding(.vertical, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.primary.opacity(0.08)))
-        .padding(4)
+        .padding(8)
         .accessibilityElement(children: .contain)
     }
     private var savings: String {
-        if model.error != nil { return "Pomiar tekstu niedostępny" }
-        if model.snapshot?.paused == true { return "Optymalizacja wstrzymana" }
-        guard let value = model.snapshot?.today?.net else { return "Oszczędności: brak pomiarów" }
-        return "Tekst dziś: \(value >= 0 ? "↓" : "↑")\(compact(abs(value))) tok."
+        if model.error != nil { return "Text measurements unavailable" }
+        if model.snapshot?.paused == true { return "Optimization paused" }
+        guard let value = model.snapshot?.today?.net else { return "Savings: no measurements" }
+        return "Text today: \(value >= 0 ? "↓" : "↑")\(compact(abs(value))) tokens"
     }
     private func showLimits() { model.tab = 2; PanelWindow.show(model) }
 }
@@ -99,11 +83,11 @@ struct QuotaDetails: View {
     @ObservedObject var model: Model
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Pozostałe limity kont").font(.headline)
-            Text("Procenty pochodzą z usług. Oszczędności tekstu TokenCut są osobnym pomiarem. Konto CLI może różnić się od konta w aplikacji.")
+            Text("Remaining account limits").font(.headline)
+            Text("Percentages come from each service. TokenCut text savings are separate. The CLI account may differ from the app account.")
                 .font(.caption).foregroundStyle(.secondary)
             if model.quotas.isEmpty {
-                Text("Brak aktualnego odczytu limitów.").font(.caption).foregroundStyle(.secondary)
+                Text("No current limit readings.").font(.caption).foregroundStyle(.secondary)
             }
             ForEach(model.quotas) { provider in
                 Card {
@@ -117,32 +101,32 @@ struct QuotaDetails: View {
                             HStack {
                                 Text(window.label)
                                 Spacer()
-                                Text("\(window.remainingPercent.formatted(.number.precision(.fractionLength(0))))% zostało").monospacedDigit().bold()
+                                Text("\(window.remainingPercent.formatted(.number.precision(.fractionLength(0))))% remaining").monospacedDigit().bold()
                             }.font(.callout)
                             ProgressView(value: window.remainingPercent, total: 100)
                                 .tint(window.remainingPercent <= 15 ? .orange : petGreen)
-                                .accessibilityLabel("\(window.label): pozostało \(Int(window.remainingPercent)) procent")
+                                .accessibilityLabel("\(window.label): remaining \(Int(window.remainingPercent)) percent")
                             if let reset = window.resetsAt {
-                                Text("Reset: " + Date(timeIntervalSince1970: reset).formatted(.dateTime.day().month().hour().minute().locale(Locale(identifier: "pl_PL"))))
+                                Text("Reset: " + Date(timeIntervalSince1970: reset).formatted(.dateTime.day().month().hour().minute().locale(Locale(identifier: "en_US"))))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
                     Text(provider.message).font(.caption).foregroundStyle(.secondary)
                     if let timestamp = provider.updatedAt {
-                        Text("Odczyt: " + Date(timeIntervalSince1970: timestamp).formatted(.dateTime.hour().minute().locale(Locale(identifier: "pl_PL"))))
+                        Text("Updated: " + Date(timeIntervalSince1970: timestamp).formatted(.dateTime.hour().minute().locale(Locale(identifier: "en_US"))))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Text(provider.source).font(.caption2).foregroundStyle(.secondary)
                     if provider.provider == "claude", provider.status == "unavailable" {
-                        Text("Sprawdź logowanie w Claude Code CLI. Logowanie w Claude Desktop może być osobne.")
+                        Text("Check your Claude Code CLI sign-in. Claude Desktop may use a separate sign-in.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
-            Button("Odśwież limity") { model.refreshUsage(force: true) }
+            Button("Refresh limits") { model.refreshUsage(force: true) }
                 .buttonStyle(.borderedProminent).tint(petGreen).disabled(model.usageBusy)
-            Text("Odczyt z usług co 5 minut; ręcznie najwyżej co 30 sekund. Bez zapytań do modeli. Brak danych nie oznacza pełnego limitu. Limity samego czatu ChatGPT nie są tu udostępniane.")
+            Text("Service reads every 5 minutes; manual refresh at most every 30 seconds. No model calls. Missing data does not mean a full allowance. ChatGPT chat limits are not available here.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
@@ -158,9 +142,9 @@ final class DraggablePetHost: NSHostingView<PetView> {
     static func show(_ model: Model) {
         UserDefaults.standard.set(false, forKey: "petHidden")
         if panel == nil {
-            let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 270, height: 124),
+            let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 310, height: 170),
                                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            window.title = "Pupil TokenCut"
+            window.title = "TokenCut Pet"
             window.level = .floating
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             window.isMovableByWindowBackground = true
@@ -172,6 +156,8 @@ final class DraggablePetHost: NSHostingView<PetView> {
             window.contentView = DraggablePetHost(rootView: PetView(model: model))
             panel = window
             if !window.setFrameUsingName("TokenCutPetPosition") { resetPosition() }
+            // Reuse the saved origin while upgrading the old 2D pet's dimensions.
+            window.setContentSize(NSSize(width: 310, height: 170))
             clampToScreen()
             window.setFrameAutosaveName("TokenCutPetPosition")
             window.delegate = delegate

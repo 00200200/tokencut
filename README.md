@@ -56,7 +56,10 @@ A small draggable SwiftUI pet lives above other windows, remembers its position,
 and keeps working across Spaces. Click it to see quota windows, reset times and
 **estimated tool-output reduction**, before/after counts,
 recovery costs, seven days of history and breakdowns by client, Git project and tool.
-The UI is in Polish, follows the system appearance, and runs without a Dock icon.
+The UI is in English, follows the system appearance, and runs without a Dock icon.
+The mint robot uses bundled 3D-rendered artwork on a transparent background, with
+a small glass-style quota card. Its subtle hover response respects Reduce Motion;
+there is no idle animation, live 3D renderer, or runtime image generation.
 Quota percentages are fetched from services, separately from TokenCut savings.
 Neither counter measures model reasoning or task quality.
 

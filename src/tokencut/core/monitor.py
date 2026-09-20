@@ -59,7 +59,7 @@ def configuration() -> tuple[list[Path], dict, list[str]]:
                     if isinstance(cache, str) and Path(cache).is_absolute():
                         sources.add(Path(cache))
         except (OSError, ValueError, TypeError, AttributeError):
-            issues.append(f"Nie można odczytać konfiguracji: {client}")
+            issues.append(f"Cannot read configuration: {client}")
     return sorted(sources), clients, issues
 
 
@@ -124,7 +124,7 @@ class Monitor:
                 except FileNotFoundError:
                     continue
                 except (OSError, sqlite3.Error):
-                    issues.append(f"Źródło niedostępne: {path}")
+                    issues.append(f"Source unavailable: {path}")
         return issues
 
     @staticmethod
@@ -192,7 +192,7 @@ class Monitor:
         for field in ("client", "project", "operation"):
             groups: dict[str, list] = {}
             for row in current:
-                groups.setdefault(row[field] or "Nieprzypisane", []).append(row)
+                groups.setdefault(row[field] or "Unattributed", []).append(row)
             breakdown[field] = [
                 {"name": name, **self.totals(group)} for name, group in sorted(groups.items())
             ]
@@ -232,15 +232,15 @@ class Monitor:
                     "installed": True,
                     "clients": clients["tokencut"],
                     "last_event": latest["tokencut"],
-                    "detail": "CLI + MCP; hook Claude raportuje przygotowaną podmianę.",
+                    "detail": "CLI + MCP; the Claude hook reports a prepared replacement.",
                 },
                 {
                     "name": "TokenCut Code",
                     "installed": True,
                     "clients": clients["tokencut"],
                     "last_event": latest_code,
-                    "detail": "Wbudowany indeks ast-grep + SQLite: symbole, mapa i wyszukiwanie. "
-                    "Bez wywołań AI. Wystąpienia nazw nie są semantycznymi referencjami LSP.",
+                    "detail": "Built-in ast-grep + SQLite index: symbols, maps and search. "
+                    "No AI calls. Name matches are not semantic LSP references.",
                 },
                 {
                     "name": "Serena",
@@ -249,18 +249,18 @@ class Monitor:
                     ),
                     "clients": clients["serena"],
                     "last_event": None,
-                    "detail": "Niezależny MCP. Brak pomiaru oszczędności i aktywności sesji.",
+                    "detail": "Independent MCP. Savings and session activity are not measured.",
                 },
                 {
                     "name": "RTK",
                     "installed": bool(rtk_path()),
                     "clients": ["TokenCut stdin adapter"] if version in TESTED_RTK else [],
                     "last_event": latest["rtk"],
-                    "detail": f"{version or 'Niedostępny'} · bajty / 4 · osobny licznik. "
+                    "detail": f"{version or 'Unavailable'} · bytes / 4 · separate counter. "
                     + (
-                        "Auto: git status, git diff --stat; kontrola każdego wiersza."
+                        "Auto: git status, git diff --stat; every line is checked."
                         if version in TESTED_RTK
-                        else "Auto używa TokenCut; wersja RTK nie została zweryfikowana."
+                        else "Auto uses TokenCut; this RTK version has not been verified."
                     ),
                 },
             ],
@@ -296,7 +296,7 @@ class Monitor:
                     },
                 },
             ]
-            Path(directory, "fixture.txt").write_text("TokenCut — test integracji ✓\n")
+            Path(directory, "fixture.txt").write_text("TokenCut — integration test ✓\n")
             env = os.environ | {
                 "TOKENCUT_CACHE_DIR": directory,
                 "TOKENCUT_STATE_DIR": directory,
@@ -323,19 +323,19 @@ class Monitor:
                         tool["name"]
                         for tool in replies.get(2, {}).get("result", {}).get("tools", [])
                     )
-                    and "test integracji"
+                    and "integration test"
                     in json.dumps(replies.get(3, {}).get("result", {}), ensure_ascii=False)
                 )
                 self.last_check = {
                     "ok": ok,
                     "timestamp": time.time(),
-                    "detail": "Lokalny MCP: initialize, tools/list, odczyt Unicode. Nie potwierdza podłączenia w otwartym kliencie.",
+                    "detail": "Local MCP: initialize, tools/list, Unicode read. This does not confirm connection in a running client.",
                 }
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 self.last_check = {
                     "ok": False,
                     "timestamp": time.time(),
-                    "detail": "Lokalny MCP nie odpowiedział poprawnie w 15 sekund.",
+                    "detail": "Local MCP did not respond correctly within 15 seconds.",
                 }
         self.configuration_at = 0
         return self.last_check

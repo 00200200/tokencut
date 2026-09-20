@@ -7,6 +7,7 @@ executable="${TOKENCUT_EXECUTABLE:-$HOME/.local/bin/tokencut}"
 swift build -c release
 mkdir -p "$output/Contents/MacOS" "$output/Contents/Resources"
 cp .build/release/TokenCutMenu "$output/Contents/MacOS/TokenCutMenu"
+cp Sources/TokenCutMenu/Resources/pet-3d.png "$output/Contents/Resources/pet-3d.png"
 /usr/bin/python3 - "$output/Contents/Info.plist" "$executable" <<'PY'
 import plistlib, sys
 with open(sys.argv[1], 'wb') as file:
@@ -15,6 +16,7 @@ with open(sys.argv[1], 'wb') as file:
         'CFBundleIdentifier': 'com.tokencut.menu', 'CFBundleVersion': '1',
         'CFBundleShortVersionString': '0.1.0', 'CFBundlePackageType': 'APPL',
         'CFBundleExecutable': 'TokenCutMenu', 'LSUIElement': True,
+        'CFBundleDevelopmentRegion': 'en', 'CFBundleLocalizations': ['en'],
         'LSMinimumSystemVersion': '13.0', 'NSHighResolutionCapable': True,
         'TokenCutExecutable': sys.argv[2],
     }, file)

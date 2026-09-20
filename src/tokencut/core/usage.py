@@ -57,16 +57,16 @@ def window(value, key: str, bucket: str = "") -> dict | None:
     if minutes is not None and minutes <= 0:
         minutes = None
     if minutes == 10080:
-        label = "Tydzień"
+        label = "Weekly"
     elif minutes == 300:
-        label = "5 godzin"
+        label = "5 hours"
     elif minutes is not None:
         label = f"{minutes / 60:g} h" if minutes % 60 == 0 else f"{minutes:g} min"
     else:
         label = {
-            "primary": "Główne okno",
-            "secondary": "Drugie okno",
-            "tertiary": "Dodatkowe okno",
+            "primary": "Primary window",
+            "secondary": "Secondary window",
+            "tertiary": "Additional window",
         }.get(key, key)
     if bucket:
         label = f"{bucket[:60]} · {label}"
@@ -268,13 +268,13 @@ class UsageCollector:
             provider: {
                 "provider": provider,
                 "name": {"codex": "Codex", "claude": "Claude"}.get(provider, provider),
-                "source": "Codex CLI · konto CLI"
+                "source": "Codex CLI · CLI account"
                 if provider == "codex"
                 else "CodexBar → Claude CLI",
                 "status": "loading",
                 "updated_at": None,
                 "windows": [],
-                "message": "Odczyt limitów…",
+                "message": "Reading limits…",
             }
             for provider in self.fetchers
         }
@@ -291,7 +291,7 @@ class UsageCollector:
                     continue
                 self.running.add(provider)
                 self.last_attempt[provider] = now
-                self.rows[provider].update(status="loading", windows=[], message="Odczyt limitów…")
+                self.rows[provider].update(status="loading", windows=[], message="Reading limits…")
                 threading.Thread(target=self.refresh, args=(provider,), daemon=True).start()
             result = copy.deepcopy(list(self.rows.values()))
         for row in result:
@@ -302,7 +302,7 @@ class UsageCollector:
                 row.update(
                     status="unavailable",
                     windows=[],
-                    message="Minął termin resetu; oczekiwanie na aktualny odczyt.",
+                    message="Reset time has passed; waiting for a fresh reading.",
                 )
         return result
 
@@ -311,16 +311,20 @@ class UsageCollector:
             windows = self.fetchers[provider]()
             status = "ok" if windows else "unavailable"
             message = (
-                "Pozostały limit konta; osobno od oszczędności tekstu."
+                "Remaining account allowance; separate from text savings."
                 if windows
-                else "Usługa nie udostępniła limitów dla tego konta."
+                else "The service did not provide limits for this account."
             )
         except FileNotFoundError:
             windows, status = [], "unavailable"
-            message = "Brak Codex CLI." if provider == "codex" else "Brak adaptera CodexBar CLI."
+            message = (
+                "Codex CLI is not installed."
+                if provider == "codex"
+                else "CodexBar CLI adapter is not installed."
+            )
         except Exception:
             windows, status = [], "unavailable"
-            message = "Odczyt niedostępny. Sprawdź logowanie w CLI lub połączenie."
+            message = "Reading unavailable. Check CLI sign-in or your connection."
         with self.lock:
             self.rows[provider].update(
                 windows=windows,
