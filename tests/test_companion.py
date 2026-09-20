@@ -2,7 +2,6 @@ import io
 import json
 import os
 import sqlite3
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -150,10 +149,9 @@ def test_modes_execute_once_preserve_diagnostics(tmp_path, engine, case):
     assert result.stdout == output
 
 
-def test_invalid_or_missing_rtk_rejected_before_command(tmp_path, monkeypatch):
-    monkeypatch.setattr(engines, "rtk_version", lambda: None)
-    assert engines.select_engine("auto", ["git", "status"]) == "tokencut"
-    for selected in ("unknown", "rtk"):
+def test_external_or_invalid_engine_rejected_before_command(tmp_path):
+    assert engines.select_engine("auto") == "tokencut"
+    for selected in ("unknown", "rtk", "serena"):
         marker = tmp_path / "bad"
         result = runner.invoke(
             app,
@@ -171,35 +169,28 @@ def test_invalid_or_missing_rtk_rejected_before_command(tmp_path, monkeypatch):
         assert not marker.exists()
 
 
-def test_failed_rtk_filter_uses_buffer_not_command(monkeypatch):
-    calls = []
-
-    def fail(*args, **kwargs):
-        calls.append(args)
-        raise subprocess.TimeoutExpired(args[0], 5)
-
-    monkeypatch.setattr(engines.subprocess, "run", fail)
-    monkeypatch.setattr(engines, "rtk_path", lambda: "/rtk")
-    raw = "same output\n" * 300
-    assert engines.filter_rtk(raw, ["git", "status"], 0) == raw
-    assert len(calls) == 1
-    assert calls[0][0] == ["/rtk", "pipe", "--filter", "git-status"]
-
-
-def test_lossy_rtk_result_is_rejected(monkeypatch):
-    monkeypatch.setattr(engines, "rtk_path", lambda: "/rtk")
-    monkeypatch.setattr(
-        engines.subprocess,
-        "run",
-        lambda *a, **kw: subprocess.CompletedProcess(a[0], 0, "all good\n", ""),
-    )
-    assert (
-        engines.filter_rtk("ERROR: don't lose me\n", ["git", "status"], 0)
-        == "ERROR: don't lose me\n"
-    )
+def test_auto_filter_and_monitor_do_not_launch_external_engines(tmp_path, monkeypatch):
+    marker = tmp_path / "external-invoked"
+    for name in ("rtk", "serena"):
+        program = tmp_path / name
+        program.write_text(
+            f"#!{sys.executable}\nfrom pathlib import Path\nPath({str(marker)!r}).touch()\n"
+        )
+        program.chmod(0o700)
+    git = tmp_path / "git"
+    git.write_text(f"#!{sys.executable}\nprint('ERROR: preserve this diagnostic')\n")
+    git.chmod(0o700)
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    result = runner.invoke(app, ["run", "--engine", "auto", "--", "git", "status"])
+    assert result.exit_code == 0
+    assert "ERROR: preserve this diagnostic" in result.stdout
+    data = monitor(tmp_path).snapshot()
+    assert [item["name"] for item in data["integrations"]] == ["TokenCut", "TokenCut Code"]
+    assert not marker.exists()
 
 
-def test_rtk_and_other_tokenizers_are_separate(tmp_path):
+def test_historical_external_engine_counts_stay_separate(tmp_path):
     store = TelemetryStore()
     store.record(0, raw_openai=300, compact_openai=100, engine="rtk", method="bytes/4")
     store.record(0, raw_openai=400, compact_openai=100, method="cl100k_base")
@@ -235,36 +226,6 @@ def test_local_stdio_check_does_not_pollute_history(tmp_path):
     assert service.snapshot()["today"] is None
 
 
-@pytest.mark.skipif(
-    engines.rtk_version() not in engines.TESTED_RTK, reason="tested RTK binary not installed"
-)
-def test_real_rtk_pipe_preserves_unicode_long_lists_and_empty(tmp_path):
-    raw_cases = [
-        "",
-        "On branch główna\n\n",
-        "fatal: not a repository\n",
-        "Traceback (most recent call last):\n" + " frame\n" * 500,
-        "".join(f" M ścieżka-{i}-你好.txt\n" for i in range(1000)),
-        "header\n" + "\nitem\n" * 300,
-    ]
-    for command in (["git", "status"], ["git", "diff", "--stat"]):
-        for raw in raw_cases:
-            output = engines.filter_rtk(raw, command, 0)
-            if "tokencut retrieve" in output:
-                ref = output.split("tokencut retrieve ")[-1].split("]")[0]
-                assert ContextCache().retrieve(ref) == raw
-            else:
-                assert output == raw
-    # Actual identical git commands, including many Unicode filenames.
-    subprocess.run(["git", "init", "-q", str(tmp_path / "repo")], check=True)
-    repo = tmp_path / "repo"
-    for i in range(120):
-        (repo / f"plik-{i}-żółć.txt").write_text("body\n")
-    for command in (["git", "status"], ["git", "diff", "--stat"]):
-        raw = subprocess.run(command, cwd=repo, capture_output=True, text=True, check=True).stdout
-        assert engines.filter_rtk(raw, command, 0) == raw
-
-
 def test_rtk_recovery_is_charged_to_rtk_not_tokenizer(tmp_path):
     original = "RTK retained original\n" * 30
     ref = ContextCache().store(original, source="rtk")
@@ -276,14 +237,9 @@ def test_rtk_recovery_is_charged_to_rtk_not_tokenizer(tmp_path):
     assert data["rtk"]["recovery"] == -data["rtk"]["net"]
 
 
-@pytest.mark.skipif(
-    engines.rtk_version() not in engines.TESTED_RTK, reason="tested RTK binary not installed"
-)
-@pytest.mark.parametrize("engine", ["none", "tokencut", "rtk", "auto"])
+@pytest.mark.parametrize("engine", ["none", "tokencut", "auto"])
 @pytest.mark.parametrize("code", [0, 7])
 def test_actual_adapter_invokes_command_once(tmp_path, monkeypatch, engine, code):
-    binary = engines.rtk_path()
-    monkeypatch.setattr(engines, "rtk_path", lambda: binary)
     marker = tmp_path / "calls"
     fake_git = tmp_path / "git"
     raw = "ERROR: diagnostic żółć 你好\n" + "  frame preserved\n" * 400
@@ -296,22 +252,6 @@ def test_actual_adapter_invokes_command_once(tmp_path, monkeypatch, engine, code
     assert result.exit_code == code
     assert result.stdout == raw
     assert marker.read_text() == "x"
-
-
-def test_rtk_cache_failure_keeps_original(monkeypatch):
-    raw = "title\n" + "\n" * 1000 + "last\n"
-    monkeypatch.setattr(engines, "rtk_path", lambda: "/rtk")
-    monkeypatch.setattr(
-        engines.subprocess,
-        "run",
-        lambda *a, **kw: subprocess.CompletedProcess(a[0], 0, "title\nlast\n", ""),
-    )
-    monkeypatch.setattr(
-        ContextCache,
-        "store",
-        lambda *a, **kw: (_ for _ in ()).throw(sqlite3.OperationalError("read-only")),
-    )
-    assert engines.filter_rtk(raw, ["git", "status"], 0) == raw
 
 
 def test_clear_does_not_restore_legacy_on_next_invocation(tmp_path):

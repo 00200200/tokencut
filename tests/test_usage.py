@@ -199,6 +199,82 @@ print(json.dumps([{"provider": "claude", "usage": {"primary": {"usedPercent": 20
     ]
 
 
+@pytest.mark.parametrize(
+    "auth, issue",
+    [
+        ({"loggedIn": False, "email": "PRIVATE_IDENTITY"}, "cli_not_signed_in"),
+        ({"loggedIn": True}, "adapter_unavailable"),
+        ({"unexpected": "PRIVATE_IDENTITY"}, "adapter_unavailable"),
+    ],
+)
+def test_claude_strategy_failure_diagnoses_only_selected_terminal_cli(
+    tmp_path, monkeypatch, auth, issue
+):
+    log = tmp_path / "calls.jsonl"
+    command = fake_executable(
+        tmp_path,
+        f"""import json, sys
+with open({str(log)!r}, "a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")
+if sys.argv[1:] == ["auth", "status", "--json"]:
+    print(json.dumps({auth!r}))
+    sys.exit(1 if {auth!r}.get("loggedIn") is False else 0)
+print(json.dumps([{{"provider":"claude", "error":{{"message":"No available fetch strategy for claude. PRIVATE_IDENTITY"}}}}]))
+sys.exit(1)
+""",
+    )
+    monkeypatch.delenv("CLAUDE_CLI_PATH", raising=False)
+    monkeypatch.setattr(usage, "executable", lambda name: command)
+    collector = usage.UsageCollector({"claude": usage.fetch_claude})
+    collector.snapshot()
+    await_idle(collector)
+    row = collector.snapshot()[0]
+    assert row["issue"] == issue
+    assert row["status"] == "unavailable" and row["windows"] == []
+    assert "Claude Desktop" in row["message"]
+    assert "PRIVATE_IDENTITY" not in json.dumps(row)
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert calls == [
+        ["usage", "--provider", "claude", "--source", "cli", "--format", "json", "--json-only"],
+        ["auth", "status", "--json"],
+    ]
+
+
+def test_claude_nonzero_exit_cannot_produce_valid_limits(tmp_path, monkeypatch):
+    command = fake_executable(
+        tmp_path,
+        """import json, sys
+print(json.dumps([{"provider":"claude", "usage":{"primary":{"usedPercent":20}}}]))
+sys.exit(1)
+""",
+    )
+    monkeypatch.delenv("CLAUDE_CLI_PATH", raising=False)
+    monkeypatch.setattr(usage, "executable", lambda name: command)
+    with pytest.raises(usage.QuotaUnavailable) as exc:
+        usage.fetch_claude()
+    assert exc.value.issue == "adapter_error"
+
+
+def test_claude_explicit_missing_cli_is_not_silently_replaced(tmp_path, monkeypatch):
+    marker = tmp_path / "invoked"
+    command = fake_executable(tmp_path, f"from pathlib import Path\nPath({str(marker)!r}).touch()")
+    monkeypatch.setenv("CLAUDE_CLI_PATH", str(tmp_path / "missing"))
+    monkeypatch.setattr(usage, "executable", lambda name: command)
+    with pytest.raises(usage.QuotaUnavailable) as exc:
+        usage.fetch_claude()
+    assert exc.value.issue == "cli_missing"
+    assert not marker.exists()
+
+
+def test_quota_json_reader_bounds_output_and_execution(tmp_path, monkeypatch):
+    monkeypatch.setattr(usage, "MAX_RESPONSE", 100)
+    command = fake_executable(tmp_path, 'print("x" * 1000)')
+    with pytest.raises(ValueError, match="too large"):
+        usage.read_cli_json([command], {}, timeout=5)
+    command = fake_executable(tmp_path, "import time\ntime.sleep(10)")
+    with pytest.raises(TimeoutError):
+        usage.read_cli_json([command], {}, timeout=0.05)
+
+
 def test_pipe_timeout_and_response_size_bound(tmp_path, monkeypatch):
     command = fake_executable(tmp_path, "import time\ntime.sleep(10)\n")
     process = subprocess.Popen([command], stdout=subprocess.PIPE, start_new_session=True)

@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
-import shutil
 import sqlite3
 import subprocess
 import time
@@ -14,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from tokencut.core.companion_state import settings, state_dir, update_settings
-from tokencut.core.engines import TESTED_RTK, rtk_path, rtk_version
 from tokencut.core.telemetry import EVENT_COLUMNS, TelemetryStore
 from tokencut.core.usage import UsageCollector
 
@@ -25,7 +23,7 @@ def configuration() -> tuple[list[Path], dict, list[str]]:
     sources = {Path(os.environ.get("TOKENCUT_CACHE_DIR", str(home / ".tokencut")))}
     sources.add(home / ".tokencut")
     sources.update(Path(p) for p in settings().get("sources", []) if isinstance(p, str))
-    clients: dict[str, list[str]] = {"tokencut": [], "serena": []}
+    clients: dict[str, list[str]] = {"tokencut": []}
     issues = []
     paths = {
         "codex": home / ".codex/config.toml",
@@ -210,7 +208,6 @@ class Monitor:
             and r["method"] == "o200k_base"
             and r["timestamp"] >= today.timestamp()
         ]
-        version = rtk_version()
         return {
             "schema_version": 1,
             "generated_at": time.time(),
@@ -239,36 +236,15 @@ class Monitor:
                     "installed": True,
                     "clients": clients["tokencut"],
                     "last_event": latest_code,
-                    "detail": "Built-in ast-grep + SQLite index: symbols, maps and search. "
-                    "No AI calls. Name matches are not semantic LSP references.",
-                },
-                {
-                    "name": "Serena",
-                    "installed": bool(
-                        shutil.which("serena") or (Path.home() / ".local/bin/serena").exists()
-                    ),
-                    "clients": clients["serena"],
-                    "last_event": None,
-                    "detail": "Independent MCP. Savings and session activity are not measured.",
-                },
-                {
-                    "name": "RTK",
-                    "installed": bool(rtk_path()),
-                    "clients": ["TokenCut stdin adapter"] if version in TESTED_RTK else [],
-                    "last_event": latest["rtk"],
-                    "detail": f"{version or 'Unavailable'} · bytes / 4 · separate counter. "
-                    + (
-                        "Auto: git status, git diff --stat; every line is checked."
-                        if version in TESTED_RTK
-                        else "Auto uses TokenCut; this RTK version has not been verified."
-                    ),
+                    "detail": "Local code navigation: symbols, maps, search and guarded edits. "
+                    "No AI calls. Symbol matching uses syntax; semantic rename is not supported.",
                 },
             ],
             "last_check": self.last_check,
         }
 
     def check(self) -> dict:
-        """Check this executable via an isolated stdio MCP handshake, never change Serena's project."""
+        """Check this executable via an isolated stdio MCP handshake, without changing client projects."""
         import sys
         import tempfile
 
