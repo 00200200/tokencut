@@ -61,6 +61,56 @@ def _emit(text: str) -> str:
     return emitted
 
 
+@app.command("context")
+def task_context(request_file: Annotated[Path | None, typer.Option("--request-file")] = None):
+    """Save/read/list/forget task checkpoints using a JSON request on stdin or from a file."""
+    from tokencut.core.redactor import redact_secrets
+    from tokencut.core.task_context import dispatch_context
+
+    try:
+        if request_file is None:
+            raw = sys.stdin.read(65537)
+        else:
+            with request_file.open() as stream:
+                raw = stream.read(65537)
+        if len(raw) > 65536:
+            raise ValueError("Context request exceeds 64 KiB")
+        output = json.dumps(dispatch_context(json.loads(raw)), ensure_ascii=False)
+        record_text("", _emit(output), operation="context", client="cli")
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(redact_secrets(str(exc))) from exc
+
+
+@app.command("context-hook")
+def task_context_hook(client: Annotated[str, typer.Option("--client")]):
+    """Handle a native context lifecycle event without model calls."""
+    from tokencut.core.context_hooks import run_context_hook
+
+    run_context_hook(client, sys.stdin, sys.stdout)
+
+
+@app.command("context-install")
+def task_context_install(
+    client: Annotated[str, typer.Option("--client")],
+    cache_dir: Annotated[Path, typer.Option("--cache-dir")],
+):
+    """Opt into task-memory hooks; preserve client settings and back up every change."""
+    from tokencut.core.context_hooks import install_context_hooks
+
+    try:
+        executable = Path(shutil.which("tokencut") or sys.argv[0])
+        path = install_context_hooks(client, executable, cache_dir)
+        _emit(
+            f"Configured task-memory hooks in {path}. Reopen the session. Configured does not mean active."
+        )
+        if client == "codex":
+            _emit(
+                "Review and trust these hooks in Codex before they can run. TokenCut does not bypass hook trust."
+            )
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 @app.command("code")
 def code_query(
     root: Annotated[Path, typer.Argument(help="Absolute project directory")],
