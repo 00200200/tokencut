@@ -1,0 +1,35 @@
+name: 🐛 Bug Report
+description: Report unexpected token bloat, crashes, or parsing issues
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting an issue with tokencut!
+  - type: input
+    id: version
+    attributes:
+      label: tokencut Version
+      description: Run `tokencut --help` or check version.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the unexpected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce?
+      description: Provide the command or input that caused the issue.
+      placeholder: "tokencut run -- npm test"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?

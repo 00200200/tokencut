@@ -1,0 +1,21 @@
+name: 💡 Feature or Optimization Idea
+description: Suggest a new token compression heuristic or harness support
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Share your ideas for making tokencut even more token-efficient!
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem or token-bloat does this solve?
+      description: Which command or file format is currently wasting too many tokens?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: How should tokencut compress or handle this?
+    validations:
+      required: true
