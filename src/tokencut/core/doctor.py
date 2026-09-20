@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -134,11 +135,30 @@ def check_windsurf_mcp() -> DiagnosticItem:
     try:
         data = json.loads(cfg_file.read_text(encoding="utf-8"))
         servers = data.get("mcpServers", {})
+        if not isinstance(servers, dict):
+            raise ValueError("mcpServers must be an object")
         if "tokencut" in servers:
+            entry = servers["tokencut"]
+            if not isinstance(entry, dict):
+                raise ValueError("tokencut entry must be an object")
+            if entry.get("enabled") is False or entry.get("disabled") is True:
+                return DiagnosticItem(
+                    name="Windsurf MCP Config",
+                    status="warning",
+                    message="tokencut is configured but disabled",
+                    remedy="Enable tokencut in Windsurf MCP settings",
+                )
+            if not any(
+                isinstance(entry.get(key), str) and entry[key].strip() for key in ("command", "url")
+            ):
+                raise ValueError("tokencut entry requires a command or URL")
+            args = entry.get("args", [])
+            if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+                raise ValueError("tokencut args must be a list of strings")
             return DiagnosticItem(
                 name="Windsurf MCP Config",
                 status="ok",
-                message=f"tokencut registered in {cfg_file.name}",
+                message=f"tokencut configured in {cfg_file.name}; connection not tested",
             )
         return DiagnosticItem(
             name="Windsurf MCP Config",
@@ -155,32 +175,55 @@ def check_windsurf_mcp() -> DiagnosticItem:
         )
 
 
+def _cc_alias(content: str) -> str | None:
+    """Read literal alias declarations without evaluating shell configuration."""
+    result = None
+    for line in content.splitlines():
+        try:
+            words = shlex.split(line, comments=True)
+        except ValueError:
+            continue
+        if not words or words[0] != "alias":
+            continue
+        for index, word in enumerate(words[1:], 1):
+            if word.startswith("cc="):
+                result = word.partition("=")[2]
+            elif word == "cc" and index + 1 < len(words):
+                result = words[index + 1]
+    return result
+
+
 def check_shell_alias() -> DiagnosticItem:
     shell = os.environ.get("SHELL", "")
     if "fish" in shell:
         rc_path = Path.home() / ".config" / "fish" / "config.fish"
         rel_path = "~/.config/fish/config.fish"
-        alias_needle = "alias cc"
     elif "zsh" in shell:
         rc_path = Path.home() / ".zshrc"
         rel_path = "~/.zshrc"
-        alias_needle = "alias cc="
     else:
         rc_path = Path.home() / ".bashrc"
         rel_path = "~/.bashrc"
-        alias_needle = "alias cc="
 
     if rc_path.exists():
         content = rc_path.read_text(encoding="utf-8", errors="ignore")
-        if (
-            'alias cc="tokencut' in content
-            or "alias cc='tokencut" in content
-            or alias_needle in content
-        ):
+        alias = _cc_alias(content)
+        try:
+            command = shlex.split(alias) if alias else []
+        except ValueError:
+            command = []
+        if command and Path(command[0]).name == "tokencut":
             return DiagnosticItem(
                 name="Shell Alias (`cc`)",
                 status="ok",
                 message=f"Alias configured in {rel_path}",
+            )
+        if alias is not None:
+            return DiagnosticItem(
+                name="Shell Alias (`cc`)",
+                status="warning",
+                message=f"The existing cc alias in {rel_path} is not a TokenCut shortcut",
+                remedy="Keep your existing alias or choose a different shortcut for TokenCut",
             )
     return DiagnosticItem(
         name="Shell Alias (`cc`)",
@@ -431,11 +474,10 @@ def configure_shell_alias(target_file: Path | None = None) -> tuple[bool, str]:
 
     rc_path.parent.mkdir(parents=True, exist_ok=True)
     alias_line = "\nalias cc 'tokencut run --'\n" if is_fish else '\nalias cc="tokencut run --"\n'
-    needle = "alias cc " if is_fish else "alias cc="
 
     if rc_path.exists():
         content = rc_path.read_text(encoding="utf-8", errors="ignore")
-        if needle in content:
+        if _cc_alias(content) is not None:
             return False, f"Alias already present in {rc_path}"
         with open(rc_path, "a", encoding="utf-8") as f:
             f.write(alias_line)
