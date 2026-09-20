@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "tokencut"
 version = "0.1.0"
-description = "Cut token burn by 60-85% in Claude Code, OpenAI/Codex, and Gemini CLI without losing reasoning quality."
+description = "Bound AI coding tool output with local compaction, targeted reads, and recoverable context."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

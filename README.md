@@ -1,19 +1,19 @@
 <div align="center">
   <a href="https://github.com/00200200/tokencut">
-    <img src="assets/banner.svg" alt="tokencut — SOTA Token Optimizer for Claude Code, Codex, and Gemini CLI" width="100%" />
+    <img src="assets/banner.svg" alt="tokencut — bounded context tools for AI coding assistants" width="100%" />
   </a>
 
   <br /><br />
 
   <p align="center">
-    <strong>⚡ The undisputed SOTA context compactor & universal MCP server for AI coding assistants.</strong><br />
-    <em>Cut token burn by 60–85% in Claude Code, Cursor, Codex, and Gemini CLI — with 100% reasoning quality intact.</em>
+    <strong>⚡ Smaller tool outputs, with omitted context available on demand.</strong><br />
+    <em>A local CLI and MCP server for Claude Code, Codex, Antigravity, and other MCP clients.</em>
   </p>
 
   <p align="center">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00f5a0?style=for-the-badge&logo=opensourceinitiative&logoColor=white" alt="MIT license"></a>
     <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-00d9f5?style=for-the-badge&logo=python&logoColor=white" alt="Python versions"></a>
-    <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/tests-37%20passed-22c55e?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests"></a>
+    <a href="https://github.com/00200200/tokencut/actions/workflows/ci.yml"><img src="https://github.com/00200200/tokencut/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-261230.svg?style=for-the-badge&labelColor=000000" alt="Ruff"></a>
     <a href="https://github.com/00200200/tokencut/stargazers"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=for-the-badge&label=Star%20Us!&color=7928ca" alt="GitHub stars"></a>
   </p>
@@ -23,64 +23,77 @@
 
 <div align="center">
   <img src="assets/demo.svg" alt="tokencut Live Terminal Animation" width="100%" />
-  <p><em>Watch tokencut preserve 100% of the failure traceback while eliminating 82.5% of terminal noise.</em></p>
+  <p><em>Illustrative terminal demo. Run the fixture benchmark below for reproducible measurements.</em></p>
 </div>
 
 ---
 
-## 🛑 The 5-Hour Rate Limit Wall
+## Where it helps
 
-If you use **Claude Code**, **Cursor**, **Codex**, or **Gemini CLI**, you know the frustration:
-* **The Quadratic Token Snowball:** In multi-turn coding sessions, every terminal log, test dump, and inspected file stays in conversation history and is resent on **every subsequent prompt**.
-* **5,000-Line Terminal Dumps:** Running `pytest`, `npm test`, or `cargo build` injects thousands of lines of ANSI escapes, progress bars, and passing tests.
-* **5-Hour Limit Reached in 48 Minutes:** Claude Code Pro/Max limits exhaust before noon.
-* **Context Degradation ("Lost in the Middle"):** Massive logs pollute the context window, causing models to miss instructions or hallucinate.
+Verbose tests, builds, files, and lockfile diffs can fill an agent's context with
+irrelevant text. TokenCut bounds the text returned by its MCP tools and caches
+omitted output locally for selective retrieval. It does **not** intercept other
+tools, compress model reasoning, or change subscription limits. The agent must
+choose TokenCut tools or explicitly wrap commands with the CLI.
 
 <br />
 
-<div align="center">
-  <img src="assets/comparison.svg" alt="The 5-Hour Wall: Standard Claude Code vs tokencut" width="100%" />
-</div>
+Smaller output is not proof of better answers or longer subscription access.
+Task success, follow-up reads, prompt caching, and model reasoning all matter.
 
 <br />
 
 ---
 
-## 🏆 Feature Comparison: Why tokencut is the Undisputed SOTA
+## How it fits with other tools
 
-`tokencut` synthesizes the best ideas from across the AI developer ecosystem into a single unified CLI and universal **MCP server**:
+| Tool | Main use | Relationship to TokenCut |
+| :--- | :--- | :--- |
+| [Serena](https://github.com/oraios/serena) | Semantic navigation and editing through language servers | Complementary; TokenCut does not implement reference-aware refactoring. |
+| [RTK](https://github.com/rtk-ai/rtk) | Command-specific output filtering | A relevant baseline for terminal workloads. |
+| [Repomix](https://github.com/yamadashy/repomix) | Packaging repository context | A relevant baseline for repository exploration. |
+| **TokenCut** | Bounded MCP text, targeted reads, local retrieval | Compare on total tokens per successfully completed task. |
 
-| Feature | Raw Claude / Cursor | Repomix | Headroom | ⚡ **tokencut** |
-| :--- | :---: | :---: | :---: | :---: |
-| **Real-time Terminal Output Compaction** | ❌ None | ❌ Static only | ⚠️ Generic truncate | 🟢 **SOTA (Head + Tail + Full Error Trace)** |
-| **Semantic Error & Traceback Preserver** | ❌ No | ❌ No | ❌ No | 🟢 **100% Intact (Tracebacks never lost)** |
-| **Reversible CCR Architecture (Ref IDs)** | ❌ No | ❌ No | 🟢 Yes (SQLite) | 🟢 **Yes (`tokencut retrieve <id>`)** |
-| **Repo Token Tree Scanner (`tree`)** | ❌ No | 🟢 Yes | ❌ No | 🟢 **Yes (Pinpoints 140k-token lockfiles)** |
-| **AST Code Skeletonizer** | ❌ No | 🟢 (Tree-sitter) | ❌ No | 🟢 **Yes (Python AST, TS/JS, Go, Rust)** |
-| **Lockfile Diff Folding (-97.6%)** | ❌ No | ❌ No | ❌ No | 🟢 **Yes (`tokencut diff`)** |
-| **Secret & API Key Redactor** | ❌ Leaks keys | ⚠️ Basic | ❌ No | 🟢 **Auto-Scrubs OpenAI/Anthropic/GH keys** |
-| **Zero-Setup Universal MCP Server** | ❌ No | ❌ No | ⚠️ Setup needed | 🟢 **1-Click (`claude mcp add ...`)** |
-| **Multi-Provider Telemetry & Cost Tracker** | ❌ No | ❌ No | ❌ No | 🟢 **Exact Claude, GPT-4o, Gemini USD stats** |
+No head-to-head task-quality evaluation has established superiority over these tools.
+
+Development priorities:
+
+1. Compare raw tools, Serena, RTK, [Headroom](https://github.com/headroomlabs-ai/headroom),
+   TokenCut, and complementary combinations on the same completed coding tasks.
+   Record success, retries, latency, total input/output, cache hits, and reasoning
+   usage where available. Report model versions and repeated runs, including losses.
+2. Add command-specific parsers for test/build diagnostics and precise symbol
+   lookup; regex outlines are not language-server navigation. Test ambiguous
+   symbol names, long tracebacks, Unicode, malformed output, and retrieval paths.
+3. Keep tool schemas small, measure discovery overhead, and add opt-in client
+   hooks only with real client tests. Measure net session savings before enabling
+   duplicate suppression or automatic routing by default.
 
 ---
 
-## 📊 Real-World Benchmarks
+## 📊 Reproducible fixture benchmarks
 
-Tested on real production workloads across Anthropic Claude, OpenAI, and Google Gemini:
+Run `python scripts/benchmark_suite.py` (or add `--json`) from the source checkout.
+The suite uses authored test/build logs, a synthetic lockfile diff, this
+repository's CLI source, and a long-line MCP read. It checks selected diagnostic strings and reports
+local text-token estimates; it does not call a model or measure reasoning quality.
 
-| Workload / Scenario | Raw Tokens | With tokencut | Token Reduction | Reasoning Quality |
-| :--- | :---: | :---: | :---: | :---: |
-| **Pytest Test Suite** *(120 tests, 1 failure)* | `2,108` | `441` | **-79.1%** | 🟢 **100% Intact** *(Full traceback, assert & frame details)* |
-| **Vite / Webpack Build** *(250 modules)* | `4,272` | `1,012` | **-76.3%** | 🟢 **100% Intact** *(Errors, warnings & bundle stats kept)* |
-| **Source Code Exploration** *(AST Skeleton)* | `2,508` | `642` | **-74.4%** | 🟢 **100% Intact** *(Class/method signatures & docstrings)* |
-| **Git Diff** *(modified lockfile + code)* | `4,165` | `101` | **-97.6%** | 🟢 **100% Intact** *(Code diff preserved, lockfile folded)* |
+The local counter uses `o200k_base` (with a `cl100k_base` fallback). Claude and
+Gemini values are uncalibrated heuristics. These are **not exact counts for Astra,
+Fable, Opus, or any named model**, and not measurements of subscription limits.
+MCP session stats include recovery notices, exit status, and subsequent retrieval
+text; they exclude tool schemas, JSON envelopes, conversation input, and reasoning.
+CLI dollar figures use fixed example prices, not your actual bill.
 
 ---
 
 ## 💎 The 6 Architectural Pillars
 
-### 1. 🛡️ 100% Reversible Compress-Cache-Retrieve (CCR)
-Never fear losing context. Whenever `tokencut` truncates noisy logs, it automatically caches the full uncompressed output in a local SQLite store (`~/.tokencut/cache.db`) and injects a reference tag:
+### 1. 🛡️ Compress-Cache-Retrieve (CCR)
+MCP outputs default to a budget of 2,000 locally estimated tokens (`max_tokens`,
+64–32,000). The budget includes the recovery reference and exit status. Omitted
+output is stored **after recognized secrets are redacted** in SQLite
+(`~/.tokencut/cache.db`; override with `TOKENCUT_CACHE_DIR`):
 ```text
 [... 340 lines of routine output omitted by tokencut (-84.1%). Ref: tc_8f2a1b ...]
 ```
@@ -88,12 +101,15 @@ If the AI model or developer ever needs the exact omitted lines:
 ```bash
 tokencut retrieve tc_8f2a1b --lines 120-160
 ```
-Or the model calls the native `tokencut_retrieve` tool via MCP. **Zero data loss guarantee.**
+Or call `tokencut_retrieve` with `ref_id` and `lines`. Redacted values cannot be
+recovered. Long diagnostics may be omitted from a bounded response: retrieve them
+before diagnosing or reviewing a change. Regex redaction is best effort, not a
+complete secret scanner. Cache data remains local until removed.
 
 ### 2. 🌳 Repository Token Tree (`tokencut tree`)
 Discover what is silently eating your context window before you even start coding:
 ```bash
-uvx tokencut tree .
+tokencut tree .
 ```
 ```text
 tokencut/  · 170,499 tok (100.0%)
@@ -106,12 +122,12 @@ tokencut/  · 170,499 tok (100.0%)
 ### 3. ⚡ AST Code Skeletonizer (`tokencut cat --skeleton`)
 When exploring large codebases, AI assistants typically dump thousands of lines of implementation logic. `tokencut` generates structural outlines (classes, method signatures, docstrings, type annotations) with bodies replaced by `...`. Agents can inspect individual methods with `--symbol` or line ranges with `--lines`:
 ```bash
-uvx tokencut cat src/auth.py --skeleton
-uvx tokencut cat src/auth.py --symbol AuthService.verify_token
+tokencut cat src/auth.py --skeleton
+tokencut cat src/auth.py --symbol AuthService.verify_token
 ```
 
 ### 4. 🔒 Secret & API Key Sanitizer
-Prevents catastrophic credential leakage to LLM training logs and saves token overhead. Automatically scrubs:
+Best-effort pattern matching scrubs recognized credentials before MCP display and cache storage:
 - OpenAI API keys (`sk-proj-...`)
 - Anthropic API keys (`sk-ant-...`)
 - Google Gemini keys (`AIza...`)
@@ -121,53 +137,62 @@ Prevents catastrophic credential leakage to LLM training logs and saves token ov
 ### 5. 🔌 Universal Model Context Protocol (MCP) Server
 Integrate directly into **Claude Code**, **Cursor**, or **Gemini CLI** with **one command**:
 ```bash
-claude mcp add tokencut uvx tokencut mcp
+claude mcp add --scope user tokencut -- tokencut mcp
 ```
 Provides Claude with token-optimized tools:
 * `tokencut_exec`: Runs terminal commands with automatic log compaction & CCR caching.
 * `tokencut_read`: Reads files in AST skeleton or targeted symbol mode.
 * `tokencut_retrieve`: Retrieves raw slices from cached outputs via ref ID.
 * `tokencut_diff`: Generates slim git diffs with lockfile folding.
-* `tokencut_stats`: Reports session tokens and USD savings.
+* `tokencut_stats`: Reports estimated net output reduction, including retrieval overhead.
 
 ### 6. 🔍 Prompt Cache Protector (`tokencut lint`)
-Anthropic and Gemini prompt caching offers an **80–90% cost reduction** for static prompt prefixes. `tokencut lint` scans `CLAUDE.md`, `.cursorrules`, and prompt templates for dynamic timestamps and cache-busting patterns:
+`tokencut lint` scans `CLAUDE.md`, `.cursorrules`, and prompt templates for dynamic timestamps and potential cache-busting patterns. Cache behavior and pricing depend on the provider and model:
 ```bash
-uvx tokencut lint CLAUDE.md --minify
+tokencut lint CLAUDE.md --minify
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### Run Instantly Without Installing (`uvx`):
+### Install this repository with uv
+
+The PyPI name `tokencut` belongs to another project. Use this Git source, not
+`pip install tokencut` or bare `uvx tokencut`:
+
+```bash
+uv tool install 'git+https://github.com/00200200/tokencut.git'
+```
+
+For reproducibility, append `@<commit-sha>` to the Git URL. Then:
 
 ```bash
 # Run any command through tokencut
-uvx tokencut run -- pytest -v tests/
+tokencut run -- pytest -v tests/
 
 # Visualize token distribution across your repository
-uvx tokencut tree .
+tokencut tree .
 
 # View code file as an AST skeleton (75% token reduction)
-uvx tokencut cat src/server.py --skeleton
+tokencut cat src/server.py --skeleton
 
 # Inspect git diff with lockfiles folded (-97% diff tokens)
-uvx tokencut diff
+tokencut diff
 
 # Audit CLAUDE.md for prompt cache busting
-uvx tokencut lint CLAUDE.md
+tokencut lint CLAUDE.md
 
 # Run interactive visual benchmark demo
-uvx tokencut demo
+tokencut demo
 ```
 
-### Or Install Globally:
+### Develop locally
 
 ```bash
-uv pip install tokencut
-# or
-pip install tokencut
+git clone https://github.com/00200200/tokencut.git
+cd tokencut
+uv sync --all-extras
 ```
 
 ---
@@ -177,7 +202,7 @@ pip install tokencut
 ### Claude Code
 Add `tokencut` as a native MCP server:
 ```bash
-claude mcp add tokencut uvx tokencut mcp
+claude mcp add --scope user tokencut -- tokencut mcp
 ```
 Or wrap long-running commands directly:
 ```bash
@@ -190,18 +215,32 @@ Add to your `mcp.json` (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
 {
   "mcpServers": {
     "tokencut": {
-      "command": "uvx",
-      "args": ["tokencut", "mcp"]
+      "command": "/absolute/path/to/tokencut",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-### Gemini CLI / Codex
-Use unix piping in your scripts or agents:
+### Codex
+
 ```bash
-cargo test 2>&1 | tokencut pipe
+codex mcp add tokencut -- tokencut mcp
 ```
+
+Codex CLI and desktop share `~/.codex/config.toml`. Restart/reconnect MCP after
+installation. For desktop clients, use the absolute binary path from
+`command -v tokencut` if their PATH differs from your terminal.
+
+### Antigravity / Gemini CLI
+
+Use the same `mcpServers` JSON above. In Antigravity, open **MCP Servers → Manage
+MCP Servers → View raw config**. Current versions use `~/.gemini/config/mcp_config.json`;
+older IDE versions may use `~/.gemini/antigravity/mcp_config.json`. Gemini CLI uses
+`~/.gemini/settings.json`. Merge the entry with existing configuration, then refresh.
+
+For exec/diff, pass the target project's absolute `cwd`. Prefer absolute file paths.
+Installation exposes tools; it does not automatically rewrite native shell calls.
 
 ---
 
@@ -226,16 +265,16 @@ cargo test 2>&1 | tokencut pipe
 
 ## 🧪 Testing & Code Quality
 
-`tokencut` has a 100% passing test suite and is linted with `ruff`:
+Run the regression suite and linter:
 
 ```bash
-# Run 25 test cases across unit, integration, and CLI layers
+# Run unit, integration, and CLI tests
 uv run pytest -v
 
 # Run linter
 uv run ruff check .
 
-# Run real-world benchmarks
+# Run authored fixture benchmarks (no model calls)
 uv run python scripts/benchmark_suite.py
 ```
 

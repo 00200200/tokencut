@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import argparse
+import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from rich.console import Console
 from rich.table import Table
@@ -8,12 +11,13 @@ from rich.table import Table
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.skeleton import skeletonize_python
+from tokencut.mcp.server import TOOLS_DEFINITIONS, handle_tokencut_read
 from tokencut.metrics.tokenizer import compute_metrics
 
 console = Console()
 
 
-def run_benchmarks():
+def run_benchmarks(json_output: bool = False):
     # Scenario 1: Pytest failure log with 120 tests
     pytest_raw = "pytest -v tests/\n" + "\n".join(
         [f"tests/test_{i}.py::test_{i} PASSED [ {i % 100}%]" for i in range(1, 121)]
@@ -71,19 +75,70 @@ index 3333333..4444444 100644
     diff_compact = slim_git_diff(diff_raw)
     m_diff = compute_metrics(diff_raw, diff_compact)
 
+    # A line limit alone cannot bound this fixture. Measure MCP content JSON too.
+    long_raw = "payload_field=abcdefghijk " * 2500
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / "long.txt"
+        path.write_text(long_raw)
+        long_compact = handle_tokencut_read({"path": str(path), "max_tokens": 2000})
+
+    def envelope(text: str) -> str:
+        return json.dumps({"content": [{"type": "text", "text": text}]})
+
+    m_mcp = compute_metrics(envelope(long_raw), envelope(long_compact))
+
     scenarios = [
         ("Pytest Test Suite (120 tests, 1 failure)", m_pytest),
         ("Vite/Webpack Build Log (250 modules)", m_build),
         ("Source Code Inspection (AST Skeleton)", m_skel),
         ("Git Diff with modified lockfile", m_diff),
+        ("MCP long-line read (content JSON)", m_mcp),
     ]
 
-    table = Table(title="tokencut SOTA Benchmark Results")
+    checks = [
+        all(
+            s in pytest_compact
+            for s in ("assert conn.ping() is True", "tests/test_db.py:88", "1 failed, 119 passed")
+        ),
+        all(s in build_compact for s in ("250 modules transformed", "built in 1420ms")),
+        all(s in skeleton_content for s in ("def run(", "def main(")),
+        "+    enable_caching()" in diff_compact and "uv.lock" in diff_compact,
+        "Ref: tc_" in long_compact
+        and compute_metrics("", long_compact).compact_tokens.claude <= 2000,
+    ]
+    if not all(checks):
+        raise AssertionError("A fixture lost a required diagnostic or signature")
+    if json_output:
+        print(
+            json.dumps(
+                {
+                    "measurement": "local token estimates; authored fixtures, not agent evaluations",
+                    "quality_evaluated": False,
+                    "tool_schema_o200k_tokens": compute_metrics(
+                        "", json.dumps(TOOLS_DEFINITIONS)
+                    ).compact_tokens.openai,
+                    "scenarios": [
+                        {
+                            "name": name,
+                            "raw_tokens": m.raw_tokens.avg,
+                            "output_tokens": m.compact_tokens.avg,
+                            "reduction_pct": m.reduction_pct,
+                            "fixture_check_passed": passed,
+                        }
+                        for (name, m), passed in zip(scenarios, checks, strict=True)
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    table = Table(title="tokencut authored fixture benchmarks (local token estimates)")
     table.add_column("Workload / Scenario", style="cyan")
     table.add_column("Raw Tokens", style="red")
     table.add_column("tokencut Tokens", style="green")
     table.add_column("Token Reduction", style="bold yellow")
-    table.add_column("Quality Impact", style="magenta")
+    table.add_column("Fixture check", style="magenta")
 
     for name, m in scenarios:
         table.add_row(
@@ -91,11 +146,18 @@ index 3333333..4444444 100644
             f"{m.raw_tokens.avg:,}",
             f"{m.compact_tokens.avg:,}",
             f"-{m.reduction_pct}%",
-            "Zero (Tracebacks & API signatures intact)",
+            "Selected diagnostics retained",
         )
 
     console.print(table)
+    console.print(
+        "Model quality, subscription quotas, and end-to-end task tokens were not evaluated."
+    )
 
 
 if __name__ == "__main__":
-    run_benchmarks()
+    parser = argparse.ArgumentParser(
+        description="Run local fixture measurements without model calls."
+    )
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable fixture results")
+    run_benchmarks(json_output=parser.parse_args().json)

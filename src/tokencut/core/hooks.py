@@ -26,4 +26,4 @@ def install_zsh_hook() -> Path:
 
 def setup_claude_code_mcp_config() -> str:
     """Generate the exact command to add tokencut to Claude Code native MCP configuration."""
-    return "claude mcp add tokencut uvx tokencut mcp"
+    return "claude mcp add --scope user tokencut -- tokencut mcp"

@@ -3,6 +3,28 @@ from tokencut.core.redactor import redact_secrets
 from tokencut.core.tree_scanner import scan_directory
 
 
+def test_cache_never_persists_or_replays_recognized_secrets(tmp_path):
+    import sqlite3
+
+    cache = ContextCache(tmp_path / "cache.db")
+    secret = "sk-proj-" + "a" * 30
+    ref = cache.store(secret)
+    assert secret not in cache.retrieve(ref)
+    with sqlite3.connect(cache.db_path) as conn:
+        assert secret not in conn.execute("SELECT content FROM output_cache").fetchone()[0]
+        conn.execute("UPDATE output_cache SET content = ?", (secret,))
+    assert secret not in cache.retrieve(ref)  # Entries from older installations.
+
+
+def test_invalid_retrieval_range_does_not_dump_entire_cache():
+    cache = ContextCache()
+    ref = cache.store("large private log " * 2000)
+    for invalid in ("bad", "0", "10-2", "-5"):
+        output = cache.retrieve(ref, invalid)
+        assert output.startswith("Error:")
+        assert "large private log" not in output
+
+
 def test_redact_secrets():
     raw = (
         "Config: OPENAI_API_KEY=sk-proj-1234567890abcdef1234567890\n"

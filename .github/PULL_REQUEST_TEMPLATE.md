@@ -18,5 +18,5 @@
 - [ ] `uv run pytest -v` passes all tests.
 - [ ] `uv run ruff check .` reports no lint errors.
 - [ ] `uv run ruff format --check .` confirms correct formatting.
-- [ ] Traceback & error preservation is verified (Zero Quality Loss).
+- [ ] Required diagnostics and recovery paths are tested; any unmeasured quality claims are identified.
 - [ ] Documentation or README updated if applicable.

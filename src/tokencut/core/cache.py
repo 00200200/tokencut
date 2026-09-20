@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 import time
 from pathlib import Path
+
+from tokencut.core.redactor import redact_secrets
 
 DEFAULT_CACHE_DIR = Path.home() / ".tokencut"
 DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "cache.db"
@@ -12,13 +15,13 @@ DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "cache.db"
 class ContextCache:
     """Local SQLite-backed cache for Compress-Cache-Retrieve (CCR) architecture.
 
-    Guarantees 100% reversibility: whenever tokencut compresses an output, the full
-    uncompressed data is stored locally. An AI agent or developer can retrieve
-    any slice of the original text using the generated ref ID.
+    Stored content is recoverable after recognized secrets have been redacted.
+    An agent or developer can retrieve slices using the generated ref ID.
     """
 
     def __init__(self, db_path: Path | None = None):
-        self.db_path = db_path or DEFAULT_CACHE_DB
+        cache_dir = os.environ.get("TOKENCUT_CACHE_DIR")
+        self.db_path = db_path or (Path(cache_dir) / "cache.db" if cache_dir else DEFAULT_CACHE_DB)
         self._ensure_db()
 
     def _ensure_db(self):
@@ -39,9 +42,10 @@ class ContextCache:
             conn.commit()
 
     def store(self, content: str, source: str = "exec") -> str:
-        """Store raw content and return a short human-readable reference ID."""
+        """Store redacted content and return a human-readable reference ID."""
+        content = redact_secrets(content)
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        ref_id = f"tc_{content_hash[:8]}"
+        ref_id = f"tc_{content_hash[:16]}"
 
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
@@ -65,7 +69,8 @@ class ContextCache:
         if not row:
             return f"Error: ref ID '{ref_id}' not found in tokencut cache."
 
-        content, source = row[0], row[1]
+        # Also protect entries written by older versions before cache redaction.
+        content, source = redact_secrets(row[0]), row[1]
         if not lines_range:
             return content
 
@@ -73,22 +78,24 @@ class ContextCache:
         try:
             if "-" in lines_range:
                 start_s, end_s = lines_range.split("-", 1)
-                start = max(1, int(start_s))
-                end = min(len(all_lines), int(end_s))
+                start, end = int(start_s), int(end_s)
             else:
-                start = max(1, int(lines_range))
+                start = int(lines_range)
                 end = start
+            if start < 1 or end < start:
+                raise ValueError
+            end = min(len(all_lines), end)
             selected = all_lines[start - 1 : end]
             return (
                 f"# [Retrieved {ref_id} ({source}) lines {start}-{end} of {len(all_lines)}]\n"
                 + "\n".join(selected)
             )
         except ValueError:
-            return content
+            return "Error: lines must be a positive line number or an ascending range (e.g. 10-40)."
 
     def check_duplicate(self, content: str) -> str | None:
         """Check if identical content was cached recently within last 15 minutes."""
-        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        content_hash = hashlib.sha256(redact_secrets(content).encode("utf-8")).hexdigest()
         cutoff = time.time() - 900  # 15 mins
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(

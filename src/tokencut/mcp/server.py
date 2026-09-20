@@ -6,11 +6,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
+from tokencut.core.redactor import redact_secrets
 from tokencut.core.skeleton import extract_symbol_or_range
-from tokencut.metrics.pricing import estimate_savings
 from tokencut.metrics.tokenizer import count_tokens
 
 # Global session metrics accumulator
@@ -22,7 +23,7 @@ _SESSION_SAVED_GEMINI = 0
 TOOLS_DEFINITIONS = [
     {
         "name": "tokencut_exec",
-        "description": "Execute a shell command with intelligent token compaction. Strips ANSI colors, scrubs API keys, deduplicates repetitive logs, preserves full stack traces/errors, and stores full output in local cache for 100% reversible retrieval.",
+        "description": "Run a noninteractive shell command; return bounded logs, exit status, and a recovery ref when shortened.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -41,7 +42,7 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "tokencut_read",
-        "description": "Read file contents with token optimization. Supports skeleton/AST mode (signatures, docstrings, classes) or targeted symbol/line extraction to avoid dumping thousands of unnecessary tokens into context.",
+        "description": "Read a file, outline, symbol, or line range with bounded output. Prefer targeted reads.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -68,7 +69,7 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "tokencut_retrieve",
-        "description": "Retrieve exact raw lines from a previously compressed log or file using its ref ID (e.g. 'tc_8f2a1b'). Guarantees zero context loss.",
+        "description": "Recover redacted cached output by ref. Specify lines (e.g. 40-100) to avoid rereading a large log.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -86,7 +87,7 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "tokencut_diff",
-        "description": "Get git diff with automatic lockfile suppression and context-line compaction. Prevents lockfiles (package-lock, uv.lock) from exploding context windows.",
+        "description": "Summarize git diff, folding lockfiles and generated files. Recover omitted changes by ref before reviewing them.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -100,7 +101,7 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "tokencut_stats",
-        "description": "Get session telemetry: total tokens saved across Claude, OpenAI, Gemini and estimated cost savings in USD.",
+        "description": "Report estimated net output reduction, including footers and retrievals. Not model billing or subscription quota.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -108,115 +109,219 @@ TOOLS_DEFINITIONS = [
     },
 ]
 
+for _tool in TOOLS_DEFINITIONS:
+    _tool["annotations"] = {
+        "readOnlyHint": _tool["name"] != "tokencut_exec",
+        "destructiveHint": _tool["name"] == "tokencut_exec",
+    }
+    if _tool["name"] != "tokencut_stats":
+        _tool["inputSchema"]["properties"]["max_tokens"] = {
+            "type": "integer",
+            "minimum": 64,
+            "maximum": 32000,
+            "default": 2000,
+            "description": "Complete text budget using the local Claude estimate, including refs and exit status.",
+        }
+    if _tool["name"] in {"tokencut_exec", "tokencut_diff"}:
+        _tool["inputSchema"]["properties"]["cwd"] = {
+            "type": "string",
+            "description": "Absolute working directory. Set explicitly for the target project.",
+        }
+
+
+def _budget(arguments: dict[str, Any]) -> int:
+    value = arguments.get("max_tokens", 2000)
+    if type(value) is not int or not 64 <= value <= 32000:
+        raise ValueError("max_tokens must be an integer between 64 and 32000")
+    return value
+
+
+def _record(raw: str, output: str) -> str:
+    global _SESSION_SAVED_CLAUDE, _SESSION_SAVED_OPENAI, _SESSION_SAVED_GEMINI
+    before, after = count_tokens(raw), count_tokens(output)
+    # Signed deltas expose expansion and charge subsequent retrievals in full.
+    _SESSION_SAVED_CLAUDE += before.claude - after.claude
+    _SESSION_SAVED_OPENAI += before.openai - after.openai
+    _SESSION_SAVED_GEMINI += before.gemini - after.gemini
+    return output
+
+
+def _cwd(arguments: dict[str, Any]) -> str | None:
+    cwd = arguments.get("cwd")
+    if cwd is not None and (not isinstance(cwd, str) or not Path(cwd).is_absolute()):
+        raise ValueError("cwd must be an absolute directory path")
+    return cwd
+
 
 def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
-    global _SESSION_SAVED_CLAUDE, _SESSION_SAVED_OPENAI, _SESSION_SAVED_GEMINI
+    budget = _budget(arguments)
     command = arguments["command"]
     max_lines = arguments.get("max_lines", 80)
-
+    if type(max_lines) is not int or not 1 <= max_lines <= 10000:
+        raise ValueError("max_lines must be an integer between 1 and 10000")
+    if not isinstance(command, str) or not command.strip():
+        raise ValueError("command must be a nonempty string")
     try:
         proc = subprocess.run(
             command,
             shell=True,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
+            errors="replace",
             timeout=120,
+            cwd=_cwd(arguments),
         )
         combined_raw = proc.stdout
-        if proc.stderr:
-            combined_raw += "\n" + proc.stderr
-    except Exception as e:
-        return f"Error executing command: {e}"
+        footer = f"\n[exit code: {proc.returncode}]"
+    except subprocess.TimeoutExpired as exc:
+        combined_raw = exc.stdout or ""
+        if isinstance(combined_raw, bytes):
+            combined_raw = combined_raw.decode("utf-8", errors="replace")
+        footer = "\n[command timed out after 120s; output may be partial]"
 
-    cache = ContextCache()
-    dup_ref = cache.check_duplicate(combined_raw)
-
-    opts = CleanerOptions(max_lines=max_lines)
+    opts = CleanerOptions(max_lines=max_lines, enable_cache=False)
     compacted = compact_terminal_output(combined_raw, opts)
-
-    raw_tokens = count_tokens(combined_raw)
-    comp_tokens = count_tokens(compacted)
-
-    saved_claude = max(0, raw_tokens.claude - comp_tokens.claude)
-    saved_openai = max(0, raw_tokens.openai - comp_tokens.openai)
-    saved_gemini = max(0, raw_tokens.gemini - comp_tokens.gemini)
-
-    _SESSION_SAVED_CLAUDE += saved_claude
-    _SESSION_SAVED_OPENAI += saved_openai
-    _SESSION_SAVED_GEMINI += saved_gemini
-
-    pct = (
-        round(((raw_tokens.avg - comp_tokens.avg) / raw_tokens.avg * 100), 1)
-        if raw_tokens.avg > 0
-        else 0.0
+    output = compress_to_budget(
+        compacted,
+        budget,
+        original_text=combined_raw,
+        suffix=footer,
+        source="exec",
     )
-    idempotent_tag = f" [idempotent: match {dup_ref}]" if dup_ref else ""
-    footer = f"\n\n[tokencut: saved ~{raw_tokens.avg - comp_tokens.avg} tokens (-{pct}%){idempotent_tag}, exit code: {proc.returncode}]"
-    return compacted + footer
+    return _record(combined_raw, output)
 
 
 def handle_tokencut_read(arguments: dict[str, Any]) -> str:
-    global _SESSION_SAVED_CLAUDE, _SESSION_SAVED_OPENAI, _SESSION_SAVED_GEMINI
+    budget = _budget(arguments)
     path = arguments["path"]
     skeleton = arguments.get("skeleton", False)
     lines = arguments.get("lines")
     symbol = arguments.get("symbol")
 
-    try:
-        full_content = Path(path).read_text(encoding="utf-8", errors="replace")
-        extracted = extract_symbol_or_range(
-            path, symbol=symbol, lines_range=lines, skeleton=skeleton
-        )
-
-        raw_tok = count_tokens(full_content)
-        comp_tok = count_tokens(extracted)
-
-        _SESSION_SAVED_CLAUDE += max(0, raw_tok.claude - comp_tok.claude)
-        _SESSION_SAVED_OPENAI += max(0, raw_tok.openai - comp_tok.openai)
-        _SESSION_SAVED_GEMINI += max(0, raw_tok.gemini - comp_tok.gemini)
-
-        return extracted
-    except Exception as e:
-        return f"Error reading file: {e}"
+    extracted = extract_symbol_or_range(path, symbol=symbol, lines_range=lines, skeleton=skeleton)
+    output = compress_to_budget(extracted, budget, source="read")
+    # Compare with the requested view, not an unrequested full-file read.
+    return _record(extracted, output)
 
 
 def handle_tokencut_retrieve(arguments: dict[str, Any]) -> str:
+    budget = _budget(arguments)
     ref_id = arguments["ref_id"]
     lines = arguments.get("lines")
     cache = ContextCache()
-    return cache.retrieve(ref_id, lines_range=lines)
+    retrieved = cache.retrieve(ref_id, lines_range=lines)
+    if retrieved.startswith("Error:"):
+        return retrieved
+    output = compress_to_budget(retrieved, budget, source="retrieve")
+    return _record("", output)
 
 
 def handle_tokencut_diff(arguments: dict[str, Any]) -> str:
-    global _SESSION_SAVED_CLAUDE, _SESSION_SAVED_OPENAI, _SESSION_SAVED_GEMINI
+    budget = _budget(arguments)
     staged = arguments.get("staged", False)
-    cmd = "git diff --cached" if staged else "git diff"
-    try:
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        raw_diff = res.stdout
-        slimmed = slim_git_diff(raw_diff)
-
-        raw_tok = count_tokens(raw_diff)
-        comp_tok = count_tokens(slimmed)
-
-        _SESSION_SAVED_CLAUDE += max(0, raw_tok.claude - comp_tok.claude)
-        _SESSION_SAVED_OPENAI += max(0, raw_tok.openai - comp_tok.openai)
-        _SESSION_SAVED_GEMINI += max(0, raw_tok.gemini - comp_tok.gemini)
-
-        return slimmed or "No git changes detected."
-    except Exception as e:
-        return f"Error generating diff: {e}"
+    cmd = ["git", "diff", "--no-ext-diff", "--no-textconv", "--no-color"]
+    if staged:
+        cmd.append("--cached")
+    res = subprocess.run(
+        cmd, capture_output=True, text=True, errors="replace", timeout=30, cwd=_cwd(arguments)
+    )
+    if res.returncode:
+        raise ValueError(f"git diff failed ({res.returncode}): {res.stderr[:500]}")
+    raw_diff = res.stdout
+    output = (
+        compress_to_budget(
+            slim_git_diff(raw_diff),
+            budget,
+            original_text=raw_diff,
+            source="diff",
+        )
+        if raw_diff
+        else "No git changes detected."
+    )
+    return _record(raw_diff, output)
 
 
 def handle_tokencut_stats() -> str:
-    savings = estimate_savings(_SESSION_SAVED_CLAUDE, _SESSION_SAVED_OPENAI, _SESSION_SAVED_GEMINI)
     return (
         f"tokencut Session Savings:\n"
-        f"- Claude Tokens Saved: {_SESSION_SAVED_CLAUDE:,}\n"
-        f"- OpenAI Tokens Saved: {_SESSION_SAVED_OPENAI:,}\n"
-        f"- Gemini Tokens Saved: {_SESSION_SAVED_GEMINI:,}\n"
-        f"- Estimated Cost Saved: {savings.format_avg()} USD\n"
+        f"Estimated net text reduction (negative means overhead):\n"
+        f"- Claude heuristic: {_SESSION_SAVED_CLAUDE:,}\n"
+        f"- OpenAI o200k estimate: {_SESSION_SAVED_OPENAI:,}\n"
+        f"- Gemini heuristic: {_SESSION_SAVED_GEMINI:,}\n"
+        "Includes exit/ref text and retrievals; excludes schemas, JSON envelopes, prompts, and reasoning.\n"
+        "Not billing, model-specific token counts, or subscription quota savings.\n"
     )
+
+
+def _validate_arguments(name: str, arguments: Any) -> None:
+    if not isinstance(arguments, dict):
+        raise ValueError("arguments must be an object")
+    schema = next(tool["inputSchema"] for tool in TOOLS_DEFINITIONS if tool["name"] == name)
+    for required in schema.get("required", []):
+        if required not in arguments:
+            raise ValueError(f"Missing required argument: {required}")
+    types = {"string": str, "integer": int, "boolean": bool}
+    for key, value in arguments.items():
+        spec = schema["properties"].get(key)
+        if spec and type(value) is not types[spec["type"]]:
+            raise ValueError(f"{key} must be {spec['type']}")
+
+
+def _respond(req: Any) -> dict[str, Any] | None:
+    if (
+        not isinstance(req, dict)
+        or req.get("jsonrpc") != "2.0"
+        or not isinstance(req.get("method"), str)
+    ):
+        return {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32600, "message": "Invalid request"},
+        }
+    # JSON-RPC notifications never receive a response or execute tool calls.
+    if "id" not in req:
+        return None
+    response = {"jsonrpc": "2.0", "id": req["id"]}
+    method, params = req["method"], req.get("params", {})
+    if not isinstance(params, dict):
+        return {**response, "error": {"code": -32602, "message": "params must be an object"}}
+    if method == "initialize":
+        return {
+            **response,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "tokencut", "version": "0.1.0"},
+                "instructions": "Use tokencut_exec for verbose noninteractive commands, with an explicit absolute cwd. Use targeted reads. Outputs default to 2000 locally estimated tokens; retrieve omitted line ranges before relying on an incomplete result. This server does not intercept other tools or change model quotas.",
+            },
+        }
+    if method == "tools/list":
+        return {**response, "result": {"tools": TOOLS_DEFINITIONS}}
+    if method == "ping":
+        return {**response, "result": {}}
+    if method != "tools/call":
+        return {**response, "error": {"code": -32601, "message": "Method not found"}}
+    handlers = {
+        "tokencut_exec": handle_tokencut_exec,
+        "tokencut_read": handle_tokencut_read,
+        "tokencut_retrieve": handle_tokencut_retrieve,
+        "tokencut_diff": handle_tokencut_diff,
+        "tokencut_stats": lambda _: handle_tokencut_stats(),
+    }
+    name, arguments = params.get("name"), params.get("arguments", {})
+    if not isinstance(name, str) or name not in handlers:
+        return {**response, "error": {"code": -32602, "message": "Unknown tool"}}
+    try:
+        _validate_arguments(name, arguments)
+        output = handlers[name](arguments)
+        is_error = output.startswith("Error:")
+    except Exception as exc:
+        output, is_error = f"Error: {redact_secrets(str(exc))[:500]}", True
+    return {
+        **response,
+        "result": {"content": [{"type": "text", "text": output}], "isError": is_error},
+    }
 
 
 def run_mcp_stdio_server():
@@ -229,65 +334,13 @@ def run_mcp_stdio_server():
         try:
             req = json.loads(line)
         except json.JSONDecodeError:
-            continue
-
-        req_id = req.get("id")
-        method = req.get("method")
-        params = req.get("params", {})
-
-        if method == "initialize":
             resp = {
                 "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "tokencut", "version": "0.1.0"},
-                },
+                "id": None,
+                "error": {"code": -32700, "message": "Parse error"},
             }
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
-
-        elif method == "notifications/initialized":
-            pass
-
-        elif method == "tools/list":
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {"tools": TOOLS_DEFINITIONS},
-            }
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
-
-        elif method == "tools/call":
-            tool_name = params.get("name")
-            arguments = params.get("arguments", {})
-
-            if tool_name == "tokencut_exec":
-                res_text = handle_tokencut_exec(arguments)
-            elif tool_name == "tokencut_read":
-                res_text = handle_tokencut_read(arguments)
-            elif tool_name == "tokencut_retrieve":
-                res_text = handle_tokencut_retrieve(arguments)
-            elif tool_name == "tokencut_diff":
-                res_text = handle_tokencut_diff(arguments)
-            elif tool_name == "tokencut_stats":
-                res_text = handle_tokencut_stats()
-            else:
-                res_text = f"Unknown tool: {tool_name}"
-
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "content": [{"type": "text", "text": res_text}],
-                },
-            }
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
-
-        elif method == "ping":
-            resp = {"jsonrpc": "2.0", "id": req_id, "result": {}}
+        else:
+            resp = _respond(req)
+        if resp is not None:
             sys.stdout.write(json.dumps(resp) + "\n")
             sys.stdout.flush()
