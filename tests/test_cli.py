@@ -190,6 +190,22 @@ def test_cli_install_desktop_selects_only_desktop(monkeypatch):
     assert calls == ["desktop"]
 
 
+def test_cli_install_windsurf_selects_only_windsurf(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "tokencut.cli.configure_windsurf_mcp",
+        lambda: (calls.append("windsurf") or True, "/tmp/windsurf.json"),
+    )
+    monkeypatch.setattr("tokencut.cli.configure_cursor_mcp", lambda: calls.append("cursor"))
+    monkeypatch.setattr("tokencut.cli.configure_shell_alias", lambda: calls.append("alias"))
+    monkeypatch.setattr(
+        "tokencut.cli.configure_claude_desktop_mcp", lambda: calls.append("desktop")
+    )
+    result = runner.invoke(app, ["install", "--windsurf"])
+    assert result.exit_code == 0
+    assert calls == ["windsurf"]
+
+
 def test_cli_stats_formats():
     res_table = runner.invoke(app, ["stats", "--format", "table"])
     assert res_table.exit_code == 0

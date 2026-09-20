@@ -27,6 +27,7 @@ from tokencut.core.doctor import (
     configure_claude_desktop_mcp,
     configure_cursor_mcp,
     configure_shell_alias,
+    configure_windsurf_mcp,
     run_all_diagnostics,
 )
 from tokencut.core.engines import filter_rtk, select_engine
@@ -463,6 +464,9 @@ def doctor(
         c_ok, c_msg = configure_cursor_mcp()
         if c_ok:
             console.print(f"[green]✓ Configured Cursor MCP in {c_msg}[/green]")
+        w_ok, w_msg = configure_windsurf_mcp()
+        if w_ok:
+            console.print(f"[green]✓ Configured Windsurf MCP in {w_msg}[/green]")
         if sys.platform == "darwin":
             cd_ok, cd_msg = configure_claude_desktop_mcp()
             if cd_ok:
@@ -486,10 +490,18 @@ def doctor(
 def install(
     all_targets: Annotated[
         bool,
-        typer.Option("--all", "-a", help="Install Claude Desktop, Cursor MCP, and shell alias"),
+        typer.Option(
+            "--all", "-a", help="Install Claude Desktop, Cursor, Windsurf MCP, and shell alias"
+        ),
     ] = False,
     cursor: Annotated[
         bool, typer.Option("--cursor", help="Configure Cursor MCP (~/.cursor/mcp.json)")
+    ] = False,
+    windsurf: Annotated[
+        bool,
+        typer.Option(
+            "--windsurf", help="Configure Windsurf MCP (~/.codeium/windsurf/mcp_config.json)"
+        ),
     ] = False,
     claude_desktop: Annotated[
         bool, typer.Option("--claude-desktop", help="Configure Claude Desktop local MCP")
@@ -499,8 +511,10 @@ def install(
     ] = False,
 ):
     """Configure local MCP integrations and optional shell aliases."""
-    if not (all_targets or cursor or claude_desktop or alias):
-        console.print("[yellow]Specify --all, --claude-desktop, --cursor, or --alias.[/yellow]")
+    if not (all_targets or cursor or windsurf or claude_desktop or alias):
+        console.print(
+            "[yellow]Specify --all, --claude-desktop, --cursor, --windsurf, or --alias.[/yellow]"
+        )
         raise typer.Exit(code=1)
 
     if all_targets or cursor:
@@ -509,6 +523,13 @@ def install(
             err_console.print(msg, markup=False)
             raise typer.Exit(code=1)
         console.print(f"[green]✓ Cursor MCP configured in {msg}![/green]")
+
+    if all_targets or windsurf:
+        ok, msg = configure_windsurf_mcp()
+        if not ok:
+            err_console.print(msg, markup=False)
+            raise typer.Exit(code=1)
+        console.print(f"[green]✓ Windsurf MCP configured in {msg}![/green]")
 
     if all_targets or claude_desktop:
         ok, msg = configure_claude_desktop_mcp()

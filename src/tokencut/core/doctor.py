@@ -117,24 +117,76 @@ def check_cursor_mcp() -> DiagnosticItem:
         )
 
 
+def get_windsurf_mcp_config_path() -> Path:
+    return Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
+
+
+def check_windsurf_mcp() -> DiagnosticItem:
+    cfg_file = get_windsurf_mcp_config_path()
+    if not cfg_file.exists():
+        return DiagnosticItem(
+            name="Windsurf MCP Config",
+            status="missing",
+            message=f"No {cfg_file.name} found in ~/.codeium/windsurf",
+            remedy="Run `tokencut install --windsurf` to configure Windsurf MCP",
+        )
+
+    try:
+        data = json.loads(cfg_file.read_text(encoding="utf-8"))
+        servers = data.get("mcpServers", {})
+        if "tokencut" in servers:
+            return DiagnosticItem(
+                name="Windsurf MCP Config",
+                status="ok",
+                message=f"tokencut registered in {cfg_file.name}",
+            )
+        return DiagnosticItem(
+            name="Windsurf MCP Config",
+            status="missing",
+            message="tokencut not in mcpServers",
+            remedy="Run `tokencut install --windsurf` to register tokencut",
+        )
+    except Exception as e:
+        return DiagnosticItem(
+            name="Windsurf MCP Config",
+            status="warning",
+            message=f"Invalid JSON in {cfg_file}: {e}",
+            remedy="Run `tokencut install --windsurf` to repair config",
+        )
+
+
 def check_shell_alias() -> DiagnosticItem:
     shell = os.environ.get("SHELL", "")
-    rc_name = ".zshrc" if "zsh" in shell else ".bashrc"
-    rc_path = Path.home() / rc_name
+    if "fish" in shell:
+        rc_path = Path.home() / ".config" / "fish" / "config.fish"
+        rel_path = "~/.config/fish/config.fish"
+        alias_needle = "alias cc"
+    elif "zsh" in shell:
+        rc_path = Path.home() / ".zshrc"
+        rel_path = "~/.zshrc"
+        alias_needle = "alias cc="
+    else:
+        rc_path = Path.home() / ".bashrc"
+        rel_path = "~/.bashrc"
+        alias_needle = "alias cc="
 
     if rc_path.exists():
         content = rc_path.read_text(encoding="utf-8", errors="ignore")
-        if 'alias cc="tokencut' in content or "alias cc='tokencut" in content:
+        if (
+            'alias cc="tokencut' in content
+            or "alias cc='tokencut" in content
+            or alias_needle in content
+        ):
             return DiagnosticItem(
                 name="Shell Alias (`cc`)",
                 status="ok",
-                message=f"Alias configured in ~/{rc_name}",
+                message=f"Alias configured in {rel_path}",
             )
     return DiagnosticItem(
         name="Shell Alias (`cc`)",
         status="missing",
-        message=f"No `cc` alias found in ~/{rc_name}",
-        remedy=f"Run `tokencut install --alias` to add shortcut to ~/{rc_name}",
+        message=f"No `cc` alias found in {rel_path}",
+        remedy=f"Run `tokencut install --alias` to add shortcut to {rel_path}",
     )
 
 
@@ -348,23 +400,42 @@ def run_all_diagnostics() -> list[DiagnosticItem]:
         check_chatgpt_desktop(),
         check_codex_mcp(),
         check_cursor_mcp(),
+        check_windsurf_mcp(),
         check_shell_alias(),
     ]
 
 
-def configure_cursor_mcp() -> tuple[bool, str]:
-    return _configure_local_mcp(Path.home() / ".cursor" / "mcp.json")
+def configure_cursor_mcp(target_file: Path | None = None) -> tuple[bool, str]:
+    return _configure_local_mcp(target_file or (Path.home() / ".cursor" / "mcp.json"))
 
 
-def configure_shell_alias() -> tuple[bool, str]:
-    shell = os.environ.get("SHELL", "")
-    rc_name = ".zshrc" if "zsh" in shell else ".bashrc"
-    rc_path = Path.home() / rc_name
+def configure_windsurf_mcp(target_file: Path | None = None) -> tuple[bool, str]:
+    return _configure_local_mcp(target_file or get_windsurf_mcp_config_path())
 
-    alias_line = '\nalias cc="tokencut run --"\n'
+
+def configure_shell_alias(target_file: Path | None = None) -> tuple[bool, str]:
+    if target_file:
+        rc_path = target_file
+        is_fish = "fish" in str(target_file)
+    else:
+        shell = os.environ.get("SHELL", "")
+        if "fish" in shell:
+            rc_path = Path.home() / ".config" / "fish" / "config.fish"
+            is_fish = True
+        elif "zsh" in shell:
+            rc_path = Path.home() / ".zshrc"
+            is_fish = False
+        else:
+            rc_path = Path.home() / ".bashrc"
+            is_fish = False
+
+    rc_path.parent.mkdir(parents=True, exist_ok=True)
+    alias_line = "\nalias cc 'tokencut run --'\n" if is_fish else '\nalias cc="tokencut run --"\n'
+    needle = "alias cc " if is_fish else "alias cc="
+
     if rc_path.exists():
         content = rc_path.read_text(encoding="utf-8", errors="ignore")
-        if "alias cc=" in content:
+        if needle in content:
             return False, f"Alias already present in {rc_path}"
         with open(rc_path, "a", encoding="utf-8") as f:
             f.write(alias_line)

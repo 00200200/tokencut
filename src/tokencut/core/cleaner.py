@@ -113,7 +113,7 @@ def find_first_error_index(lines: list[str]) -> int | None:
 
 
 def compact_terminal_output(raw_text: str, options: CleanerOptions | None = None) -> str:
-    """State-of-the-art terminal log compactor.
+    """High-efficiency terminal log compactor.
 
     - Strips ANSI colors and terminal garbage
     - Scrubs API keys & sensitive secrets
