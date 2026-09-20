@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tokencut"
+version = "0.1.0"
+description = "Cut token burn by 60-85% in Claude Code, OpenAI/Codex, and Gemini CLI without losing reasoning quality."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "00200200" }]
+keywords = [
+  "token-optimization",
+  "claude-code",
+  "codex",
+  "openai",
+  "gemini",
+  "mcp",
+  "llm",
+  "developer-tools",
+  "context-window",
+  "rate-limit",
+]
+classifiers = [
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Build Tools",
+  "Topic :: Utilities",
+]
+dependencies = [
+  "rich>=13.7.0",
+  "tiktoken>=0.7.0",
+  "typer>=0.12.0",
+]
+
+[project.optional-dependencies]
+mcp = [
+  "mcp>=1.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/00200200/tokencut"
+Repository = "https://github.com/00200200/tokencut"
+Issues = "https://github.com/00200200/tokencut/issues"
+
+[project.scripts]
+tokencut = "tokencut.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tokencut"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.9.0",
+]

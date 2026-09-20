@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="tokencut — SOTA Token Optimizer for Claude Code, Codex, and Gemini CLI">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#090d16"/>
+      <stop offset="100%" stop-color="#04060a"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00f5a0"/>
+      <stop offset="50%" stop-color="#00d9f5"/>
+      <stop offset="100%" stop-color="#7928ca"/>
+    </linearGradient>
+    <linearGradient id="card-border" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00f5a0" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#00d9f5" stop-opacity="0.1"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="80%" cy="25%" r="55%">
+      <stop offset="0%" stop-color="#00f5a0" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#00f5a0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="20%" cy="80%" r="50%">
+      <stop offset="0%" stop-color="#00d9f5" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#00d9f5" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+  <rect width="1280" height="640" fill="url(#glow2)"/>
+  <rect x="0" y="0" width="1280" height="640" fill="none" stroke="#1b2234" stroke-width="2"/>
+
+  <!-- Top Badge -->
+  <g transform="translate(80, 75)">
+    <rect width="360" height="32" rx="16" fill="#131b2e" stroke="#253554" stroke-width="1"/>
+    <circle cx="16" cy="16" r="5" fill="#00f5a0"/>
+    <text x="32" y="21" fill="#8ea2c6" font-size="13" font-weight="600" class="mono" letter-spacing="1.5">SOTA TOKEN OPTIMIZER · 2026</text>
+  </g>
+
+  <!-- Main Title -->
+  <text x="76" y="200" font-size="108" font-weight="900" letter-spacing="-3" fill="#ffffff" class="sans">token<tspan fill="url(#brand)">cut</tspan></text>
+
+  <!-- Accent Line -->
+  <rect x="80" y="222" width="460" height="6" rx="3" fill="url(#brand)"/>
+
+  <!-- Subtitle -->
+  <text x="80" y="280" font-size="28" font-weight="600" fill="#e1e7f5" class="sans">Cut token burn by 60–85% without losing reasoning quality.</text>
+  <text x="80" y="320" font-size="18" fill="#8ea2c6" class="sans">Stop hitting the 5-hour rate limit on Claude Code, Cursor, OpenAI Codex &amp; Gemini CLI.</text>
+
+  <!-- Feature Tags -->
+  <g transform="translate(80, 365)">
+    <!-- Tag 1 -->
+    <rect width="210" height="36" rx="8" fill="#0e1726" stroke="#212d45" stroke-width="1"/>
+    <text x="14" y="23" fill="#00f5a0" font-size="13" font-weight="600" class="mono">⚡ Zero Quality Loss</text>
+
+    <!-- Tag 2 -->
+    <rect x="225" width="220" height="36" rx="8" fill="#0e1726" stroke="#212d45" stroke-width="1"/>
+    <text x="239" y="23" fill="#00d9f5" font-size="13" font-weight="600" class="mono">🛡️ Prompt Cache Safe</text>
+
+    <!-- Tag 3 -->
+    <rect x="460" width="230" height="36" rx="8" fill="#0e1726" stroke="#212d45" stroke-width="1"/>
+    <text x="474" y="23" fill="#a78bfa" font-size="13" font-weight="600" class="mono">🔌 Universal MCP Server</text>
+  </g>
+
+  <!-- Comparison Card on Right -->
+  <g transform="translate(740, 110)" filter="url(#shadow)">
+    <rect width="460" height="440" rx="16" fill="#0d1322" stroke="url(#card-border)" stroke-width="1.5"/>
+
+    <!-- Window Header -->
+    <rect width="460" height="44" rx="16" fill="#131c30"/>
+    <rect y="30" width="460" height="14" fill="#131c30"/>
+    <circle cx="24" cy="22" r="6" fill="#ff5f56"/>
+    <circle cx="44" cy="22" r="6" fill="#ffbd2e"/>
+    <circle cx="64" cy="22" r="6" fill="#27c93f"/>
+    <text x="230" y="26" text-anchor="middle" fill="#627293" font-size="12" class="mono">real-world session benchmark</text>
+
+    <!-- Card Content -->
+    <!-- Without tokencut -->
+    <g transform="translate(30, 75)">
+      <rect width="400" height="135" rx="10" fill="#161b2a" stroke="#2d222e" stroke-width="1"/>
+      <text x="20" y="32" fill="#ff6b6b" font-size="14" font-weight="700" class="mono">🔴 WITHOUT TOKENCUT</text>
+      <text x="20" y="62" fill="#e1e7f5" font-size="13" class="mono">Pytest &amp; Build: <tspan fill="#ff8585" font-weight="bold">18,400 tokens / run</tspan></text>
+      <text x="20" y="88" fill="#8ea2c6" font-size="12" class="mono">Context window consumed: <tspan fill="#ff6b6b">87%</tspan></text>
+      <text x="20" y="114" fill="#f87171" font-size="12" class="mono">⚠️ Claude Code 5h limit hit in 48 mins</text>
+    </g>
+
+    <!-- With tokencut -->
+    <g transform="translate(30, 235)">
+      <rect width="400" height="165" rx="10" fill="#0d2426" stroke="#00f5a0" stroke-width="1.5"/>
+      <text x="20" y="32" fill="#00f5a0" font-size="14" font-weight="700" class="mono">🟢 WITH TOKENCUT</text>
+      <text x="20" y="62" fill="#ffffff" font-size="13" class="mono">Pytest &amp; Build: <tspan fill="#00f5a0" font-weight="bold">3,120 tokens (-83.0%)</tspan></text>
+      <text x="20" y="88" fill="#e1e7f5" font-size="12" class="mono">Context window consumed: <tspan fill="#00f5a0">15%</tspan></text>
+      <text x="20" y="114" fill="#38bdf8" font-size="12" class="mono">Traceback &amp; Errors preserved: <tspan fill="#ffffff" font-weight="bold">100%</tspan></text>
+      <text x="20" y="142" fill="#a7f3d0" font-size="13" font-weight="700" class="mono">✨ Session lasts ALL DAY uninterrupted</text>
+    </g>
+  </g>
+
+  <!-- Bottom Command Bar -->
+  <g transform="translate(80, 520)">
+    <rect width="580" height="52" rx="10" fill="#101726" stroke="#253554" stroke-width="1"/>
+    <text x="24" y="32" fill="#00f5a0" font-size="16" font-weight="600" class="mono">$</text>
+    <text x="44" y="32" fill="#e1e7f5" font-size="15" class="mono">uvx tokencut run -- pytest -v tests/</text>
+  </g>
+</svg>
