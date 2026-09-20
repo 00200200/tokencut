@@ -68,3 +68,48 @@ def test_cli_lint(tmp_path):
     res = runner.invoke(app, ["lint", str(f)])
     assert res.exit_code == 0
     assert "Rule Audit" in res.output
+
+
+def test_cli_json_string():
+    raw = '[{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}]'
+    res = runner.invoke(app, ["json", raw])
+    assert res.exit_code == 0
+    assert "omitted by tokencut" in res.output
+
+
+def test_cli_json_stdin():
+    raw = '{"items": [1, 2, 3, 4, 5, 6, 7]}'
+    res = runner.invoke(app, ["json"], input=raw)
+    assert res.exit_code == 0
+    assert "omitted by tokencut" in res.output
+
+
+def test_cli_doctor():
+    res = runner.invoke(app, ["doctor"])
+    assert res.exit_code == 0
+    assert "tokencut System & Integration Diagnostics" in res.output
+
+
+def test_cli_stats_formats():
+    res_table = runner.invoke(app, ["stats", "--format", "table"])
+    assert res_table.exit_code == 0
+    assert "Telemetry" in res_table.output
+
+    res_json = runner.invoke(app, ["stats", "--format", "json"])
+    assert res_json.exit_code == 0
+    assert "total_runs" in res_json.output
+
+    res_md = runner.invoke(app, ["stats", "--format", "markdown"])
+    assert res_md.exit_code == 0
+    assert "| **Total Executions** |" in res_md.output
+
+
+def test_cli_cat_strip_comments(tmp_path):
+    f = tmp_path / "app.py"
+    f.write_text(
+        "# Copyright header\n# Another comment\ndef run():\n    # Inline comment\n    return 42\n"
+    )
+    res = runner.invoke(app, ["cat", str(f), "--strip-comments"])
+    assert res.exit_code == 0
+    assert "# Copyright header" not in res.output
+    assert "def run():" in res.output

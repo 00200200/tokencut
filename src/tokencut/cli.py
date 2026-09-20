@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
@@ -15,7 +16,9 @@ from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
+from tokencut.core.doctor import configure_cursor_mcp, configure_shell_alias, run_all_diagnostics
 from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
+from tokencut.core.json_slimmer import slim_json
 from tokencut.core.rules_linter import lint_rule_content, minify_rules
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import auto_specialize_command_output
@@ -60,8 +63,16 @@ def run(
     specialized = auto_specialize_command_output(full_cmd, raw_output)
     base_text = specialized if specialized is not None else raw_output
 
-    # Step 2: Apply adaptive budget or standard compaction
-    if budget:
+    # Step 2: Check if output is a large JSON payload
+    trimmed = base_text.strip()
+    if (trimmed.startswith("{") and trimmed.endswith("}")) or (
+        trimmed.startswith("[") and trimmed.endswith("]")
+    ):
+        if len(trimmed) > 500:
+            compacted = slim_json(trimmed, max_array_items=3)
+        else:
+            compacted = trimmed
+    elif budget:
         compacted = compress_to_budget(base_text, max_tokens=budget, source=full_cmd)
     else:
         opts = CleanerOptions(max_lines=max_lines)
@@ -70,72 +81,124 @@ def run(
     if compacted:
         console.print(compacted)
 
-    if raw_output:
-        metrics = compute_metrics(raw_output, compacted)
-        saved = metrics.saved_tokens
-        savings = estimate_savings(saved.claude, saved.openai, saved.gemini)
+    # Compute metrics & record telemetry
+    metrics = compute_metrics(raw_output, compacted)
+    savings = estimate_savings(
+        metrics.saved_tokens.claude, metrics.saved_tokens.openai, metrics.saved_tokens.gemini
+    )
 
-        # Record telemetry
-        try:
-            telemetry = TelemetryStore()
-            telemetry.record(
-                raw_claude=metrics.raw_tokens.claude,
-                compact_claude=metrics.compact_tokens.claude,
-                raw_openai=metrics.raw_tokens.openai,
-                compact_openai=metrics.compact_tokens.openai,
-                raw_gemini=metrics.raw_tokens.gemini,
-                compact_gemini=metrics.compact_tokens.gemini,
-            )
-        except Exception:
-            pass
+    telemetry = TelemetryStore()
+    telemetry.record(
+        command=full_cmd,
+        raw_claude=metrics.raw_tokens.claude,
+        saved_claude=metrics.saved_tokens.claude,
+        raw_openai=metrics.raw_tokens.openai,
+        saved_openai=metrics.saved_tokens.openai,
+        raw_gemini=metrics.raw_tokens.gemini,
+        saved_gemini=metrics.saved_tokens.gemini,
+        duration_s=duration,
+    )
 
-        if not quiet:
-            footer = (
-                f"[bold cyan]tokencut[/bold cyan] "
-                f"tokens saved: [bold green]~{saved.avg:,}[/bold green] "
-                f"([bold green]-{metrics.reduction_pct}%[/bold green]) | "
-                f"Claude: -{saved.claude:,} · GPT-4o: -{saved.openai:,} · Gemini: -{saved.gemini:,} | "
-                f"est. saved: [bold yellow]{savings.format_avg()}[/bold yellow] | "
-                f"time: {duration:.2f}s"
-            )
-            err_console.print(footer)
+    if not quiet and metrics.raw_tokens.avg > 0:
+        err_console.print(
+            f"[dim]tokencut: saved ~{metrics.saved_tokens.avg:,} tokens (-{metrics.reduction_pct}%) | "
+            f"Claude: -{metrics.saved_tokens.claude:,} · GPT-4o: -{metrics.saved_tokens.openai:,} | "
+            f"est. saved: {savings.format_avg()} | exit: {proc.returncode}[/dim]"
+        )
 
-    sys.exit(proc.returncode)
+    if proc.returncode != 0:
+        raise typer.Exit(code=proc.returncode)
 
 
 @app.command()
 def cat(
-    file_path: Annotated[Path, typer.Argument(help="Path to code file")],
+    file_path: Annotated[Path, typer.Argument(help="Path to file")],
     skeleton: Annotated[
-        bool, typer.Option("--skeleton", "-s", help="Extract structural AST outline")
+        bool,
+        typer.Option("--skeleton", "-s", help="Extract AST code skeleton (classes & signatures)"),
     ] = False,
     lines: Annotated[
-        str | None, typer.Option("--lines", "-l", help="Line range (e.g. 10-40)")
+        str | None, typer.Option("--lines", "-l", help="Line range to inspect (e.g. 10-50)")
     ] = None,
-    symbol: Annotated[str | None, typer.Option("--symbol", "-y", help="Target symbol name")] = None,
+    symbol: Annotated[
+        str | None,
+        typer.Option("--symbol", "-y", help="Specific class or function name to extract"),
+    ] = None,
+    strip_comments: Annotated[
+        bool, typer.Option("--strip-comments", "-c", help="Strip comments and blank lines")
+    ] = False,
     budget: Annotated[
         int | None, typer.Option("--budget", "-b", help="Strict token ceiling budget")
     ] = None,
 ):
-    """View file with intelligent token compaction or AST skeleton extraction."""
+    """Inspect file with AST skeletonization, symbol filtering, or line slicing."""
     if not file_path.exists():
         err_console.print(f"[bold red]File not found:[/bold red] {file_path}")
         raise typer.Exit(code=1)
 
     raw_content = file_path.read_text(encoding="utf-8", errors="replace")
-    output = extract_symbol_or_range(file_path, symbol=symbol, lines_range=lines, skeleton=skeleton)
+    output = extract_symbol_or_range(
+        file_path,
+        symbol=symbol,
+        lines_range=lines,
+        skeleton=skeleton,
+        strip_comments=strip_comments,
+    )
 
     if budget:
         output = compress_to_budget(output, max_tokens=budget, source=str(file_path))
 
     console.print(output)
 
-    if skeleton or lines or symbol or budget:
+    if skeleton or lines or symbol or strip_comments or budget:
         metrics = compute_metrics(raw_content, output)
         err_console.print(
             f"[dim]tokencut: original {metrics.raw_tokens.avg:,} tokens -> {metrics.compact_tokens.avg:,} tokens "
             f"(-{metrics.reduction_pct}%)[/dim]"
         )
+
+
+@app.command(name="json")
+def json_cmd(
+    target: Annotated[
+        str | None,
+        typer.Argument(help="JSON file path or string (reads stdin if omitted)"),
+    ] = None,
+    max_items: Annotated[
+        int, typer.Option("--max-items", "-n", help="Max array items to retain")
+    ] = 3,
+    max_str: Annotated[int, typer.Option("--max-str", "-s", help="Max string length")] = 120,
+    no_cache: Annotated[
+        bool, typer.Option("--no-cache", help="Do not store in SQLite CCR")
+    ] = False,
+):
+    """Compact large JSON payloads, folding arrays and truncating long strings."""
+    if target:
+        p = Path(target)
+        if p.exists() and p.is_file():
+            raw_text = p.read_text(encoding="utf-8", errors="replace")
+        else:
+            raw_text = target
+    else:
+        raw_text = sys.stdin.read()
+
+    if not raw_text.strip():
+        err_console.print("[dim]No JSON input received.[/dim]")
+        return
+
+    slimmed = slim_json(
+        raw_text,
+        max_array_items=max_items,
+        max_string_len=max_str,
+        cache_full=not no_cache,
+    )
+    console.print(slimmed)
+
+    metrics = compute_metrics(raw_text, slimmed)
+    err_console.print(
+        f"[dim]tokencut json: original {metrics.raw_tokens.avg:,} -> {metrics.compact_tokens.avg:,} tokens "
+        f"(-{metrics.reduction_pct}%)[/dim]"
+    )
 
 
 @app.command()
@@ -183,10 +246,39 @@ def tree(
 
 
 @app.command()
-def stats():
+def stats(
+    format_type: Annotated[
+        str, typer.Option("--format", "-f", help="Output format: table, json, markdown")
+    ] = "table",
+):
     """Display lifetime token savings telemetry and financial metrics."""
     telemetry = TelemetryStore()
     s = telemetry.get_stats()
+
+    if format_type == "json":
+        data = {
+            "total_runs": s.total_runs,
+            "saved_claude": s.saved_claude,
+            "saved_openai": s.saved_openai,
+            "saved_gemini": s.saved_gemini,
+            "reduction_pct": s.reduction_pct,
+            "estimated_usd_saved": s.estimated_usd_saved,
+        }
+        console.print(json.dumps(data, indent=2))
+        return
+
+    if format_type == "markdown":
+        md = f"""| Metric | Value |
+| :--- | :--- |
+| **Total Executions** | {s.total_runs:,} |
+| **Claude Tokens Saved** | {s.saved_claude:,} |
+| **OpenAI Tokens Saved** | {s.saved_openai:,} |
+| **Gemini Tokens Saved** | {s.saved_gemini:,} |
+| **Average Reduction** | {s.reduction_pct}% |
+| **Estimated Money Saved** | ${s.estimated_usd_saved:.4f} USD |
+"""
+        console.print(md.strip())
+        return
 
     table = Table(title="tokencut Lifetime Savings Telemetry")
     table.add_column("Metric", style="cyan")
@@ -202,6 +294,79 @@ def stats():
     )
 
     console.print(table)
+
+
+@app.command()
+def doctor(
+    fix: Annotated[
+        bool, typer.Option("--fix", "-f", help="Automatically configure missing integrations")
+    ] = False,
+):
+    """Diagnose environment and integration health across Claude, Cursor, and shell."""
+    diagnostics = run_all_diagnostics()
+
+    table = Table(title="tokencut System & Integration Diagnostics")
+    table.add_column("Component", style="cyan")
+    table.add_column("Status", style="bold")
+    table.add_column("Details", style="dim")
+
+    for item in diagnostics:
+        if item.status == "ok":
+            status_badge = "[green]✓ OK[/green]"
+        elif item.status == "warning":
+            status_badge = "[yellow]! WARN[/yellow]"
+        else:
+            status_badge = "[red]✗ MISSING[/red]"
+        table.add_row(item.name, status_badge, item.message)
+
+    console.print(table)
+
+    if fix:
+        console.print("\n[bold cyan]Applying automatic configuration fixes...[/bold cyan]")
+        c_ok, c_msg = configure_cursor_mcp()
+        if c_ok:
+            console.print(f"[green]✓ Configured Cursor MCP in {c_msg}[/green]")
+        a_ok, a_msg = configure_shell_alias()
+        if a_ok:
+            console.print(f"[green]✓ Configured shell alias in {a_msg}[/green]")
+        else:
+            console.print(f"[dim]• {a_msg}[/dim]")
+    else:
+        missing = [d for d in diagnostics if d.status in {"missing", "warning"} and d.remedy]
+        if missing:
+            console.print(
+                "\n[bold yellow]Recommended actions (or run `tokencut doctor --fix`):[/bold yellow]"
+            )
+            for m in missing:
+                console.print(f"  • {m.name}: {m.remedy}")
+
+
+@app.command()
+def install(
+    all_targets: Annotated[
+        bool, typer.Option("--all", "-a", help="Install all integrations (Cursor MCP, shell alias)")
+    ] = False,
+    cursor: Annotated[
+        bool, typer.Option("--cursor", help="Configure Cursor MCP (~/.cursor/mcp.json)")
+    ] = False,
+    alias: Annotated[
+        bool, typer.Option("--alias", help="Add 'alias cc=tokencut run --' to shell rc")
+    ] = False,
+):
+    """Automatically configure Cursor MCP and shell aliases."""
+    if not (all_targets or cursor or alias):
+        console.print(
+            "[yellow]Specify --all, --cursor, or --alias. Run with --help for details.[/yellow]"
+        )
+        raise typer.Exit(code=1)
+
+    if all_targets or cursor:
+        _, msg = configure_cursor_mcp()
+        console.print(f"[green]✓ Cursor MCP configured in {msg}![/green]")
+
+    if all_targets or alias:
+        _, msg = configure_shell_alias()
+        console.print(f"[green]✓ Shell alias configured in {msg}![/green]")
 
 
 @app.command()
@@ -241,7 +406,15 @@ def pipe(
     if not raw_input:
         return
 
-    if budget:
+    trimmed = raw_input.strip()
+    if (trimmed.startswith("{") and trimmed.endswith("}")) or (
+        trimmed.startswith("[") and trimmed.endswith("]")
+    ):
+        if len(trimmed) > 500:
+            compacted = slim_json(trimmed, max_array_items=3)
+        else:
+            compacted = trimmed
+    elif budget:
         compacted = compress_to_budget(raw_input, max_tokens=budget)
     else:
         opts = CleanerOptions(max_lines=max_lines)

@@ -5,9 +5,11 @@ import sys
 from tokencut.mcp.server import (
     handle_tokencut_diff,
     handle_tokencut_exec,
+    handle_tokencut_json,
     handle_tokencut_read,
     handle_tokencut_retrieve,
     handle_tokencut_stats,
+    handle_tokencut_tree,
     run_mcp_stdio_server,
 )
 
@@ -16,6 +18,11 @@ def test_handle_tokencut_exec():
     res = handle_tokencut_exec({"command": "echo 'Hello tokencut!'"})
     assert "Hello tokencut!" in res
     assert "tokencut: saved" in res
+
+
+def test_handle_tokencut_exec_budget():
+    res = handle_tokencut_exec({"command": "echo 'Hello budget!'", "budget": 100})
+    assert "Hello budget!" in res
 
 
 def test_handle_tokencut_read(tmp_path):
@@ -34,6 +41,19 @@ def test_handle_tokencut_retrieve():
 def test_handle_tokencut_diff():
     res = handle_tokencut_diff({})
     assert isinstance(res, str)
+
+
+def test_handle_tokencut_tree(tmp_path):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "a.py").write_text("print(1)")
+    res = handle_tokencut_tree({"path": str(tmp_path), "max_depth": 2})
+    assert "a.py" in res
+
+
+def test_handle_tokencut_json():
+    raw = '[{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]'
+    res = handle_tokencut_json({"json_str": raw, "max_items": 2})
+    assert "omitted by tokencut" in res
 
 
 def test_handle_tokencut_stats():
@@ -67,6 +87,6 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
     assert responses[0]["id"] == 1
     assert responses[0]["result"]["serverInfo"]["name"] == "tokencut"
     assert responses[1]["id"] == 2
-    assert len(responses[1]["result"]["tools"]) == 5
+    assert len(responses[1]["result"]["tools"]) == 7
     assert responses[2]["id"] == 3
     assert "tokencut Session Savings" in responses[2]["result"]["content"][0]["text"]

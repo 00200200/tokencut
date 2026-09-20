@@ -6,10 +6,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
+from tokencut.core.json_slimmer import slim_json
 from tokencut.core.skeleton import extract_symbol_or_range
+from tokencut.core.tree_scanner import format_tree_as_text, scan_directory
 from tokencut.metrics.pricing import estimate_savings
 from tokencut.metrics.tokenizer import count_tokens
 
@@ -34,6 +37,10 @@ TOOLS_DEFINITIONS = [
                     "type": "integer",
                     "description": "Maximum number of lines to retain before truncation (default 80).",
                     "default": 80,
+                },
+                "budget": {
+                    "type": "integer",
+                    "description": "Optional strict token ceiling budget (e.g. 500).",
                 },
             },
             "required": ["command"],
@@ -99,6 +106,47 @@ TOOLS_DEFINITIONS = [
         },
     },
     {
+        "name": "tokencut_tree",
+        "description": "Analyze directory token distribution and locate oversized files/directories (e.g. lockfiles, test fixtures) that consume disproportionate context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Root directory to scan (default '.').",
+                    "default": ".",
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum folder depth (default 3).",
+                    "default": 3,
+                },
+            },
+        },
+    },
+    {
+        "name": "tokencut_json",
+        "description": "Compact large JSON strings or files by folding repetitive arrays and truncating long strings. Retains complete schema while eliminating 80-95% of token burn. Full uncompressed data is cached in SQLite and can be retrieved via ref ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "json_str": {
+                    "type": "string",
+                    "description": "Raw JSON string to compact.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Optional file path containing JSON to compact.",
+                },
+                "max_items": {
+                    "type": "integer",
+                    "description": "Maximum array items to keep per list (default 3).",
+                    "default": 3,
+                },
+            },
+        },
+    },
+    {
         "name": "tokencut_stats",
         "description": "Get session telemetry: total tokens saved across Claude, OpenAI, Gemini and estimated cost savings in USD.",
         "inputSchema": {
@@ -113,6 +161,7 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
     global _SESSION_SAVED_CLAUDE, _SESSION_SAVED_OPENAI, _SESSION_SAVED_GEMINI
     command = arguments["command"]
     max_lines = arguments.get("max_lines", 80)
+    budget = arguments.get("budget")
 
     try:
         proc = subprocess.run(
@@ -124,15 +173,27 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
         )
         combined_raw = proc.stdout
         if proc.stderr:
-            combined_raw += "\n" + proc.stderr
+            combined_raw += ("\n" if combined_raw else "") + proc.stderr
     except Exception as e:
         return f"Error executing command: {e}"
 
     cache = ContextCache()
     dup_ref = cache.check_duplicate(combined_raw)
 
-    opts = CleanerOptions(max_lines=max_lines)
-    compacted = compact_terminal_output(combined_raw, opts)
+    # Check if output is large JSON (> 400 chars)
+    trimmed = combined_raw.strip()
+    if (trimmed.startswith("{") and trimmed.endswith("}")) or (
+        trimmed.startswith("[") and trimmed.endswith("]")
+    ):
+        if len(trimmed) > 400:
+            compacted = slim_json(trimmed, max_array_items=3)
+        else:
+            compacted = trimmed
+    elif budget:
+        compacted = compress_to_budget(combined_raw, max_tokens=budget, source=command)
+    else:
+        opts = CleanerOptions(max_lines=max_lines)
+        compacted = compact_terminal_output(combined_raw, opts)
 
     raw_tokens = count_tokens(combined_raw)
     comp_tokens = count_tokens(compacted)
@@ -208,6 +269,33 @@ def handle_tokencut_diff(arguments: dict[str, Any]) -> str:
         return f"Error generating diff: {e}"
 
 
+def handle_tokencut_tree(arguments: dict[str, Any]) -> str:
+    path_str = arguments.get("path", ".")
+    max_depth = arguments.get("max_depth", 3)
+    target = Path(path_str).resolve()
+    if not target.exists():
+        return f"Path does not exist: {path_str}"
+
+    root_node, _ = scan_directory(target, max_depth=max_depth)
+    return format_tree_as_text(root_node, root_node.tokens)
+
+
+def handle_tokencut_json(arguments: dict[str, Any]) -> str:
+    raw_str = arguments.get("json_str")
+    path_str = arguments.get("path")
+    if path_str:
+        try:
+            raw_str = Path(path_str).read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            return f"Error reading file {path_str}: {e}"
+
+    if not raw_str:
+        return "Error: either json_str or path must be provided."
+
+    max_items = arguments.get("max_items", 3)
+    return slim_json(raw_str, max_array_items=max_items)
+
+
 def handle_tokencut_stats() -> str:
     savings = estimate_savings(_SESSION_SAVED_CLAUDE, _SESSION_SAVED_OPENAI, _SESSION_SAVED_GEMINI)
     return (
@@ -272,6 +360,10 @@ def run_mcp_stdio_server():
                 res_text = handle_tokencut_retrieve(arguments)
             elif tool_name == "tokencut_diff":
                 res_text = handle_tokencut_diff(arguments)
+            elif tool_name == "tokencut_tree":
+                res_text = handle_tokencut_tree(arguments)
+            elif tool_name == "tokencut_json":
+                res_text = handle_tokencut_json(arguments)
             elif tool_name == "tokencut_stats":
                 res_text = handle_tokencut_stats()
             else:

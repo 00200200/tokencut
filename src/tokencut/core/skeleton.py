@@ -167,11 +167,50 @@ def skeletonize_json(json_str: str, max_array_items: int = 2) -> str:
     return json.dumps(pruned, indent=2)
 
 
+def strip_comments_and_blanks(content: str, suffix: str = ".py") -> str:
+    """Remove single-line comments, block comments, and excessive empty lines."""
+    lines = content.splitlines()
+    cleaned: list[str] = []
+    in_block = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if suffix in {".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".c", ".cpp"}:
+            if "/*" in stripped and "*/" in stripped:
+                line = re.sub(r"/\*.*?\*/", "", line)
+                stripped = line.strip()
+            elif "/*" in stripped:
+                in_block = True
+                continue
+            elif "*/" in stripped:
+                in_block = False
+                continue
+            if in_block:
+                continue
+            if stripped.startswith("//"):
+                continue
+            if "//" in line and not ('"' in line or "'" in line):
+                line = line.split("//")[0].rstrip()
+        elif suffix in {".py", ".sh", ".bash", ".yaml", ".yml", ".toml"}:
+            if stripped.startswith("#"):
+                continue
+            if "#" in line and not ('"' in line or "'" in line):
+                line = line.split("#")[0].rstrip()
+
+        if line.strip():
+            cleaned.append(line)
+
+    return "\n".join(cleaned)
+
+
 def extract_symbol_or_range(
     file_path: str | Path,
     symbol: str | None = None,
     lines_range: str | None = None,
     skeleton: bool = False,
+    strip_comments: bool = False,
 ) -> str:
     """Read a file with targeted extraction (symbol, line range, or full skeleton)."""
     p = Path(file_path)
@@ -226,5 +265,8 @@ def extract_symbol_or_range(
             return _skeletonize_by_regex(content)
         elif p.suffix in {".json", ".yaml", ".yml"}:
             return skeletonize_json(content)
+
+    if strip_comments:
+        return strip_comments_and_blanks(content, suffix=p.suffix)
 
     return content

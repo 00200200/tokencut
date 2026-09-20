@@ -13,7 +13,7 @@
   <p align="center">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00f5a0?style=flat-square&logo=opensourceinitiative&logoColor=white" alt="MIT license"></a>
     <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-00d9f5?style=flat-square&logo=python&logoColor=white" alt="Python versions"></a>
-    <a href="https://github.com/00200200/tokencut/actions"><img src="https://img.shields.io/badge/tests-37%20passed-22c55e?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
+    <a href="https://github.com/00200200/tokencut/actions"><img src="https://img.shields.io/badge/tests-54%20passed-22c55e?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
     <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-261230.svg?style=flat-square&labelColor=000000" alt="Ruff"></a>
     <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=flat-square&color=7928ca" alt="GitHub stars"></a>
   </p>
@@ -59,8 +59,10 @@ How `tokencut` compares to standard agent execution, static context packagers (s
 | **Repository token profiling** | No | File list | No | **Hierarchical breakdown (`tokencut tree`)** |
 | **AST code skeletonization** | No | Tree-sitter | No | **Python AST, TS, JS, Go, Rust (`tokencut cat -s`)** |
 | **Lockfile diff folding (-97%)** | No | No | No | **Automated lockfile folding (`tokencut diff`)** |
+| **Structured JSON payload compaction** | Raw dump | No | Truncate | **Schema-preserving array folding (`tokencut json`)** |
 | **Secret & credential scrubbing** | Leaks in history | Basic | No | **Automatic regex redactor (OpenAI, Anthropic, GH)** |
-| **Native MCP server** | No | No | Wrapper needed | **Built-in stdio server (`claude mcp add ...`)** |
+| **System diagnostics & auto-wiring** | Manual | No | No | **1-click auto-config (`tokencut doctor --fix`)** |
+| **Native MCP server** | No | No | Wrapper needed | **7 native stdio tools (`claude mcp add ...`)** |
 | **Token & cost telemetry** | No | No | No | **Session & lifetime tracking in USD** |
 
 ---
@@ -76,6 +78,7 @@ Measured on representative real-world developer workloads across Anthropic Claud
 | **Source file inspection** *(AST skeleton)* | 2,508 | 642 | **-74.4%** | Class/method signatures and docstrings retained |
 | **Git diff** *(feature code + lockfile)* | 4,165 | 101 | **-97.6%** | Code changes preserved; lockfile diffs collapsed |
 | **Git log history** *(50 commits)* | 3,120 | 780 | **-75.0%** | Single-line short hashes and subject lines |
+| **REST / GraphQL API JSON** *(50 items, 13KB)* | 2,914 | 240 | **-91.8%** | Complete schema and sample items retained |
 
 ---
 
@@ -135,6 +138,12 @@ Intercepts API keys (OpenAI `sk-*`, Anthropic `sk-ant-*`, Google `AIza*`, GitHub
 ### 6. Prompt Cache Optimization (`tokencut lint`)
 Provider prompt caching (Anthropic, Gemini) offers up to 90% cost savings for invariant prompt prefixes. `tokencut lint` analyzes system instruction files (`CLAUDE.md`, `.cursorrules`, system prompts) to identify dynamic timestamps, non-deterministic paths, and volatile headers that invalidate prompt caches.
 
+### 7. Structured JSON & API Payload Compaction (`tokencut json`)
+When coding agents fetch API responses via `curl` or inspect JSON data files, hundreds of repetitive array items quickly burn tens of thousands of tokens. `tokencut json` folds large lists while retaining the first few items and schema annotations, truncates oversized strings (such as base64 images or hashes), and caches the raw JSON in SQLite with a reference ID.
+
+### 8. System Diagnostics & Auto-Configuration (`tokencut doctor`)
+Inspects your local environment across Python runtime, SQLite cache health, Claude Code CLI, Cursor MCP configurations, and shell aliases. Running `tokencut doctor --fix` or `tokencut install --all` automatically writes the required configurations with zero manual editing.
+
 ---
 
 ## Quickstart
@@ -153,6 +162,12 @@ uvx tokencut cat src/server.py --skeleton
 
 # Inspect git diff with folded lockfiles
 uvx tokencut diff
+
+# Compact large JSON file or API response
+uvx tokencut json api_response.json
+
+# Check environment health & auto-configure Cursor / shell
+uvx tokencut doctor --fix
 
 # Audit instructions for prompt cache-busting
 uvx tokencut lint CLAUDE.md
@@ -180,11 +195,13 @@ Register `tokencut` as a native MCP server:
 claude mcp add tokencut uvx tokencut mcp
 ```
 
-This exposes five tools directly to Claude:
-- `tokencut_exec`: Runs bash commands with output compaction and CCR caching.
+This exposes seven tools directly to Claude:
+- `tokencut_exec`: Runs bash commands with output compaction, CCR caching, and optional `--budget`.
 - `tokencut_read`: Reads files with support for AST skeletons, symbol extraction, and line ranges.
 - `tokencut_retrieve`: Retrieves omitted slices from cached terminal runs by reference ID.
 - `tokencut_diff`: Generates slim git diffs with lockfile folding.
+- `tokencut_tree`: Profiles directory-level token consumption directly inside conversation.
+- `tokencut_json`: Compresses large JSON payloads and API responses with schema retention.
 - `tokencut_stats`: Reports session and lifetime token savings.
 
 You can also wrap commands directly:
@@ -231,11 +248,14 @@ alias cc="tokencut run --"
 | `tokencut cat <file> -y <sym>` | Extracts a specific class, method, or function by name. |
 | `tokencut cat <file> -l <range>` | Extracts a specific line range with file context. |
 | `tokencut retrieve <ref_id>` | Retrieves uncompressed output from the CCR cache. |
+| `tokencut json [path]` | Compacts large JSON payloads, folding arrays and caching raw data. |
 | `tokencut pipe` | POSIX stdin filter for shell integration. |
 | `tokencut diff [--staged]` | Slims git diffs by folding lockfiles and condensing whitespace. |
+| `tokencut doctor [--fix]` | Diagnoses environment health and auto-configures Cursor / shell. |
+| `tokencut install [--all]` | Automatically configures Cursor MCP and shell aliases. |
 | `tokencut lint [file]` | Lints agent instruction files for prompt cache-busting elements. |
 | `tokencut mcp` | Starts the stdio JSON-RPC Model Context Protocol server. |
-| `tokencut stats` | Displays lifetime token savings and estimated dollar savings. |
+| `tokencut stats [--format]` | Displays lifetime token savings in table, JSON, or Markdown. |
 | `tokencut demo` | Interactive visual demo benchmarking token savings on realistic failures. |
 
 ---
