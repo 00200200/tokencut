@@ -20,6 +20,11 @@ private let petGreen = Color(red: 0.12, green: 0.63, blue: 0.47)
 struct PetView: View {
     @ObservedObject var model: Model
     @AppStorage("showMenuBar") private var showMenuBar = false
+    @Environment(\.colorScheme) private var colorScheme
+    private var dark: Bool { colorScheme == .dark }
+    private var ink: Color { dark ? Color(red: 0.92, green: 0.97, blue: 0.95) : Color(red: 0.12, green: 0.22, blue: 0.20) }
+    private var mutedInk: Color { dark ? Color(red: 0.70, green: 0.79, blue: 0.76) : Color(red: 0.34, green: 0.43, blue: 0.40) }
+    private var accent: Color { dark ? Color(red: 0.43, green: 0.88, blue: 0.69) : Color(red: 0.08, green: 0.46, blue: 0.32) }
     var body: some View {
         HStack(spacing: -4) {
             PetFace(paused: model.snapshot?.paused == true)
@@ -29,7 +34,7 @@ struct PetView: View {
                         Text("TokenCut").font(.system(size: 13, weight: .bold, design: .rounded))
                     }.buttonStyle(.plain).help("Open limits and savings")
                     Spacer(minLength: 6)
-                    Text("LEFT").font(.system(size: 8, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    Text("LEFT").font(.system(size: 8, weight: .semibold)).tracking(0.8).foregroundStyle(mutedInk)
                     Menu {
                         Button("Limits and reset") { showLimits() }
                         Button("Savings") { model.tab = 0; PanelWindow.show(model) }
@@ -48,23 +53,30 @@ struct PetView: View {
                     Button { showLimits() } label: {
                         HStack(spacing: 4) {
                             Circle().fill(provider == "codex" ? petGreen : Color.orange.opacity(0.8)).frame(width: 5, height: 5)
-                            Text(provider == "codex" ? "Codex" : "Claude").foregroundStyle(.secondary)
+                            Text(provider == "codex" ? "Codex" : "Claude").foregroundStyle(mutedInk)
                             Spacer(minLength: 4)
                             if let quota = row?.tightest, row?.status == "ok" {
                                 Text("\(quota.remainingPercent.formatted(.number.precision(.fractionLength(0))))%")
-                                    .foregroundStyle(quota.remainingPercent <= 15 ? .orange : petGreen).monospacedDigit().bold()
+                                    .foregroundStyle(quota.remainingPercent <= 15 ? .orange : accent).monospacedDigit().bold()
                             } else {
-                                Text(row?.status == "loading" ? "…" : "unavailable").foregroundStyle(.secondary)
+                                Text(row?.status == "loading" ? "…" : "unavailable").foregroundStyle(mutedInk)
                             }
                         }.font(.system(size: 11)).padding(.vertical, 2)
                     }.buttonStyle(.plain)
                     .help("Remaining allowance in the most constrained window. Click for all windows and read times.")
                 }
-                Text(savings).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                Text(savings).font(.system(size: 10)).foregroundStyle(mutedInk).lineLimit(1)
             }.frame(width: 154)
                 .padding(13)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 21))
-                .overlay(RoundedRectangle(cornerRadius: 21).strokeBorder(.primary.opacity(0.09)))
+                .foregroundStyle(ink)
+                .background {
+                    RoundedRectangle(cornerRadius: 21).fill(LinearGradient(
+                        colors: dark
+                            ? [Color(red: 0.17, green: 0.22, blue: 0.21), Color(red: 0.10, green: 0.14, blue: 0.13)]
+                            : [Color(red: 0.98, green: 1, blue: 0.99), Color(red: 0.89, green: 0.95, blue: 0.92)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                }
+                .overlay(RoundedRectangle(cornerRadius: 21).strokeBorder(ink.opacity(0.12)))
                 .shadow(color: .black.opacity(0.10), radius: 8, x: 0, y: 4)
         }
         .padding(8)
