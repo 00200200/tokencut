@@ -317,3 +317,44 @@ def test_configure_shell_alias_fish(tmp_path):
     assert ok is True
     content = fish_config.read_text(encoding="utf-8")
     assert "alias cc 'tokencut run --'" in content
+
+
+@pytest.mark.parametrize(
+    "shell, content, status",
+    [
+        ("zsh", 'alias cc="gcc"', "warning"),
+        ("fish", "alias cc 'gcc'", "warning"),
+        ("fish", "alias ccache 'tokencut run --'", "missing"),
+        ("fish", "# alias cc 'tokencut run --'", "missing"),
+        ("zsh", '# alias cc="tokencut run --"', "missing"),
+        ("zsh", 'alias cc="tokencut run --"\nalias cc="gcc"', "warning"),
+        ("zsh", 'alias cc="tokencut run --"', "ok"),
+        ("fish", "alias cc 'tokencut run --'", "ok"),
+    ],
+)
+def test_alias_diagnostic_identifies_the_actual_shortcut(
+    tmp_path, monkeypatch, shell, content, status
+):
+    monkeypatch.setenv("SHELL", f"/bin/{shell}")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    config = tmp_path / (".config/fish/config.fish" if shell == "fish" else ".zshrc")
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(content)
+    assert doctor.check_shell_alias().status == status
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"command": "tokencut", "disabled": True},
+        {"command": "tokencut", "enabled": False},
+        {"command": ""},
+        {"command": "tokencut", "args": "mcp"},
+        None,
+    ],
+)
+def test_windsurf_disabled_or_malformed_entry_is_not_reported_ready(tmp_path, monkeypatch, entry):
+    target = tmp_path / "mcp_config.json"
+    target.write_text(json.dumps({"mcpServers": {"tokencut": entry}}))
+    monkeypatch.setattr(doctor, "get_windsurf_mcp_config_path", lambda: target)
+    assert check_windsurf_mcp().status == "warning"
