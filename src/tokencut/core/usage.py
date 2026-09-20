@@ -21,6 +21,22 @@ from pathlib import Path
 
 MAX_RESPONSE = 1024 * 1024
 
+CLAUDE_ISSUES = {
+    "cli_missing": "The terminal Claude Code CLI was not found. Claude Desktop Code uses a separate bundled installation.",
+    "cli_not_signed_in": "Terminal Claude Code is not linked to an account in this environment. Claude Desktop Code uses a separate sign-in. Connect the terminal CLI or view your limits in Claude.",
+    "adapter_unavailable": "The quota adapter could not use the selected terminal CLI. Claude Desktop Code is a separate session; its login status was not checked.",
+    "adapter_error": "The terminal CLI quota request failed. This does not establish a problem with your Claude Desktop session.",
+    "no_windows": "The terminal CLI returned no supported quota windows. Claude Desktop limits are not connected to this reader.",
+}
+
+
+class QuotaUnavailable(Exception):
+    """Only allowlisted diagnostics reach the UI, never raw provider output."""
+
+    def __init__(self, issue: str):
+        self.issue = issue if issue in CLAUDE_ISSUES else "adapter_error"
+        super().__init__(CLAUDE_ISSUES[self.issue])
+
 
 def executable(name: str) -> str | None:
     found = shutil.which(name)
@@ -200,27 +216,10 @@ def claude_windows(payload) -> list[dict]:
     return []
 
 
-def fetch_claude() -> list[dict]:
-    command = executable("codexbar")
-    if not command:
-        raise FileNotFoundError("codexbar")
-    environment = dict(os.environ)
-    if claude := executable("claude"):
-        environment.setdefault("CLAUDE_CLI_PATH", claude)
-    # Explicit CLI source avoids browser cookie import and foreign Keychain reads.
-    # Never invoke `cost`, which scans session transcripts, or any model prompt.
+def read_cli_json(arguments: list[str], environment: dict, timeout: float = 30):
+    """Bounded, read-only child output; stderr and identity data are not retained."""
     process = subprocess.Popen(
-        [
-            command,
-            "usage",
-            "--provider",
-            "claude",
-            "--source",
-            "cli",
-            "--format",
-            "json",
-            "--json-only",
-        ],
+        arguments,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,
@@ -230,7 +229,7 @@ def fetch_claude() -> list[dict]:
     )
     data = bytearray()
     try:
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + timeout
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
             while True:
@@ -243,10 +242,64 @@ def fetch_claude() -> list[dict]:
                 data.extend(chunk)
                 if len(data) > MAX_RESPONSE:
                     raise ValueError("Quota response too large")
-        return claude_windows(json.loads(data))
+        code = process.wait(timeout=max(0.01, deadline - time.monotonic()))
+        return json.loads(data), code
     finally:
         stop_process(process)
         process.stdout.close()
+
+
+def fetch_claude() -> list[dict]:
+    command = executable("codexbar")
+    if not command:
+        raise FileNotFoundError("codexbar")
+    environment = dict(os.environ)
+    claude = environment.get("CLAUDE_CLI_PATH") or executable("claude")
+    if not claude or not os.access(os.path.expanduser(claude), os.X_OK):
+        raise QuotaUnavailable("cli_missing")
+    environment["CLAUDE_CLI_PATH"] = os.path.expanduser(claude)
+    # Explicit CLI source avoids browser cookies, credential extraction and cost scans.
+    payload, code = read_cli_json(
+        [
+            command,
+            "usage",
+            "--provider",
+            "claude",
+            "--source",
+            "cli",
+            "--format",
+            "json",
+            "--json-only",
+        ],
+        environment,
+    )
+    entries = payload if isinstance(payload, list) else [payload]
+    errors = [
+        row.get("error")
+        for row in entries
+        if isinstance(row, dict) and row.get("provider") == "claude" and row.get("error")
+    ]
+    for error in errors:
+        message = error.get("message", "") if isinstance(error, dict) else ""
+        if isinstance(message, str) and "no available fetch strategy" in message.lower():
+            # Diagnose only the CLI we selected, never the active Desktop session.
+            try:
+                auth, _ = read_cli_json(
+                    [environment["CLAUDE_CLI_PATH"], "auth", "status", "--json"],
+                    environment,
+                    timeout=5,
+                )
+            except Exception:
+                auth = None
+            if isinstance(auth, dict) and auth.get("loggedIn") is False:
+                raise QuotaUnavailable("cli_not_signed_in")
+            raise QuotaUnavailable("adapter_unavailable")
+    if code or errors:
+        raise QuotaUnavailable("adapter_error")
+    windows = claude_windows(payload)
+    if not windows:
+        raise QuotaUnavailable("no_windows")
+    return windows
 
 
 class UsageCollector:
@@ -270,8 +323,9 @@ class UsageCollector:
                 "name": {"codex": "Codex", "claude": "Claude"}.get(provider, provider),
                 "source": "Codex CLI · CLI account"
                 if provider == "codex"
-                else "CodexBar → Claude CLI",
+                else "Terminal Claude Code",
                 "status": "loading",
+                "issue": None,
                 "updated_at": None,
                 "windows": [],
                 "message": "Reading limits…",
@@ -307,6 +361,7 @@ class UsageCollector:
         return result
 
     def refresh(self, provider):
+        issue = None
         try:
             windows = self.fetchers[provider]()
             status = "ok" if windows else "unavailable"
@@ -315,6 +370,9 @@ class UsageCollector:
                 if windows
                 else "The service did not provide limits for this account."
             )
+        except QuotaUnavailable as exc:
+            windows, status, issue = [], "unavailable", exc.issue
+            message = str(exc)
         except FileNotFoundError:
             windows, status = [], "unavailable"
             message = (
@@ -322,13 +380,17 @@ class UsageCollector:
                 if provider == "codex"
                 else "CodexBar CLI adapter is not installed."
             )
+        except (TimeoutError, subprocess.TimeoutExpired):
+            windows, status = [], "unavailable"
+            message = "The quota reader timed out. Try refreshing later."
         except Exception:
             windows, status = [], "unavailable"
-            message = "Reading unavailable. Check CLI sign-in or your connection."
+            message = "The quota reader failed. This does not establish a sign-in problem."
         with self.lock:
             self.rows[provider].update(
                 windows=windows,
                 status=status,
+                issue=issue,
                 message=message,
                 updated_at=time.time() if status == "ok" else None,
             )

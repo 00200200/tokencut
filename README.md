@@ -79,8 +79,10 @@ The ZIP filename states its CPU architecture; it is not a universal binary.
 
 The build is locally ad-hoc signed, not notarized or a public installer. The default
 backend is `~/.local/bin/tokencut`; set `TOKENCUT_EXECUTABLE` while building to override
-it. Double-click the app to restore the pet. Its menu can open the full panel,
-hide the pet, restore its corner position, or enable the optional menu bar item.
+it. Click the pet's × button to hide it while monitoring continues in the menu
+bar. Click the menu item, then **Show pet** to restore it. Double-clicking the app
+also restores the pet. Its menu can open the full panel, restore its corner
+position, or enable the optional menu bar item while the pet is visible.
 The menu item shows
 `TC —` when no measurements exist, and `TC Ⅱ` while paused. Refresh is at most every
 5 seconds while visible, 30 seconds in the background. The pause is reversible;
@@ -103,8 +105,8 @@ Existing MCP sessions must reconnect after upgrading the executable.
 - The main counter uses `o200k_base`, includes retrieval costs and can be negative.
   Claude hook reductions are **prepared**, separately displayed, because there is
   no acceptance acknowledgment. Alternate tokenizer estimates are not added to it.
-- Serena remains an independent MCP. Its card shows detected configuration and a
-  setup link; the app never activates a project or fabricates Serena savings.
+- Optimization and code navigation use TokenCut's own modules. No external
+  optimizer or navigation MCP server is launched or configured by the companion.
 - Add `TOKENCUT_CLIENT=codex|claude-code|claude-desktop|antigravity` to an MCP entry's
   environment for attribution. Without a known client, it is labeled `mcp`/`cli`.
   No conversations or session transcripts are inspected.
@@ -119,8 +121,12 @@ Existing MCP sessions must reconnect after upgrading the executable.
   adapter: `brew install --formula steipete/tap/codexbar`. It runs `usage --provider
   claude --source cli --format json --json-only` against the logged-in Claude Code
   CLI. No browser-cookie import or `cost` transcript scan is requested. Logged-out
-  or unsupported clients show unavailable data. Logging into Claude Desktop alone
-  does not establish a working CLI quota source.
+  or unsupported clients show unavailable data. The **Code tab in Claude Desktop
+  is a separate session**, potentially using a different CLI version and sign-in.
+  A missing terminal CLI sign-in is shown as **CLI not linked**; it does not mean
+  Claude Desktop is signed out. Adapter failures are diagnosed separately. The
+  Limits panel links to Claude's own account-usage page. `CLAUDE_CLI_PATH` can select
+  an existing terminal CLI; no Desktop credentials are copied or extracted.
 - Service reads happen at most once every five minutes per provider; manual
   refresh has a 30-second minimum interval. Network requests go through the
   providers' existing clients. No prompts or paid model calls are sent.
@@ -132,23 +138,16 @@ Existing MCP sessions must reconnect after upgrading the executable.
   TokenCut filters selected tool results; it does not intercept all chat input,
   generated replies or model reasoning, and it cannot increase subscription limits.
 
-### Conservative RTK adapter
+### Built-in command filtering
 
-`tokencut run --engine auto|tokencut|rtk|none -- COMMAND` executes COMMAND once.
-`auto` considers only literal `git status` and `git diff --stat` with RTK 0.49.0;
-other commands and missing/unverified RTK versions use TokenCut. An explicit budget
-or compact profile uses TokenCut; combining those with explicit RTK is rejected
-before execution. Install optional RTK from its official Homebrew formula: `brew install rtk`.
-
-RTK receives captured output through **`rtk pipe`**, never the user command. Every
-nonblank line must survive unchanged and in order; otherwise the adapter returns
-the original buffer. Errors and filter failures keep the original without rerunning
-the command. Reduced output has a recovery reference, whose overhead is included.
-This first adapter is intentionally narrow: ordinary Git output often saves nothing.
-RTK's command wrapper for `git status` in 0.49.0 runs Git twice and is not used.
-RTK network telemetry is disabled in the adapter; no RTK command-history database
-is needed. Its local adapter counter uses **bytes / 4**, including recovery, and is
-never added to TokenCut's tokenizer counter. Standalone RTK usage is not imported.
+`tokencut run --engine auto|tokencut|none -- COMMAND` executes COMMAND once.
+Both `auto` and `tokencut` use TokenCut's own filter; `none` preserves raw output.
+The default conservative profile preserves diagnostics and unfamiliar output.
+Explicit `--budget` or `--compact` enables stronger reduction with recoverable
+original context. Recovery hints count toward the delivered text size.
+External engine selections are rejected before running the command. Historical
+external-engine records remain separate for recovery and accounting compatibility;
+they are never relabeled as TokenCut savings.
 
 Companion preference changes have unique backups beside `companion.json`. Restore
 one of those files to roll back a preference change. Client configuration changes
@@ -172,21 +171,16 @@ Task success, follow-up reads, prompt caching, and model reasoning all matter.
 
 ---
 
-## How it fits with other tools
+## Development and evaluation
 
-| Tool | Main use | Relationship to TokenCut |
-| :--- | :--- | :--- |
-| [Serena](https://github.com/oraios/serena) | Semantic navigation and editing through language servers | Complementary; TokenCut does not implement reference-aware refactoring. |
-| [RTK](https://github.com/rtk-ai/rtk) | Command-specific output filtering | Optional guarded stdin adapter; separately measured. |
-| [Repomix](https://github.com/yamadashy/repomix) | Packaging repository context | A relevant baseline for repository exploration. |
-| **TokenCut** | Conservative command filtering, bounded reads, local retrieval | Compare on total tokens per successfully completed task. |
-
-No head-to-head task-quality evaluation has established superiority over these tools.
+TokenCut owns its filtering, output budgets, local retrieval, code-index queries,
+guarded edits and companion. External tools may serve as benchmark baselines;
+they are not runtime optimization or navigation integrations. No head-to-head
+task-quality evaluation has established general superiority over other tools.
 
 Development priorities:
 
-1. Compare raw tools, Serena, RTK, [Headroom](https://github.com/headroomlabs-ai/headroom),
-   TokenCut, and complementary combinations on the same completed coding tasks.
+1. Compare TokenCut, unfiltered output and independent baselines on the same completed coding tasks.
    Record success, retries, latency, total input/output, cache hits, and reasoning
    usage where available. Report model versions and repeated runs, including losses.
 2. Extend command-specific parsers and syntax-index coverage; syntax matches
