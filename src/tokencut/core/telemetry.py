@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -21,15 +22,15 @@ class LifetimeStats:
 
     @property
     def saved_claude(self) -> int:
-        return max(0, self.raw_claude_tokens - self.compact_claude_tokens)
+        return self.raw_claude_tokens - self.compact_claude_tokens
 
     @property
     def saved_openai(self) -> int:
-        return max(0, self.raw_openai_tokens - self.compact_openai_tokens)
+        return self.raw_openai_tokens - self.compact_openai_tokens
 
     @property
     def saved_gemini(self) -> int:
-        return max(0, self.raw_gemini_tokens - self.compact_gemini_tokens)
+        return self.raw_gemini_tokens - self.compact_gemini_tokens
 
     @property
     def saved_avg(self) -> int:
@@ -52,7 +53,8 @@ class TelemetryStore:
     """Tracks local lifetime token savings in ~/.tokencut/cache.db."""
 
     def __init__(self, db_path: Path | None = None):
-        self.db_path = db_path or DEFAULT_CACHE_DB
+        cache_dir = os.environ.get("TOKENCUT_CACHE_DIR")
+        self.db_path = db_path or (Path(cache_dir) / "cache.db" if cache_dir else DEFAULT_CACHE_DB)
         self._ensure_table()
 
     def _ensure_table(self):

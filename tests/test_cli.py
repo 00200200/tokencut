@@ -1,3 +1,5 @@
+import sys
+
 from typer.testing import CliRunner
 
 from tokencut.cli import app
@@ -24,6 +26,40 @@ def test_cli_run():
     res = runner.invoke(app, ["run", "echo", "testing 1 2 3"])
     assert res.exit_code == 0
     assert "testing 1 2 3" in res.output
+
+
+def test_run_preserves_literal_arguments_and_markup(tmp_path):
+    unwanted = tmp_path / "should-not-exist"
+    literal = f"[bold]two words[/bold] ; touch {unwanted} $(echo expanded)"
+    res = runner.invoke(
+        app, ["run", "--", sys.executable, "-c", "import sys; print(sys.argv[1])", literal]
+    )
+    assert res.exit_code == 0
+    assert res.stdout == literal + "\n"
+    assert not unwanted.exists()
+
+
+def test_run_preserves_complete_failed_output_and_exit_status():
+    output = (
+        "Traceback (most recent call last):\n"
+        + "detail\n" * 200
+        + "AssertionError: original failure\n"
+    )
+    script = f"import sys; print({output!r}, end='', file=sys.stderr); sys.exit(7)"
+    res = runner.invoke(app, ["run", "--", sys.executable, "-c", script])
+    assert res.exit_code == 7
+    assert res.stdout == output
+
+
+def test_retrieve_preserves_original_format_and_charges_readback():
+    from tokencut.core.telemetry import TelemetryStore
+
+    raw = "[bold]literal[/bold] " + "long-line " * 40
+    ref = ContextCache().store(raw, source="test")
+    res = runner.invoke(app, ["retrieve", ref])
+    assert res.exit_code == 0
+    assert res.stdout == raw + "\n"
+    assert TelemetryStore().get_stats().saved_openai < 0
 
 
 def test_cli_cat(tmp_path):

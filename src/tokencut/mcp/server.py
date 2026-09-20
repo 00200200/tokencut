@@ -11,6 +11,7 @@ from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.redactor import redact_secrets
+from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.metrics.tokenizer import count_tokens
 
@@ -23,7 +24,7 @@ _SESSION_SAVED_GEMINI = 0
 TOOLS_DEFINITIONS = [
     {
         "name": "tokencut_exec",
-        "description": "Run a noninteractive shell command; return bounded logs, exit status, and a recovery ref when shortened.",
+        "description": "Run a noninteractive shell command with conservative log filtering and exit status. Set max_tokens only to opt into truncation; shortened output has a recovery ref.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -33,8 +34,7 @@ TOOLS_DEFINITIONS = [
                 },
                 "max_lines": {
                     "type": "integer",
-                    "description": "Maximum number of lines to retain before truncation (default 80).",
-                    "default": 80,
+                    "description": "Opt into truncation with this line limit. Omit to preserve diagnostics and unknown output.",
                 },
             },
             "required": ["command"],
@@ -127,6 +127,12 @@ for _tool in TOOLS_DEFINITIONS:
             "type": "string",
             "description": "Absolute working directory. Set explicitly for the target project.",
         }
+    if _tool["name"] == "tokencut_exec":
+        _tool["inputSchema"]["properties"]["max_tokens"].pop("default")
+        _tool["inputSchema"]["properties"]["max_tokens"]["description"] = (
+            "Opt into truncation with this complete text budget (local estimate). "
+            "Omit to preserve diagnostics and unknown output."
+        )
 
 
 def _budget(arguments: dict[str, Any]) -> int:
@@ -180,15 +186,18 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
             combined_raw = combined_raw.decode("utf-8", errors="replace")
         footer = "\n[command timed out after 120s; output may be partial]"
 
-    opts = CleanerOptions(max_lines=max_lines, enable_cache=False)
-    compacted = compact_terminal_output(combined_raw, opts)
-    output = compress_to_budget(
-        compacted,
-        budget,
-        original_text=combined_raw,
-        suffix=footer,
-        source="exec",
-    )
+    if "max_tokens" in arguments or "max_lines" in arguments:
+        opts = CleanerOptions(max_lines=max_lines, enable_cache=False)
+        compacted = compact_terminal_output(combined_raw, opts)
+        output = compress_to_budget(
+            compacted,
+            budget,
+            original_text=combined_raw,
+            suffix=footer,
+            source="exec",
+        )
+    else:
+        output = safe_compact_output(combined_raw, command=command) + footer
     return _record(combined_raw, output)
 
 
@@ -293,7 +302,7 @@ def _respond(req: Any) -> dict[str, Any] | None:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "tokencut", "version": "0.1.0"},
-                "instructions": "Use tokencut_exec for verbose noninteractive commands, with an explicit absolute cwd. Use targeted reads. Outputs default to 2000 locally estimated tokens; retrieve omitted line ranges before relying on an incomplete result. This server does not intercept other tools or change model quotas.",
+                "instructions": "Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
             },
         }
     if method == "tools/list":

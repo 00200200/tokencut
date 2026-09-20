@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -16,7 +18,9 @@ from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
+from tokencut.core.native_hooks import install_claude_hook, run_hook_filter
 from tokencut.core.rules_linter import lint_rule_content, minify_rules
+from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import auto_specialize_command_output
 from tokencut.core.telemetry import TelemetryStore
@@ -44,37 +48,50 @@ def run(
         int | None, typer.Option("--budget", "-b", help="Strict token ceiling budget")
     ] = None,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Omit the summary footer")] = False,
+    safe: Annotated[
+        bool,
+        typer.Option(
+            "--safe/--compact",
+            help="Preserve unknown output and diagnostics; --compact permits truncation",
+        ),
+    ] = True,
 ):
     """Execute a command and optimize its output for AI context windows."""
-    full_cmd = " ".join(command)
+    full_cmd = shlex.join(command)
     start_time = time.perf_counter()
 
-    proc = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
+    # Preserve argument boundaries and literal shell metacharacters. Shell syntax
+    # remains available explicitly: tokencut run -- bash -lc 'command | other'.
+    proc = subprocess.run(
+        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace"
+    )
     raw_output = proc.stdout
-    if proc.stderr:
-        raw_output += ("\n" if raw_output else "") + proc.stderr
 
     duration = time.perf_counter() - start_time
 
     # Step 1: Check specialized command handler
-    specialized = auto_specialize_command_output(full_cmd, raw_output)
+    specialized = None if safe else auto_specialize_command_output(full_cmd, raw_output)
     base_text = specialized if specialized is not None else raw_output
 
     # Step 2: Apply adaptive budget or standard compaction
     if budget:
-        compacted = compress_to_budget(base_text, max_tokens=budget, source=full_cmd)
+        compacted = compress_to_budget(
+            base_text, max_tokens=budget, source="run", original_text=raw_output
+        )
+    elif safe:
+        compacted = safe_compact_output(raw_output, command=full_cmd, exit_code=proc.returncode)
     else:
         opts = CleanerOptions(max_lines=max_lines)
         compacted = compact_terminal_output(base_text, opts)
 
     if compacted:
-        console.print(compacted)
+        # Rich markup/wrapping can alter diagnostic text and hide recovery refs.
+        sys.stdout.write(compacted)
+        if not compacted.endswith("\n"):
+            sys.stdout.write("\n")
 
     if raw_output:
         metrics = compute_metrics(raw_output, compacted)
-        saved = metrics.saved_tokens
-        savings = estimate_savings(saved.claude, saved.openai, saved.gemini)
-
         # Record telemetry
         try:
             telemetry = TelemetryStore()
@@ -89,16 +106,11 @@ def run(
         except Exception:
             pass
 
-        if not quiet:
-            footer = (
-                f"[bold cyan]tokencut[/bold cyan] "
-                f"tokens saved: [bold green]~{saved.avg:,}[/bold green] "
-                f"([bold green]-{metrics.reduction_pct}%[/bold green]) | "
-                f"Claude: -{saved.claude:,} · GPT-4o: -{saved.openai:,} · Gemini: -{saved.gemini:,} | "
-                f"est. saved: [bold yellow]{savings.format_avg()}[/bold yellow] | "
-                f"time: {duration:.2f}s"
+        if not quiet and not safe:
+            err_console.print(
+                f"[tokencut: estimated text reduction {metrics.reduction_pct}%; {duration:.2f}s]",
+                markup=False,
             )
-            err_console.print(footer)
 
     sys.exit(proc.returncode)
 
@@ -150,7 +162,15 @@ def retrieve(
     """Retrieve full uncompressed raw output from the local Compress-Cache-Retrieve store."""
     cache = ContextCache()
     raw = cache.retrieve(ref_id, lines_range=lines)
-    console.print(raw)
+    sys.stdout.write(raw)
+    if not raw.endswith("\n"):
+        sys.stdout.write("\n")
+    # Recovery is additional context, not a second saving of the original log.
+    try:
+        counts = count_tokens(raw)
+        TelemetryStore().record(0, counts.claude, 0, counts.openai, 0, counts.gemini)
+    except Exception:
+        pass
 
 
 @app.command()
@@ -184,22 +204,20 @@ def tree(
 
 @app.command()
 def stats():
-    """Display lifetime token savings telemetry and financial metrics."""
+    """Display local output estimates, not provider billing or usage quotas."""
     telemetry = TelemetryStore()
     s = telemetry.get_stats()
 
-    table = Table(title="tokencut Lifetime Savings Telemetry")
+    table = Table(title="TokenCut local output estimates (not model usage)")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="bold")
 
-    table.add_row("Total Executions", f"{s.total_runs:,}")
-    table.add_row("Total Claude Tokens Saved", f"[bold green]-{s.saved_claude:,}[/bold green]")
-    table.add_row("Total OpenAI Tokens Saved", f"[bold green]-{s.saved_openai:,}[/bold green]")
-    table.add_row("Total Gemini Tokens Saved", f"[bold green]-{s.saved_gemini:,}[/bold green]")
-    table.add_row("Average Reduction Ratio", f"[bold yellow]-{s.reduction_pct}%[/bold yellow]")
-    table.add_row(
-        "Estimated Money Saved", f"[bold yellow]${s.estimated_usd_saved:.4f} USD[/bold yellow]"
-    )
+    table.add_row("Recorded CLI output events", f"{s.total_runs:,}")
+    table.add_row("Claude heuristic net reduction", f"{s.saved_claude:,}")
+    table.add_row("OpenAI tokenizer net reduction", f"{s.saved_openai:,}")
+    table.add_row("Gemini heuristic net reduction", f"{s.saved_gemini:,}")
+    table.add_row("Average estimated reduction", f"{s.reduction_pct}%")
+    table.add_row("Scope", "CLI output and retrieval only; excludes prompts, schemas and reasoning")
 
     console.print(table)
 
@@ -209,9 +227,23 @@ def hook(
     install: Annotated[
         bool, typer.Option("--install", "-i", help="Install shell wrapper to ~/.zshrc")
     ] = False,
+    client: Annotated[
+        str,
+        typer.Option("--client", help="claude for native output filtering, or shell for aliases"),
+    ] = "shell",
 ):
     """Configure Claude Code or terminal hooks for automatic optimization."""
     if install:
+        if client == "claude":
+            executable = Path(shutil.which("tokencut") or sys.argv[0])
+            settings = install_claude_hook(executable)
+            console.print(
+                f"Installed Claude Bash output hook in {settings}. Restart Claude Code to activate.",
+                markup=False,
+            )
+            return
+        if client != "shell":
+            raise typer.BadParameter("client must be claude or shell")
         zshrc = install_zsh_hook()
         console.print(f"[green]✓ Successfully installed alias to {zshrc}![/green]")
         console.print("Run [bold cyan]source ~/.zshrc[/bold cyan] to enable [bold]cc-run[/bold].")
@@ -227,6 +259,12 @@ def hook(
                 border_style="cyan",
             )
         )
+
+
+@app.command("hook-filter")
+def hook_filter(client: Annotated[str, typer.Option("--client")] = "claude"):
+    """Process one native hook event on stdin, without model calls."""
+    run_hook_filter(client, sys.stdin, sys.stdout)
 
 
 @app.command()

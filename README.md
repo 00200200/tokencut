@@ -31,10 +31,11 @@
 ## Where it helps
 
 Verbose tests, builds, files, and lockfile diffs can fill an agent's context with
-irrelevant text. TokenCut bounds the text returned by its MCP tools and caches
-omitted output locally for selective retrieval. It does **not** intercept other
-tools, compress model reasoning, or change subscription limits. The agent must
-choose TokenCut tools or explicitly wrap commands with the CLI.
+irrelevant text. TokenCut filters routine command output and caches the redacted
+original for selective retrieval. Command execution preserves diagnostics by
+default; truncation requires an explicit budget or compact mode. An opt-in Claude
+Code hook filters native Bash results. Other clients use TokenCut's MCP tools or
+CLI wrapper. TokenCut does not compress model reasoning or change plan limits.
 
 <br />
 
@@ -52,7 +53,7 @@ Task success, follow-up reads, prompt caching, and model reasoning all matter.
 | [Serena](https://github.com/oraios/serena) | Semantic navigation and editing through language servers | Complementary; TokenCut does not implement reference-aware refactoring. |
 | [RTK](https://github.com/rtk-ai/rtk) | Command-specific output filtering | A relevant baseline for terminal workloads. |
 | [Repomix](https://github.com/yamadashy/repomix) | Packaging repository context | A relevant baseline for repository exploration. |
-| **TokenCut** | Bounded MCP text, targeted reads, local retrieval | Compare on total tokens per successfully completed task. |
+| **TokenCut** | Conservative command filtering, bounded reads, local retrieval | Compare on total tokens per successfully completed task. |
 
 No head-to-head task-quality evaluation has established superiority over these tools.
 
@@ -75,8 +76,11 @@ Development priorities:
 
 Run `python scripts/benchmark_suite.py` (or add `--json`) from the source checkout.
 The suite uses authored test/build logs, a synthetic lockfile diff, this
-repository's CLI source, and a long-line MCP read. It checks selected diagnostic strings and reports
-local text-token estimates; it does not call a model or measure reasoning quality.
+repository's CLI source, and a long-line MCP read. It checks selected diagnostics
+for compact mode, exact preservation of a complete failure tail in safe mode,
+exact cache recovery, and unchanged unfamiliar output. It reports local token
+estimates and tool-schema overhead, with an isolated temporary cache. No model is
+called and reasoning quality is not evaluated.
 
 The local counter uses `o200k_base` (with a `cl100k_base` fallback). Claude and
 Gemini values are uncalibrated heuristics. These are **not exact counts for Astra,
@@ -92,9 +96,17 @@ CLI dollar figures use fixed example prices, not your actual bill.
 `tokencut` is designed around six core mechanisms:
 
 ### 1. Compress-Cache-Retrieve (CCR)
-MCP outputs default to a budget of 2,000 locally estimated tokens (`max_tokens`,
-64–32,000). The budget includes the recovery reference and exit status. Omitted
-output is stored **after recognized secrets are redacted** in SQLite
+`tokencut run` and MCP `tokencut_exec` default to conservative filtering: fold
+recognized pytest pass records and exact adjacent repeats, retaining their counts.
+Once diagnostics begin, keep the remaining output. Short results and content
+outside these patterns pass through after redaction. This mode has no fixed output ceiling.
+
+Use CLI `--compact` for the older lossy filtering, or `--budget` for an explicit
+token ceiling. In MCP `tokencut_exec`, supplying `max_tokens` or `max_lines` opts
+into truncation. MCP read, diff, and retrieve retain their default 2,000-token
+budget (`max_tokens`, 64–32,000). Budgets use local estimates and include recovery
+references and, for exec, exit status. Cached output is stored **after recognized
+secrets are redacted** in SQLite
 (`~/.tokencut/cache.db`; override with `TOKENCUT_CACHE_DIR`):
 ```text
 [... 340 lines of routine output omitted by tokencut (-84.1%). Ref: tc_8f2a1b ...]
@@ -167,6 +179,9 @@ For reproducibility, append `@<commit-sha>` to the Git URL. Then:
 # Run any command through tokencut
 tokencut run -- pytest -v tests/
 
+# Explicitly allow truncation when bounded output is more useful
+tokencut run --budget 2000 -- pytest -v tests/
+
 # Visualize token distribution across your repository
 tokencut tree .
 
@@ -214,6 +229,27 @@ You can also wrap commands directly:
 tokencut run -- npm test
 ```
 
+To filter native Bash output automatically, opt in to the Claude Code hook:
+
+```bash
+tokencut hook --install --client claude
+```
+
+The installer merges a `PostToolUse` hook into `~/.claude/settings.json`, keeps
+existing settings and hooks, and backs up changed configuration. Restart Claude
+Code to activate. The hook filters `stdout` and `stderr` with safe mode and keeps
+the remaining result fields, including exit status. It does not approve commands
+or rewrite their inputs. Commands reported through `PostToolUseFailure` keep their
+original diagnostics. This is a Claude Code integration, not a Claude Desktop chat hook.
+
+### Claude Desktop
+
+On macOS, merge the `mcpServers` entry shown below into
+`~/Library/Application Support/Claude/claude_desktop_config.json`. Use an absolute
+binary path from `command -v tokencut`, restart Claude Desktop, and check
+**Settings → Developer** or **+ → Connectors** for the connected server.
+This exposes tools; it does not filter every conversation or other tool result.
+
 ### Cursor & Windsurf
 Add to your `mcp.json` (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
 
@@ -238,6 +274,40 @@ Codex CLI and desktop share `~/.codex/config.toml`. Restart/reconnect MCP after
 installation. For desktop clients, use the absolute binary path from
 `command -v tokencut` if their PATH differs from your terminal.
 
+Use explicit `tokencut run -- <command>` inside Codex's native shell tool to
+retain its sandbox and approval flow. This wrapper is intended for
+noninteractive commands. Avoid granting a blanket approval to all wrapped
+commands.
+
+An offline protocol check on CLI 0.154.0 and desktop 0.155.0-alpha.9.2 found that
+`PostToolUse` with `continue: false` does not replace the value returned by
+`tools.exec_command()` inside code mode: JavaScript can still return the raw
+output to the model. TokenCut therefore does not install a Codex output hook.
+This check used fixed tool calls and a local mock, not a model evaluation.
+
+### Persistent tool preferences
+
+Keep guidance short and conditional on TokenCut being available:
+
+> Prefer TokenCut for large command results and targeted reads. Preserve errors
+> and exit status, retrieve omitted details when needed, and retain existing
+> permissions. Avoid extra filtering calls for short results.
+
+- Codex: add to `~/.codex/AGENTS.md`, then start a new session.
+- Claude Code: add to `~/.claude/CLAUDE.md`; reload through `/memory` or start a new session.
+- Claude Desktop: save in **Settings → General → Instructions for Claude**
+  (called profile preferences in older versions).
+
+These are tool-selection preferences, not guaranteed interception. Local MCP
+configuration does not apply to ChatGPT web. Reducing tool text does not establish
+how much longer Astra, Fable, Opus, or another model's usage allowance will last;
+that requires task-level measurements including retries, cache and reasoning.
+
+Client references: [Codex MCP](https://learn.chatgpt.com/docs/extend/mcp),
+[Codex instructions](https://learn.chatgpt.com/docs/agent-configuration/agents-md),
+[Claude Code instructions](https://support.claude.com/en/articles/14553240-give-claude-context-claude-md-and-better-prompts),
+[Claude Desktop instructions](https://support.claude.com/en/articles/16761823-claude-cowork-and-chat-are-one-claude).
+
 ### Antigravity / Gemini CLI
 
 Use the same `mcpServers` JSON above. In Antigravity, open **MCP Servers → Manage
@@ -259,7 +329,7 @@ alias cc="tokencut run --"
 
 | Command | Description |
 | :--- | :--- |
-| `tokencut run <cmd>` | Runs a command, then compacts captured output with telemetry. |
+| `tokencut run -- <cmd>` | Safely filters command output; `--compact` or `--budget` permits truncation. |
 | `tokencut tree [dir]` | Hierarchical directory token consumption profiler. |
 | `tokencut cat <file> -s` | AST structural skeleton (classes, signatures, docstrings). |
 | `tokencut cat <file> -y <sym>` | Extracts a specific class, method, or function by name. |
@@ -269,6 +339,7 @@ alias cc="tokencut run --"
 | `tokencut diff [--staged]` | Slims git diffs by folding lockfiles and condensing whitespace. |
 | `tokencut lint [file]` | Lints agent instruction files for prompt cache-busting elements. |
 | `tokencut mcp` | Starts the stdio JSON-RPC Model Context Protocol server. |
+| `tokencut hook --install --client claude` | Opts in to conservative filtering of Claude Code Bash results. |
 | `tokencut stats` | Displays lifetime token savings and estimated dollar savings. |
 | `tokencut demo` | Interactive visual demo benchmarking token savings on realistic failures. |
 

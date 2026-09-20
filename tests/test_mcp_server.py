@@ -107,6 +107,32 @@ def test_exec_explicit_cwd(tmp_path):
     assert "correct project" in output
 
 
+def test_exec_default_preserves_unknown_long_output_and_full_diagnostics(monkeypatch):
+    from subprocess import CompletedProcess
+
+    raw = "".join(f"unique record {i}\n" for i in range(600))
+    raw += (
+        "Traceback (most recent call last):\n" + "stack frame\n" * 300 + "AssertionError: failure\n"
+    )
+    monkeypatch.setattr(server.subprocess, "run", lambda *a, **kw: CompletedProcess(a, 9, raw))
+    output = handle_tokencut_exec({"command": "custom-command"})
+    assert output == raw + "\n[exit code: 9]"
+
+
+def test_exec_timeout_keeps_all_partial_diagnostics(monkeypatch):
+    from subprocess import TimeoutExpired
+
+    raw = ("Error: still waiting\n" * 300).encode()
+
+    def timeout(*args, **kwargs):
+        raise TimeoutExpired("custom-command", 120, output=raw)
+
+    monkeypatch.setattr(server.subprocess, "run", timeout)
+    output = handle_tokencut_exec({"command": "custom-command"})
+    assert output.startswith(raw.decode())
+    assert "timed out" in output
+
+
 def test_diff_outside_repository_is_an_error(tmp_path):
     with pytest.raises(ValueError, match="git diff failed"):
         handle_tokencut_diff({"cwd": str(tmp_path)})
