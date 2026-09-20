@@ -113,3 +113,23 @@ def test_cli_cat_strip_comments(tmp_path):
     assert res.exit_code == 0
     assert "# Copyright header" not in res.output
     assert "def run():" in res.output
+
+
+def test_cli_cache():
+    res_stats = runner.invoke(app, ["cache", "stats"])
+    assert res_stats.exit_code == 0
+    assert "CCR Cache Store" in res_stats.output
+
+    res_clear = runner.invoke(app, ["cache", "clear"])
+    assert res_clear.exit_code == 0
+    assert "Cleared" in res_clear.output
+
+
+def test_cli_pr():
+    res = runner.invoke(app, ["pr"])
+    assert res.exit_code == 0
+    assert "Token Delta" in res.output
+
+    res_md = runner.invoke(app, ["pr", "--markdown"])
+    assert res_md.exit_code == 0
+    assert "Token Impact Report" in res_md.output

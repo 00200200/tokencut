@@ -15,10 +15,12 @@ from rich.table import Table
 from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
+from tokencut.core.config import load_config
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.doctor import configure_cursor_mcp, configure_shell_alias, run_all_diagnostics
 from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
 from tokencut.core.json_slimmer import slim_json
+from tokencut.core.pr_analyzer import analyze_pr_tokens
 from tokencut.core.rules_linter import lint_rule_content, minify_rules
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import auto_specialize_command_output
@@ -214,6 +216,26 @@ def retrieve(
     cache = ContextCache()
     raw = cache.retrieve(ref_id, lines_range=lines)
     console.print(raw)
+
+
+@app.command()
+def cache(
+    action: Annotated[str, typer.Argument(help="Action: stats, clear")] = "stats",
+):
+    """Manage local SQLite Compress-Cache-Retrieve store."""
+    c = ContextCache()
+    if action == "clear":
+        c.clear()
+        console.print("[green]✓ Cleared tokencut cache store successfully.[/green]")
+    else:
+        s = c.get_stats()
+        table = Table(title="tokencut CCR Cache Store")
+        table.add_column("Property", style="cyan")
+        table.add_column("Value", style="bold")
+        table.add_row("Database Path", str(s["path"]))
+        table.add_row("Cached Entries", f"{s['count']:,}")
+        table.add_row("File Size", f"{s['size_kb']:.1f} KB")
+        console.print(table)
 
 
 @app.command()
@@ -443,6 +465,43 @@ def diff(
     err_console.print(
         f"[dim]tokencut diff: saved {metrics.saved_tokens.avg:,} tokens (-{metrics.reduction_pct}%)[/dim]"
     )
+
+
+@app.command()
+def pr(
+    base: Annotated[
+        str, typer.Option("--base", "-b", help="Base git ref to compare against")
+    ] = "origin/main",
+    markdown: Annotated[
+        bool, typer.Option("--markdown", "-m", help="Output Markdown report for PR comments")
+    ] = False,
+    max_delta: Annotated[
+        int | None,
+        typer.Option("--max-delta", help="Maximum allowable net token delta before failure"),
+    ] = None,
+):
+    """Analyze repository token impact of current branch compared to base."""
+    report = analyze_pr_tokens(base_ref=base)
+    if markdown:
+        console.print(report.format_markdown())
+    else:
+        table = Table(title=f"tokencut PR Token Impact: {report.base_ref}...HEAD")
+        table.add_column("Category", style="cyan")
+        table.add_column("Token Delta", style="bold")
+
+        table.add_row("Application Code", f"{report.code_delta:+,} tok")
+        table.add_row("Documentation & Prompts", f"{report.docs_delta:+,} tok")
+        table.add_row("Dependencies & Lockfiles", f"{report.lockfile_delta:+,} tok")
+        table.add_row("Net Repository Change", f"[bold]{report.total_delta:+,} tok[/bold]")
+        console.print(table)
+
+    cfg = load_config()
+    threshold = max_delta if max_delta is not None else cfg.max_token_delta
+    if threshold is not None and report.total_delta > threshold:
+        err_console.print(
+            f"[bold red]Error:[/bold red] Token increase (+{report.total_delta:,}) exceeds threshold (+{threshold:,})!"
+        )
+        raise typer.Exit(code=1)
 
 
 @app.command()

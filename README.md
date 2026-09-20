@@ -13,7 +13,7 @@
   <p align="center">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00f5a0?style=flat-square&logo=opensourceinitiative&logoColor=white" alt="MIT license"></a>
     <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-00d9f5?style=flat-square&logo=python&logoColor=white" alt="Python versions"></a>
-    <a href="https://github.com/00200200/tokencut/actions"><img src="https://img.shields.io/badge/tests-54%20passed-22c55e?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
+    <a href="https://github.com/00200200/tokencut/actions"><img src="https://img.shields.io/badge/tests-62%20passed-22c55e?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
     <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-261230.svg?style=flat-square&labelColor=000000" alt="Ruff"></a>
     <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=flat-square&color=7928ca" alt="GitHub stars"></a>
   </p>
@@ -144,6 +144,9 @@ When coding agents fetch API responses via `curl` or inspect JSON data files, hu
 ### 8. System Diagnostics & Auto-Configuration (`tokencut doctor`)
 Inspects your local environment across Python runtime, SQLite cache health, Claude Code CLI, Cursor MCP configurations, and shell aliases. Running `tokencut doctor --fix` or `tokencut install --all` automatically writes the required configurations with zero manual editing.
 
+### 9. Pull Request Token Impact Analyzer (`tokencut pr`)
+Evaluates the net token delta introduced by code changes against `main` or a target base ref. Categorizes token impact into code, documentation, and lockfiles, and emits a clean Markdown summary for GitHub PR review comments. When run with `--max-delta <N>`, it acts as an automated CI gatekeeper preventing accidental lockfile or fixture context bloat.
+
 ---
 
 ## Quickstart
@@ -236,6 +239,29 @@ Add a shell alias for seamless execution:
 alias cc="tokencut run --"
 ```
 
+### GitHub Actions CI Gatekeeper
+Use the official composite action to audit PR token delta or wrap test steps:
+
+```yaml
+- name: Check PR Token Impact
+  uses: 00200200/tokencut@main
+  with:
+    pr-check: 'true'
+    max-token-delta: '25000'
+```
+
+### Pre-Commit Hook
+Add to your `.pre-commit-config.yaml` to prevent prompt cache-busting before committing:
+
+```yaml
+repos:
+  - repo: https://github.com/00200200/tokencut
+    rev: main
+    hooks:
+      - id: tokencut-lint
+      - id: tokencut-pr
+```
+
 ---
 
 ## CLI Reference
@@ -253,6 +279,8 @@ alias cc="tokencut run --"
 | `tokencut diff [--staged]` | Slims git diffs by folding lockfiles and condensing whitespace. |
 | `tokencut doctor [--fix]` | Diagnoses environment health and auto-configures Cursor / shell. |
 | `tokencut install [--all]` | Automatically configures Cursor MCP and shell aliases. |
+| `tokencut pr [--base] [-m]` | Analyzes PR token delta and formats Markdown summaries for CI. |
+| `tokencut cache [stats\|clear]` | Manages the local SQLite Compress-Cache-Retrieve store. |
 | `tokencut lint [file]` | Lints agent instruction files for prompt cache-busting elements. |
 | `tokencut mcp` | Starts the stdio JSON-RPC Model Context Protocol server. |
 | `tokencut stats [--format]` | Displays lifetime token savings in table, JSON, or Markdown. |
