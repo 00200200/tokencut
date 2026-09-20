@@ -1,4 +1,4 @@
-"""tokencut — SOTA Token Optimizer for Claude Code, OpenAI/Codex, and Gemini CLI."""
+"""tokencut — Context compression engine and MCP server for Claude Code, Cursor, and Gemini CLI."""
 
 __version__ = "0.1.0"
 

@@ -1,4 +1,4 @@
-# 🚀 tokencut — Launch & Promotion Strategy (Star-Magnet Playbook)
+# tokencut — Launch & Promotion Strategy (Star-Magnet Playbook)
 
 Here are the ready-to-post announcements crafted to drive maximum traction, Reddit upvotes, and GitHub stars.
 
@@ -79,7 +79,7 @@ Repo: https://github.com/00200200/tokencut (⭐ Star if it saves you tokens!)
 ## 3. Hacker News: Show HN
 
 **Title:**
-> Show HN: Tokencut – SOTA Token Optimization Engine and MCP for AI Coding Agents
+> Show HN: Tokencut – Context compression engine and MCP for AI coding agents
 
 **Text:**
 ```text

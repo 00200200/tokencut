@@ -6,23 +6,23 @@
   <br /><br />
 
   <p align="center">
-    <strong>⚡ Smaller tool outputs, with omitted context available on demand.</strong><br />
+    <strong>Smaller tool outputs, with omitted context available on demand.</strong><br />
     <em>A local CLI and MCP server for Claude Code, Codex, Antigravity, and other MCP clients.</em>
   </p>
 
   <p align="center">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00f5a0?style=for-the-badge&logo=opensourceinitiative&logoColor=white" alt="MIT license"></a>
-    <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-00d9f5?style=for-the-badge&logo=python&logoColor=white" alt="Python versions"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00f5a0?style=flat-square&logo=opensourceinitiative&logoColor=white" alt="MIT license"></a>
+    <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-00d9f5?style=flat-square&logo=python&logoColor=white" alt="Python versions"></a>
     <a href="https://github.com/00200200/tokencut/actions/workflows/ci.yml"><img src="https://github.com/00200200/tokencut/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-261230.svg?style=for-the-badge&labelColor=000000" alt="Ruff"></a>
-    <a href="https://github.com/00200200/tokencut/stargazers"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=for-the-badge&label=Star%20Us!&color=7928ca" alt="GitHub stars"></a>
+    <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-261230.svg?style=flat-square&labelColor=000000" alt="Ruff"></a>
+    <a href="https://github.com/00200200/tokencut/stargazers"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=flat-square&color=7928ca" alt="GitHub stars"></a>
   </p>
 </div>
 
 <br />
 
 <div align="center">
-  <img src="assets/demo.svg" alt="tokencut Live Terminal Animation" width="100%" />
+  <img src="assets/demo.svg" alt="tokencut Terminal Execution Demo" width="100%" />
   <p><em>Illustrative terminal demo. Run the fixture benchmark below for reproducible measurements.</em></p>
 </div>
 
@@ -71,7 +71,7 @@ Development priorities:
 
 ---
 
-## 📊 Reproducible fixture benchmarks
+## Reproducible fixture benchmarks
 
 Run `python scripts/benchmark_suite.py` (or add `--json`) from the source checkout.
 The suite uses authored test/build logs, a synthetic lockfile diff, this
@@ -87,9 +87,11 @@ CLI dollar figures use fixed example prices, not your actual bill.
 
 ---
 
-## 💎 The 6 Architectural Pillars
+## Architecture
 
-### 1. 🛡️ Compress-Cache-Retrieve (CCR)
+`tokencut` is designed around six core mechanisms:
+
+### 1. Compress-Cache-Retrieve (CCR)
 MCP outputs default to a budget of 2,000 locally estimated tokens (`max_tokens`,
 64–32,000). The budget includes the recovery reference and exit status. Omitted
 output is stored **after recognized secrets are redacted** in SQLite
@@ -97,7 +99,9 @@ output is stored **after recognized secrets are redacted** in SQLite
 ```text
 [... 340 lines of routine output omitted by tokencut (-84.1%). Ref: tc_8f2a1b ...]
 ```
-If the AI model or developer ever needs the exact omitted lines:
+
+If an agent or developer needs the omitted output, it can be fetched instantly:
+
 ```bash
 tokencut retrieve tc_8f2a1b --lines 120-160
 ```
@@ -106,55 +110,47 @@ recovered. Long diagnostics may be omitted from a bounded response: retrieve the
 before diagnosing or reviewing a change. Regex redaction is best effort, not a
 complete secret scanner. Cache data remains local until removed.
 
-### 2. 🌳 Repository Token Tree (`tokencut tree`)
-Discover what is silently eating your context window before you even start coding:
+
+### 2. Repository Token Profiling (`tokencut tree`)
+Identifies high-consumption files and directories before context is loaded into an agent session:
+
 ```bash
 tokencut tree .
 ```
+
 ```text
 tokencut/  · 170,499 tok (100.0%)
 ├── src/ · 15,282 tok (9.0%)
 ├── tests/ · 2,628 tok (1.5%)
-└── uv.lock · 148,640 tok (87.2%) ⚠️ Top Token Consumer!
+└── uv.lock · 148,640 tok (87.2%) [Top Consumer]
 ```
-*Identifies in 1 second that a lockfile or test fixture is taking 87% of your tokens!*
 
-### 3. ⚡ AST Code Skeletonizer (`tokencut cat --skeleton`)
-When exploring large codebases, AI assistants typically dump thousands of lines of implementation logic. `tokencut` generates structural outlines (classes, method signatures, docstrings, type annotations) with bodies replaced by `...`. Agents can inspect individual methods with `--symbol` or line ranges with `--lines`:
+### 3. AST Code Skeletonization (`tokencut cat --skeleton`)
+During multi-file codebase navigation, feeding complete implementation bodies into the prompt exhausts context rapidly. `tokencut cat` parses Python files via the standard library `ast` module and other languages (TypeScript, JavaScript, Go, Rust) via structural regex to extract classes, method signatures, type annotations, and docstrings:
+
 ```bash
+# View outline of a module
 tokencut cat src/auth.py --skeleton
+
+# Extract a specific class or method
 tokencut cat src/auth.py --symbol AuthService.verify_token
+
+# Extract specific line slice with file context
+tokencut cat src/auth.py --lines 45-80
 ```
 
-### 4. 🔒 Secret & API Key Sanitizer
-Best-effort pattern matching scrubs recognized credentials before MCP display and cache storage:
-- OpenAI API keys (`sk-proj-...`)
-- Anthropic API keys (`sk-ant-...`)
-- Google Gemini keys (`AIza...`)
-- GitHub Personal Access Tokens (`ghp_...`)
-- Database connection strings with passwords (`postgres://user:pass@...`)
+### 4. Git Diff Slimming (`tokencut diff`)
+Package lockfiles (`uv.lock`, `package-lock.json`, `pnpm-lock.yaml`) often generate thousands of lines of machine-generated diffs that crowd out actual application changes. `tokencut diff` collapses lockfile modifications into summary counts while retaining application changes. MCP output is bounded; retrieve omitted context before reviewing.
 
-### 5. 🔌 Universal Model Context Protocol (MCP) Server
-Integrate directly into **Claude Code**, **Cursor**, or **Gemini CLI** with **one command**:
-```bash
-claude mcp add --scope user tokencut -- tokencut mcp
-```
-Provides Claude with token-optimized tools:
-* `tokencut_exec`: Runs terminal commands with automatic log compaction & CCR caching.
-* `tokencut_read`: Reads files in AST skeleton or targeted symbol mode.
-* `tokencut_retrieve`: Retrieves raw slices from cached outputs via ref ID.
-* `tokencut_diff`: Generates slim git diffs with lockfile folding.
-* `tokencut_stats`: Reports estimated net output reduction, including retrieval overhead.
+### 5. Credential & Secret Scrubbing
+Best-effort pattern matching redacts recognized API keys, JWTs, and password-bearing database URLs before MCP display and cache storage. It is not a complete secret scanner.
 
-### 6. 🔍 Prompt Cache Protector (`tokencut lint`)
-`tokencut lint` scans `CLAUDE.md`, `.cursorrules`, and prompt templates for dynamic timestamps and potential cache-busting patterns. Cache behavior and pricing depend on the provider and model:
-```bash
-tokencut lint CLAUDE.md --minify
-```
+### 6. Prompt Cache Optimization (`tokencut lint`)
+Cache behavior and pricing depend on the provider and model. `tokencut lint` analyzes system instruction files (`CLAUDE.md`, `.cursorrules`, system prompts) to identify dynamic timestamps, non-deterministic paths, and volatile headers that invalidate prompt caches.
 
 ---
 
-## 🚀 Quick Start
+## Quickstart
 
 ### Install this repository with uv
 
@@ -174,10 +170,10 @@ tokencut run -- pytest -v tests/
 # Visualize token distribution across your repository
 tokencut tree .
 
-# View code file as an AST skeleton (75% token reduction)
+# Inspect code structure without function bodies
 tokencut cat src/server.py --skeleton
 
-# Inspect git diff with lockfiles folded (-97% diff tokens)
+# Inspect git diff with folded lockfiles
 tokencut diff
 
 # Audit CLAUDE.md for prompt cache busting
@@ -197,20 +193,30 @@ uv sync --all-extras
 
 ---
 
-## 🤝 Harness Integrations
+## Integrations
 
 ### Claude Code
-Add `tokencut` as a native MCP server:
+Register `tokencut` as a native MCP server:
+
 ```bash
 claude mcp add --scope user tokencut -- tokencut mcp
 ```
-Or wrap long-running commands directly:
+
+This exposes five tools directly to Claude:
+- `tokencut_exec`: Runs bash commands with output compaction and CCR caching.
+- `tokencut_read`: Reads files with support for AST skeletons, symbol extraction, and line ranges.
+- `tokencut_retrieve`: Retrieves omitted slices from cached terminal runs by reference ID.
+- `tokencut_diff`: Generates slim git diffs with lockfile folding.
+- `tokencut_stats`: Reports estimated net session output reduction, including retrieval overhead.
+
+You can also wrap commands directly:
 ```bash
 tokencut run -- npm test
 ```
 
-### Cursor / Windsurf
+### Cursor & Windsurf
 Add to your `mcp.json` (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
+
 ```json
 {
   "mcpServers": {
@@ -242,28 +248,33 @@ older IDE versions may use `~/.gemini/antigravity/mcp_config.json`. Gemini CLI u
 For exec/diff, pass the target project's absolute `cwd`. Prefer absolute file paths.
 Installation exposes tools; it does not automatically rewrite native shell calls.
 
+Optional shell wrapper:
+```bash
+alias cc="tokencut run --"
+```
+
 ---
 
-## 🛠 Command Reference
+## CLI Reference
 
 | Command | Description |
 | :--- | :--- |
-| `tokencut run <cmd>` | Runs a command and outputs token-compacted stdout/stderr with telemetry. |
-| `tokencut tree [dir]` | Visualizes directory token breakdown & identifies top token hogs. |
-| `tokencut cat <file> -s` | Displays an AST skeleton of Python, TypeScript, Go, or Rust code. |
-| `tokencut cat <file> -l 10-50` | Extracts a targeted line slice with file header context. |
+| `tokencut run <cmd>` | Runs a command, then compacts captured output with telemetry. |
+| `tokencut tree [dir]` | Hierarchical directory token consumption profiler. |
+| `tokencut cat <file> -s` | AST structural skeleton (classes, signatures, docstrings). |
 | `tokencut cat <file> -y <sym>` | Extracts a specific class, method, or function by name. |
-| `tokencut retrieve <ref_id>` | Retrieves full uncompressed raw output from the CCR cache. |
-| `tokencut pipe` | Unix stream filter: read stdin, compact, output to stdout. |
-| `tokencut diff [--staged]` | Slims unified git diffs by folding lockfiles and collapsing extra context. |
-| `tokencut lint [file]` | Lints `CLAUDE.md` / `.cursorrules` for token bloat and cache-busting timestamps. |
+| `tokencut cat <file> -l <range>` | Extracts a specific line range with file context. |
+| `tokencut retrieve <ref_id>` | Retrieves uncompressed output from the CCR cache. |
+| `tokencut pipe` | POSIX stdin filter for shell integration. |
+| `tokencut diff [--staged]` | Slims git diffs by folding lockfiles and condensing whitespace. |
+| `tokencut lint [file]` | Lints agent instruction files for prompt cache-busting elements. |
 | `tokencut mcp` | Starts the stdio JSON-RPC Model Context Protocol server. |
-| `tokencut stats` | Displays lifetime token savings and estimated dollars saved in USD. |
-| `tokencut demo` | Interactive visual demo benchmarking token savings on realistic failure traces. |
+| `tokencut stats` | Displays lifetime token savings and estimated dollar savings. |
+| `tokencut demo` | Interactive visual demo benchmarking token savings on realistic failures. |
 
 ---
 
-## 🧪 Testing & Code Quality
+## Development
 
 Run the regression suite and linter:
 
@@ -271,7 +282,7 @@ Run the regression suite and linter:
 # Run unit, integration, and CLI tests
 uv run pytest -v
 
-# Run linter
+# Run the linter
 uv run ruff check .
 
 # Run authored fixture benchmarks (no model calls)
@@ -280,12 +291,6 @@ uv run python scripts/benchmark_suite.py
 
 ---
 
-<br />
+## License
 
-<div align="center">
-  <h3>🌟 Star tokencut on GitHub!</h3>
-  <p>If tokencut saved your Claude Code session from hitting the 5-hour limit, please consider giving us a star!</p>
-  <a href="https://github.com/00200200/tokencut">
-    <img src="https://img.shields.io/github/stars/00200200/tokencut?style=social&label=Star%20us%20on%20GitHub!" alt="GitHub Stars" />
-  </a>
-</div>
+Released under the [MIT License](LICENSE).
