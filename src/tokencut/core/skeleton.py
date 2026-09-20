@@ -217,6 +217,11 @@ def extract_symbol_or_range(
     if not p.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
+    if symbol and not lines_range:
+        from tokencut.core.code_index import read_symbol
+
+        return read_symbol(p, symbol)
+
     content = p.read_text(encoding="utf-8", errors="replace")
 
     if lines_range:
@@ -232,31 +237,6 @@ def extract_symbol_or_range(
         selected = all_lines[start - 1 : end]
         header = f"# [{p.name} lines {start}-{end} of {len(all_lines)}]\n"
         return header + "\n".join(selected)
-
-    if symbol:
-        # Extract specific function or class by name
-        if p.suffix == ".py":
-            try:
-                tree = ast.parse(content)
-                for node in ast.walk(tree):
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                        if node.name == symbol or symbol.endswith(f".{node.name}"):
-                            return ast.unparse(node)
-            except Exception:
-                pass
-
-        # Fallback to regex search for symbol definition
-        sym_pattern = re.compile(
-            rf"(?:def|class|function|interface|fn|func)\s+{re.escape(symbol)}\b"
-        )
-        lines = content.splitlines()
-        for idx, line in enumerate(lines):
-            if sym_pattern.search(line):
-                # Return 40 lines around the symbol
-                end_idx = min(len(lines), idx + 40)
-                return f"# [{p.name} symbol: {symbol}]\n" + "\n".join(lines[idx:end_idx])
-
-        return f"# Symbol '{symbol}' not found in {p.name}"
 
     if skeleton:
         if p.suffix == ".py":

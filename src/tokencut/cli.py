@@ -60,6 +60,54 @@ def _emit(text: str) -> str:
     return emitted
 
 
+@app.command("code")
+def code_query(
+    root: Annotated[Path, typer.Argument(help="Absolute project directory")],
+    mode: Annotated[str, typer.Option("--mode")] = "map",
+    query: Annotated[str, typer.Option("--query", "-q")] = "",
+    file: Annotated[str | None, typer.Option("--file")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=200)] = 30,
+    budget: Annotated[int, typer.Option("--budget", min=64, max=32000)] = 2000,
+):
+    """Query an incremental local syntax index without AI calls."""
+    from tokencut.mcp.server import handle_tokencut_code
+
+    arguments = {
+        "root": str(root),
+        "mode": mode,
+        "query": query,
+        "limit": limit,
+        "max_tokens": budget,
+    }
+    if file is not None:
+        arguments["file"] = file
+    try:
+        _emit(handle_tokencut_code(arguments))
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command("edit-symbol")
+def edit_symbol(
+    path: Annotated[Path, typer.Argument(help="Absolute source file")],
+    symbol: Annotated[str, typer.Argument(help="Qualified name, optionally @line")],
+    replacement_file: Annotated[Path, typer.Option("--replacement-file")],
+    expected_hash: Annotated[str, typer.Option("--expected-hash")],
+    apply: Annotated[bool, typer.Option("--apply", help="Write the previewed change")] = False,
+):
+    """Preview/replace an exact symbol; run through the client's native shell permissions."""
+    from tokencut.core.redactor import redact_secrets
+    from tokencut.core.symbol_edit import replace_symbol
+
+    try:
+        result = replace_symbol(
+            path, symbol, replacement_file.read_bytes().decode("utf-8"), expected_hash, apply=apply
+        )
+        _emit(redact_secrets(result))
+    except (ValueError, SyntaxError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 @app.command()
 def monitor(stdio: Annotated[bool, typer.Option("--stdio")] = False):
     """Local companion JSON-lines protocol (stdin/stdout; no listening port)."""
@@ -187,13 +235,16 @@ def cat(
         raise typer.Exit(code=1)
 
     start = time.perf_counter()
-    output = extract_symbol_or_range(
-        file_path,
-        symbol=symbol,
-        lines_range=lines,
-        skeleton=skeleton,
-        strip_comments=strip_comments,
-    )
+    try:
+        output = extract_symbol_or_range(
+            file_path,
+            symbol=symbol,
+            lines_range=lines,
+            skeleton=skeleton,
+            strip_comments=strip_comments,
+        )
+    except (ValueError, SyntaxError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     requested = output
     if budget and not paused():
@@ -259,13 +310,23 @@ def retrieve(
     ref_id: Annotated[
         str, typer.Argument(help="Reference ID from tokencut log notice (e.g. 'tc_8f2a1b')")
     ],
+    query: Annotated[str | None, typer.Option("--query", "-q")] = None,
     lines: Annotated[
         str | None, typer.Option("--lines", "-l", help="Line range to inspect (e.g. 20-60)")
     ] = None,
 ):
     """Retrieve full uncompressed raw output from the local Compress-Cache-Retrieve store."""
     cache = ContextCache()
-    raw = cache.retrieve(ref_id, lines_range=lines)
+    if query is not None and lines is not None:
+        raise typer.BadParameter("Choose --query or --lines, not both")
+    try:
+        raw = (
+            cache.search(ref_id, query)
+            if query is not None
+            else cache.retrieve(ref_id, lines_range=lines)
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     emitted = _emit(raw)
     # Recovery is additional context, not a second saving of the original log.
     try:

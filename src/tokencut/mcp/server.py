@@ -30,6 +30,27 @@ _SESSION_SAVED_GEMINI = 0
 
 TOOLS_DEFINITIONS = [
     {
+        "name": "tokencut_code",
+        "description": "Search a local syntax index or get a ranked repo map. Use symbols for definitions, occurrences for syntactic name matches (not LSP references), search for text, pattern for ast-grep patterns. Then read a qualified symbol with tokencut_read.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "root": {
+                    "type": "string",
+                    "description": "Absolute project directory; respects Git ignores.",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["map", "symbols", "occurrences", "search", "pattern"],
+                },
+                "query": {"type": "string"},
+                "file": {"type": "string", "description": "Optional file relative to root."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 30},
+            },
+            "required": ["root"],
+        },
+    },
+    {
         "name": "tokencut_exec",
         "description": "Run a noninteractive shell command with conservative log filtering and exit status. Set max_tokens only to opt into truncation; shortened output has a recovery ref.",
         "inputSchema": {
@@ -72,7 +93,7 @@ TOOLS_DEFINITIONS = [
                 },
                 "symbol": {
                     "type": "string",
-                    "description": "Specific symbol name (function, class, interface) to inspect.",
+                    "description": "Exact qualified name, e.g. Cache.get, optionally @line for ambiguity. Returns original source and file hash.",
                 },
             },
             "required": ["path"],
@@ -80,10 +101,14 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "tokencut_retrieve",
-        "description": "Recover redacted cached output by ref. Specify lines (e.g. 40-100) to avoid rereading a large log.",
+        "description": "Recover redacted cached output by ref. Specify lines or query to return only relevant chunks; every recovery is charged as added context.",
         "inputSchema": {
             "type": "object",
             "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search words in this cached output; cannot combine with lines.",
+                },
                 "ref_id": {
                     "type": "string",
                     "description": "The ref ID returned by tokencut in a truncated log notice.",
@@ -244,6 +269,22 @@ def _cwd(arguments: dict[str, Any]) -> str | None:
 
 
 @_timed
+def handle_tokencut_code(arguments: dict[str, Any]) -> str:
+    from tokencut.core.code_index import CodeIndex
+
+    budget = _budget(arguments)
+    index = CodeIndex(arguments["root"])
+    result = index.query(
+        arguments.get("mode", "map"),
+        arguments.get("query", ""),
+        arguments.get("file"),
+        arguments.get("limit", 30),
+    )
+    output = _compress(result, budget, source="code-query")
+    return _record(result, output, operation="code", project=arguments["root"])
+
+
+@_timed
 def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
     start = time.perf_counter()
     budget = _budget(arguments)
@@ -313,7 +354,14 @@ def handle_tokencut_retrieve(arguments: dict[str, Any]) -> str:
     ref_id = arguments["ref_id"]
     lines = arguments.get("lines")
     cache = ContextCache()
-    retrieved = cache.retrieve(ref_id, lines_range=lines)
+    query = arguments.get("query")
+    if query is not None and lines is not None:
+        raise ValueError("Choose query or lines, not both")
+    retrieved = (
+        cache.search(ref_id, query)
+        if query is not None
+        else cache.retrieve(ref_id, lines_range=lines)
+    )
     if retrieved.startswith("Error:"):
         return retrieved
     output = _compress(retrieved, budget, source="retrieve")
@@ -435,7 +483,7 @@ def _respond(req: Any) -> dict[str, Any] | None:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "tokencut", "version": "0.1.0"},
-                "instructions": "Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
+                "instructions": "Use tokencut_code for local map, symbol, text and structural searches; tokencut_read for exact qualified symbols. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
             },
         }
     if method == "tools/list":
@@ -445,6 +493,7 @@ def _respond(req: Any) -> dict[str, Any] | None:
     if method != "tools/call":
         return {**response, "error": {"code": -32601, "message": "Method not found"}}
     handlers = {
+        "tokencut_code": handle_tokencut_code,
         "tokencut_exec": handle_tokencut_exec,
         "tokencut_read": handle_tokencut_read,
         "tokencut_retrieve": handle_tokencut_retrieve,

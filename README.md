@@ -151,8 +151,8 @@ Development priorities:
    TokenCut, and complementary combinations on the same completed coding tasks.
    Record success, retries, latency, total input/output, cache hits, and reasoning
    usage where available. Report model versions and repeated runs, including losses.
-2. Add command-specific parsers for test/build diagnostics and precise symbol
-   lookup; regex outlines are not language-server navigation. Test ambiguous
+2. Extend command-specific parsers and syntax-index coverage; syntax matches
+   are not language-server references. Test ambiguous
    symbol names, long tracebacks, Unicode, malformed output, and retrieval paths.
 3. Keep tool schemas small, measure discovery overhead, and add opt-in client
    hooks only with real client tests. Measure net session savings before enabling
@@ -169,6 +169,16 @@ for compact mode, exact preservation of a complete failure tail in safe mode,
 exact cache recovery, and unchanged unfamiliar output. It reports local token
 estimates and tool-schema overhead, with an isolated temporary cache. No model is
 called and reasoning quality is not evaluated.
+
+`python scripts/benchmark_code.py` tests locating/reading one method among 100
+Python classes, warm-index reuse, and a guarded edit with behavior checks. Add
+`--serena /absolute/path/to/serena` for an isolated local Serena comparison
+(requires the `mcp` extra and a working Python language server). It does not change
+the active Serena project. Tool text and discovery overhead are reported separately.
+On the development Mac, a full-file read was 4,000 estimated tokens, TokenCut
+lookup + read 130, TokenCut direct read 90, and Serena direct read 87. Tool schemas
+were 1,279 vs 6,569 estimated tokens for 8 vs 23 tools with different capabilities.
+This fixture establishes neither general superiority nor subscription savings.
 
 The local counter uses `o200k_base` (with a `cl100k_base` fallback). Claude and
 Gemini values are uncalibrated heuristics. These are **not exact counts for Astra,
@@ -238,6 +248,46 @@ tokencut cat src/auth.py --symbol AuthService.verify_token
 # Extract specific line slice with file context
 tokencut cat src/auth.py --lines 45-80
 ```
+
+### Local code navigation and guarded edits
+
+`tokencut code` uses [ast-grep](https://github.com/ast-grep/ast-grep) (MIT)
+and SQLite FTS5, without model calls or a background server. It indexes changed
+files only, respects Git ignores, skips dependency/build folders and symlinks,
+and reports files it could not parse. Python, JS/TS/TSX, Rust, Go, Swift, Java,
+and C/C++ have syntax-based declaration lookup; language-specific coverage varies.
+
+```bash
+tokencut code "$PWD" --mode map --limit 20
+tokencut code "$PWD" --mode symbols --query AuthService.verify_token
+tokencut code "$PWD" --mode occurrences --query verify_token
+tokencut code "$PWD" --mode search --query 'authentication expired'
+tokencut code "$PWD" --mode pattern --query 'print($A)' --file src/auth.py
+tokencut retrieve tc_REFERENCE --query 'ConnectionRefusedError'
+```
+
+Maps rank declarations by syntactic name occurrence counts; text search uses
+BM25. Occurrences can include unrelated symbols with the same name. This does
+**not** implement LSP reference resolution or project-wide semantic renaming.
+Search snippets identify the chunk's first line, not necessarily the hit's line.
+Results default to 2,000 tokens; recover omitted information before relying on it.
+The incremental source index lives in `$TOKENCUT_CACHE_DIR/code-index`, separate
+from metadata-only telemetry; like the recovery cache, it contains redacted text.
+
+Symbol reads preserve source comments/decorators and include a file SHA-256.
+Ambiguous names require a qualified name or `name@line`. Edits run through the
+client's **native shell permissions**, with preview as the default:
+
+```bash
+tokencut cat "$PWD/src/auth.py" --symbol AuthService.verify_token
+# Write the complete replacement declaration, including indentation, to /tmp/replacement.py.
+tokencut edit-symbol "$PWD/src/auth.py" AuthService.verify_token \
+  --replacement-file /tmp/replacement.py --expected-hash HASH_FROM_READ
+# Add --apply to write. A stale hash, ambiguous symbol or syntax error aborts.
+```
+
+These checks guard the edit region and file version; they do not prove that the
+replacement preserves behavior. Run the project's relevant tests after editing.
 
 ### 4. Git Diff Slimming (`tokencut diff`)
 Package lockfiles (`uv.lock`, `package-lock.json`, `pnpm-lock.yaml`) often generate thousands of lines of machine-generated diffs that crowd out actual application changes. `tokencut diff` collapses lockfile modifications into summary counts while retaining application changes. MCP output is bounded; retrieve omitted context before reviewing.
@@ -344,10 +394,11 @@ Register the MCP server:
 claude mcp add --scope user tokencut -- tokencut mcp
 ```
 
-This exposes seven tools:
+This exposes eight tools:
+- `tokencut_code`: Incremental repository map, qualified symbols, name occurrences, text and structural search.
 - `tokencut_exec`: Runs bash commands with output compaction and CCR caching.
 - `tokencut_read`: Reads files with support for AST skeletons, symbol extraction, and line ranges.
-- `tokencut_retrieve`: Retrieves omitted slices from cached terminal runs by reference ID.
+- `tokencut_retrieve`: Retrieves omitted slices or matching chunks from one cached result by reference ID.
 - `tokencut_diff`: Generates slim git diffs with lockfile folding.
 - `tokencut_tree`: Profiles repository token distribution.
 - `tokencut_json`: Previews JSON with folded arrays and recoverable omitted values.

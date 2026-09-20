@@ -101,6 +101,59 @@ class ContextCache:
         except ValueError:
             return "Error: lines must be a positive line number or an ascending range (e.g. 10-40)."
 
+    def search(self, ref_id: str, query: str, limit: int = 5) -> str:
+        """Search only the requested recovery record; never search conversations.
+
+        Index the already-redacted snapshot lazily. FTS data is recovery content,
+        kept in cache.db rather than the metadata-only telemetry database.
+        """
+        from tokencut.core.code_index import terms
+
+        expression = terms(query)
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("limit must be 1–20")
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT content FROM output_cache WHERE ref_id=?", (ref_id,)
+            ).fetchone()
+        if row is None:
+            return f"Error: ref ID '{ref_id}' not found in tokencut cache."
+        original = redact_secrets(row[0])
+        checksum = hashlib.sha256(original.encode()).hexdigest()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS recovery_search USING fts5(ref UNINDEXED, first UNINDEXED, last UNINDEXED, body)"
+            )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS recovery_indexed (ref TEXT PRIMARY KEY, checksum TEXT)"
+            )
+            existing = conn.execute(
+                "SELECT checksum FROM recovery_indexed WHERE ref=?", (ref_id,)
+            ).fetchone()
+            if not existing or existing[0] != checksum:
+                conn.execute("DELETE FROM recovery_search WHERE ref=?", (ref_id,))
+                lines = original.splitlines()
+                conn.executemany(
+                    "INSERT INTO recovery_search(ref,first,last,body) VALUES (?,?,?,?)",
+                    [
+                        (ref_id, i + 1, min(i + 30, len(lines)), "\n".join(lines[i : i + 30]))
+                        for i in range(0, len(lines), 30)
+                    ],
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO recovery_indexed VALUES (?,?)", (ref_id, checksum)
+                )
+            rows = conn.execute(
+                "SELECT first,last,body FROM recovery_search WHERE recovery_search MATCH ? AND ref=? ORDER BY bm25(recovery_search),CAST(first AS INTEGER) LIMIT ?",
+                (expression, ref_id, limit + 1),
+            ).fetchall()
+        result = "\n".join(
+            f"# {ref_id} lines {first}-{last}\n{body}" for first, last, body in rows[:limit]
+        )
+        if len(rows) > limit:
+            result += "\n[More matching chunks; narrow query or raise limit.]"
+        return result or f"No matches in {ref_id}; the original remains available with retrieve."
+
     def check_duplicate(self, content: str) -> str | None:
         """Check if identical content was cached recently within last 15 minutes."""
         content_hash = hashlib.sha256(redact_secrets(content).encode("utf-8")).hexdigest()
@@ -115,6 +168,9 @@ class ContextCache:
     def clear(self):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM output_cache")
+            for table in ("recovery_search", "recovery_indexed"):
+                if conn.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+                    conn.execute(f"DELETE FROM {table}")
             conn.commit()
 
     def get_stats(self) -> dict[str, Any]:

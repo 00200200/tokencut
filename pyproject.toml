@@ -33,6 +33,7 @@ classifiers = [
   "Topic :: Utilities",
 ]
 dependencies = [
+  "ast-grep-py>=0.41,<1",
   "rich>=13.7.0",
   "tiktoken>=0.7.0",
   "typer>=0.12.0",

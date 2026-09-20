@@ -186,6 +186,7 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
     assert responses[0]["result"]["serverInfo"]["name"] == "tokencut"
     assert responses[1]["id"] == 2
     assert {tool["name"] for tool in responses[1]["result"]["tools"]} == {
+        "tokencut_code",
         "tokencut_exec",
         "tokencut_read",
         "tokencut_retrieve",

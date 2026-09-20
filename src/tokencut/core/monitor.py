@@ -165,6 +165,9 @@ class Monitor:
                 ).fetchone()[0]
                 for engine in ("tokencut", "rtk")
             }
+            latest_code = conn.execute(
+                "SELECT MAX(timestamp) FROM events WHERE engine='tokencut' AND operation='code' AND delivery='returned'"
+            ).fetchone()[0]
         # Tokenizer methods and prepared hooks never enter the same total.
         measured = [
             r
@@ -228,6 +231,14 @@ class Monitor:
                     "clients": clients["tokencut"],
                     "last_event": latest["tokencut"],
                     "detail": "CLI + MCP; hook Claude raportuje przygotowaną podmianę.",
+                },
+                {
+                    "name": "TokenCut Code",
+                    "installed": True,
+                    "clients": clients["tokencut"],
+                    "last_event": latest_code,
+                    "detail": "Wbudowany indeks ast-grep + SQLite: symbole, mapa i wyszukiwanie. "
+                    "Bez wywołań AI. Wystąpienia nazw nie są semantycznymi referencjami LSP.",
                 },
                 {
                     "name": "Serena",
@@ -306,7 +317,10 @@ class Monitor:
                 ok = (
                     result.returncode == 0
                     and "result" in replies.get(1, {})
-                    and len(replies.get(2, {}).get("result", {}).get("tools", [])) >= 7
+                    and {"tokencut_code", "tokencut_read", "tokencut_retrieve"}.issubset(
+                        tool["name"]
+                        for tool in replies.get(2, {}).get("result", {}).get("tools", [])
+                    )
                     and "test integracji"
                     in json.dumps(replies.get(3, {}).get("result", {}), ensure_ascii=False)
                 )
