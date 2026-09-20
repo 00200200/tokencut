@@ -58,7 +58,7 @@ def already_wrapped(command: str) -> bool:
         words = shlex.split(command, posix=True)
     except ValueError:
         return False
-    return any(Path(word).name in {"tokencut", "rtk"} for word in words)
+    return any(Path(word).name == "tokencut" for word in words)
 
 
 def project_for(path: str | Path | None = None) -> str | None:

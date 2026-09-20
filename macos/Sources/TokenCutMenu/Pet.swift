@@ -8,6 +8,7 @@ struct QuotaWindow: Decodable, Identifiable {
 }
 struct QuotaProvider: Decodable, Identifiable {
     let provider, name, source, status, message: String
+    let issue: String?
     let updatedAt: Double?
     let windows: [QuotaWindow]
     var id: String { provider }
@@ -34,7 +35,6 @@ struct PetView: View {
                         Text("TokenCut").font(.system(size: 13, weight: .bold, design: .rounded))
                     }.buttonStyle(.plain).help("Open limits and savings")
                     Spacer(minLength: 6)
-                    Text("LEFT").font(.system(size: 8, weight: .semibold)).tracking(0.8).foregroundStyle(mutedInk)
                     Menu {
                         Button("Limits and reset") { showLimits() }
                         Button("Savings") { model.tab = 0; PanelWindow.show(model) }
@@ -47,6 +47,11 @@ struct PetView: View {
                         Button("Quit TokenCut") { NSApp.terminate(nil) }
                     } label: { Image(systemName: "ellipsis") }
                     .menuStyle(.borderlessButton).frame(width: 22).help("Pet options").accessibilityLabel("Pet options")
+                    Button { PetWindow.hide() } label: {
+                        Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                            .frame(width: 14, height: 18)
+                    }.buttonStyle(.plain).foregroundStyle(mutedInk)
+                        .help("Hide pet — monitoring continues in the menu bar").accessibilityLabel("Hide pet")
                 }
                 ForEach(["codex", "claude"], id: \.self) { provider in
                     let row = model.quotas.first { $0.provider == provider }
@@ -56,10 +61,10 @@ struct PetView: View {
                             Text(provider == "codex" ? "Codex" : "Claude").foregroundStyle(mutedInk)
                             Spacer(minLength: 4)
                             if let quota = row?.tightest, row?.status == "ok" {
-                                Text("\(quota.remainingPercent.formatted(.number.precision(.fractionLength(0))))%")
+                                Text("\(quota.remainingPercent.formatted(.number.precision(.fractionLength(0))))% left")
                                     .foregroundStyle(quota.remainingPercent <= 15 ? .orange : accent).monospacedDigit().bold()
                             } else {
-                                Text(row?.status == "loading" ? "…" : "unavailable").foregroundStyle(mutedInk)
+                                Text(row?.status == "loading" ? "…" : row?.issue == "cli_not_signed_in" ? "CLI not linked" : "unavailable").foregroundStyle(mutedInk)
                             }
                         }.font(.system(size: 11)).padding(.vertical, 2)
                     }.buttonStyle(.plain)
@@ -131,8 +136,8 @@ struct QuotaDetails: View {
                     }
                     Text(provider.source).font(.caption2).foregroundStyle(.secondary)
                     if provider.provider == "claude", provider.status == "unavailable" {
-                        Text("Check your Claude Code CLI sign-in. Claude Desktop may use a separate sign-in.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Link("View Claude account limits ↗", destination: URL(string: "https://claude.ai/settings/usage")!)
+                            .font(.caption)
                     }
                 }
             }
@@ -181,6 +186,7 @@ final class DraggablePetHost: NSHostingView<PetView> {
         panel?.orderFrontRegardless()
     }
     static func hide() {
+        UserDefaults.standard.set(true, forKey: "showMenuBar")
         UserDefaults.standard.set(true, forKey: "petHidden")
         panel?.orderOut(nil)
     }

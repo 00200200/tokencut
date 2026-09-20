@@ -30,7 +30,7 @@ from tokencut.core.doctor import (
     configure_windsurf_mcp,
     run_all_diagnostics,
 )
-from tokencut.core.engines import filter_rtk, select_engine
+from tokencut.core.engines import select_engine
 from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
 from tokencut.core.json_slimmer import slim_json
 from tokencut.core.native_hooks import install_claude_hook, run_hook_filter
@@ -129,7 +129,7 @@ def run(
         int | None, typer.Option("--budget", "-b", min=1, help="Strict token ceiling budget")
     ] = None,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Omit the summary footer")] = False,
-    engine: Annotated[str, typer.Option("--engine", help="auto|tokencut|rtk|none")] = "auto",
+    engine: Annotated[str, typer.Option("--engine", help="auto|tokencut|none")] = "auto",
     safe: Annotated[
         bool,
         typer.Option(
@@ -141,15 +141,9 @@ def run(
     """Execute a command and optimize its output for AI context windows."""
     full_cmd = shlex.join(command)
     try:
-        selected = select_engine(engine, command)
+        selected = select_engine(engine)
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint="--engine") from exc
-    if selected == "rtk" and (budget is not None or not safe):
-        if engine == "rtk":
-            raise typer.BadParameter(
-                "RTK cannot be combined with --budget or --compact", param_hint="--engine"
-            )
-        selected = "tokencut"
     wrapped = already_wrapped(full_cmd)
     if wrapped:
         selected = "none"
@@ -171,8 +165,6 @@ def run(
     # Step 2: Apply adaptive budget or standard compaction
     if selected == "none":
         compacted = raw_output
-    elif selected == "rtk":
-        compacted = filter_rtk(raw_output, command, proc.returncode)
     elif budget is not None:
         compacted = compress_to_budget(
             base_text, max_tokens=budget, source="run", original_text=raw_output

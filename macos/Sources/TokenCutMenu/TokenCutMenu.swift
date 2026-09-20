@@ -37,7 +37,7 @@ struct Legacy: Decodable {
 struct Snapshot: Decodable {
     let generatedAt: Double
     let paused: Bool
-    let today, prepared, rtk: Totals?
+    let today, prepared: Totals?
     let days: [Day]
     let breakdown: [String: [Group]]
     let legacy: Legacy
@@ -79,7 +79,6 @@ actor MonitorBridge {
         task.arguments = ["monitor", "--stdio"]
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-        environment["RTK_TELEMETRY_DISABLED"] = "1"
         task.environment = environment
         task.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         let request = Pipe(), response = Pipe()
@@ -245,6 +244,7 @@ struct Card<Content: View>: View {
 
 struct PanelView: View {
     @ObservedObject var model: Model
+    @AppStorage("petHidden") private var petHidden = false
     var visibilityKey = "menu"
     private let green = Color(red: 0.05, green: 0.57, blue: 0.40)
     var body: some View {
@@ -262,7 +262,7 @@ struct PanelView: View {
             }.padding(20)
             Picker("View", selection: $model.tab) {
                 Text("Savings").tag(0)
-                Text("Integrations").tag(1)
+                Text("Tools").tag(1)
                 Text("Limits").tag(2)
             }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 16)
             ScrollView {
@@ -285,6 +285,9 @@ struct PanelView: View {
                     Label(model.snapshot?.paused == true ? "Resume" : "Pause", systemImage: model.snapshot?.paused == true ? "play" : "pause")
                 }.keyboardShortcut("p").disabled(model.busy || model.snapshot == nil)
                 Spacer()
+                Button(petHidden ? "Show pet" : "Hide pet") {
+                    if petHidden { PetWindow.show(model) } else { PetWindow.hide() }
+                }
                 Button("Export", action: model.export).keyboardShortcut("e").disabled(model.busy || model.snapshot == nil)
                 Menu {
                     Button("Open dashboard") { PanelWindow.show(model) }
@@ -409,14 +412,6 @@ struct PanelView: View {
                     Text("No confirmed measurement").font(.caption).foregroundStyle(.secondary)
                 }
                 Text(item.detail).font(.caption).foregroundStyle(.secondary)
-                if item.name == "RTK", let total = data.rtk {
-                    Text("Today: \(count(total.before)) → \(count(total.after)) · net \(count(total.net))")
-                        .font(.callout.monospacedDigit())
-                    Text("Bytes / 4. Not added to TokenCut.").font(.caption2).foregroundStyle(.secondary)
-                }
-                if item.name == "Serena" {
-                    Link("Serena setup ↗", destination: URL(string: "https://oraios.github.io/serena/02-usage/030_clients.html")!).font(.caption)
-                }
             }
         }
         Button(action: model.check) {
@@ -464,6 +459,9 @@ struct PanelView: View {
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if UserDefaults.standard.bool(forKey: "petHidden") {
+            UserDefaults.standard.set(true, forKey: "showMenuBar")
+        }
         if !UserDefaults.standard.bool(forKey: "petHidden") { PetWindow.show(Model.shared) }
         if CommandLine.arguments.contains("--show-panel") { PanelWindow.show(Model.shared) }
         if CommandLine.arguments.contains("--dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
