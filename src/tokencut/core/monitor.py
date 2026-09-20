@@ -16,6 +16,7 @@ from typing import Any
 from tokencut.core.companion_state import settings, state_dir, update_settings
 from tokencut.core.engines import TESTED_RTK, rtk_path, rtk_version
 from tokencut.core.telemetry import EVENT_COLUMNS, TelemetryStore
+from tokencut.core.usage import UsageCollector
 
 
 def configuration() -> tuple[list[Path], dict, list[str]]:
@@ -72,6 +73,7 @@ class Monitor:
         self.last_check: dict | None = None
         self.configuration_cache: tuple | None = None
         self.configuration_at = 0.0
+        self.usage = UsageCollector()
 
     def discover(self):
         if time.monotonic() - self.configuration_at >= 30 or self.configuration_cache is None:
@@ -340,6 +342,8 @@ class Monitor:
 
     def dispatch(self, request: dict) -> Any:
         operation = request.get("method")
+        if operation in {"usage", "usage-refresh"}:
+            return {"providers": self.usage.snapshot(force=operation == "usage-refresh")}
         if operation == "snapshot":
             return self.snapshot()
         if operation == "pause":

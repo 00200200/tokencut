@@ -131,9 +131,13 @@ actor MonitorBridge {
     @Published var busy = false
     @Published var tab = 0
     @Published var grouping = "client"
+    @Published var quotas: [QuotaProvider] = []
+    @Published var usageBusy = false
     private let bridge = MonitorBridge()
     private var timer: Timer?
     private var lastRefresh = Date.distantPast
+    private var lastUsageRead = Date.distantPast
+    private var usagePolls = 0
     private var visibleSources: Set<String> = []
 
     var title: String {
@@ -154,7 +158,35 @@ actor MonitorBridge {
             Task { @MainActor in self?.refresh() }
         }
     }
-    func refresh() { perform("snapshot") }
+    func refresh() {
+        perform("snapshot")
+        if Date().timeIntervalSince(lastUsageRead) >= 30 { refreshUsage() }
+    }
+    func refreshUsage(force: Bool = false) {
+        guard !usageBusy else { return }
+        usageBusy = true
+        if force { usagePolls = 0 }
+        Task {
+            defer { usageBusy = false }
+            do {
+                let data = try await bridge.request(force ? "usage-refresh" : "usage")
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                quotas = try decoder.decode(QuotaEnvelope.self, from: data).providers
+                lastUsageRead = Date()
+                if quotas.contains(where: { $0.status == "loading" }) && usagePolls < 18 {
+                    usagePolls += 1
+                    Task { [weak model = self] in
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        model?.refreshUsage()
+                    }
+                } else { usagePolls = 0 }
+            } catch {
+                quotas = []
+                lastUsageRead = Date()
+            }
+        }
+    }
     func togglePause() { perform("pause", paused: !(snapshot?.paused ?? false)) }
     func check() { perform("check") }
     private func perform(_ method: String, paused: Bool? = nil) {
@@ -231,6 +263,7 @@ struct PanelView: View {
             Picker("Widok", selection: $model.tab) {
                 Text("Oszczędności").tag(0)
                 Text("Integracje").tag(1)
+                Text("Limity").tag(2)
             }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 16)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -238,7 +271,9 @@ struct PanelView: View {
                     if let message = model.message { notice(message, icon: "checkmark.circle", color: green) }
                     if let data = model.snapshot {
                         if data.paused { notice("Optymalizacja wstrzymana. Narzędzia zwracają pełny wynik. Odzyskiwanie nadal jest dostępne.", icon: "pause.circle", color: .orange) }
-                        if model.tab == 0 { savings(data) } else { integrations(data) }
+                        if model.tab == 0 { savings(data) }
+                        else if model.tab == 1 { integrations(data) }
+                        else { QuotaDetails(model: model) }
                     } else if model.error == nil {
                         Card { Text("Wczytywanie lokalnych pomiarów…").foregroundStyle(.secondary) }
                     }
@@ -253,6 +288,7 @@ struct PanelView: View {
                 Button("Eksportuj", action: model.export).keyboardShortcut("e").disabled(model.busy || model.snapshot == nil)
                 Menu {
                     Button("Otwórz w oknie") { PanelWindow.show(model) }
+                    Button("Pokaż pupila") { PetWindow.show(model) }
                     Button("Odśwież", action: model.refresh).keyboardShortcut("r")
                     Button("Zakończ TokenCut") { NSApp.terminate(nil) }.keyboardShortcut("q")
                 } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).frame(width: 20)
@@ -428,11 +464,12 @@ struct PanelView: View {
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if !UserDefaults.standard.bool(forKey: "petHidden") { PetWindow.show(Model.shared) }
         if CommandLine.arguments.contains("--show-panel") { PanelWindow.show(Model.shared) }
         if CommandLine.arguments.contains("--dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        PanelWindow.show(Model.shared)
+        PetWindow.show(Model.shared)
         return true
     }
 }
@@ -440,8 +477,9 @@ struct PanelView: View {
 @main struct TokenCutMenu: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = Model.shared
+    @AppStorage("showMenuBar") private var showMenuBar = false
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: $showMenuBar) {
             PanelView(model: model).environment(\.locale, Locale(identifier: "pl_PL"))
         } label: {
             Text(model.title).monospacedDigit()

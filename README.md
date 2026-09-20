@@ -50,12 +50,15 @@ need separate evaluation.
 
 ---
 
-## macOS menu bar companion (local preview)
+## macOS desktop pet (local preview)
 
-A native SwiftUI panel shows **estimated tool-output reduction**, before/after counts,
+A small draggable SwiftUI pet lives above other windows, remembers its position,
+and keeps working across Spaces. Click it to see quota windows, reset times and
+**estimated tool-output reduction**, before/after counts,
 recovery costs, seven days of history and breakdowns by client, Git project and tool.
 The UI is in Polish, follows the system appearance, and runs without a Dock icon.
-It does not measure subscription quota, model reasoning, or task quality.
+Quota percentages are fetched from services, separately from TokenCut savings.
+Neither counter measures model reasoning or task quality.
 
 Build with Apple's Swift toolchain (macOS 13+), after installing this checkout:
 
@@ -67,14 +70,17 @@ open macos/build/TokenCut.app
 
 The build is locally ad-hoc signed, not notarized or a public installer. The default
 backend is `~/.local/bin/tokencut`; set `TOKENCUT_EXECUTABLE` while building to override
-it. Double-click the app to open an optional panel window. The menu item shows
+it. Double-click the app to restore the pet. Its menu can open the full panel,
+hide the pet, restore its corner position, or enable the optional menu bar item.
+The menu item shows
 `TC —` when no measurements exist, and `TC Ⅱ` while paused. Refresh is at most every
 5 seconds while visible, 30 seconds in the background. The pause is reversible;
 it affects new wrapper, MCP and hook transformations, not already running calls.
 
 The app owns a `tokencut monitor --stdio` subprocess; there is no network listener or
 AI call. JSON-lines requests support `snapshot`, `pause` (boolean `paused`), `check`,
-and `export`, with an echoed `id` and `result` or `error`. The check exercises a fresh
+`export`, `usage`, and `usage-refresh`, with an echoed `id` and `result` or `error`.
+Quota reads run in background workers and never block the savings panel. The check exercises a fresh
 local MCP connection; it does **not** establish that another running app loaded it.
 Existing MCP sessions must reconnect after upgrading the executable.
 
@@ -93,6 +99,29 @@ Existing MCP sessions must reconnect after upgrading the executable.
 - Add `TOKENCUT_CLIENT=codex|claude-code|claude-desktop|antigravity` to an MCP entry's
   environment for attribution. Without a known client, it is labeled `mcp`/`cli`.
   No conversations or session transcripts are inspected.
+
+### Account limits
+
+- Codex uses the logged-in local CLI's documented
+  [`account/rateLimits/read`](https://learn.chatgpt.com/docs/app-server) request.
+  It only initializes the connection and reads quota; no thread or model turn is
+  created. The CLI account can differ from the one in the Codex desktop app.
+- Claude uses the optional [CodexBar CLI](https://github.com/steipete/CodexBar)
+  adapter: `brew install --formula steipete/tap/codexbar`. It runs `usage --provider
+  claude --source cli --format json --json-only` against the logged-in Claude Code
+  CLI. No browser-cookie import or `cost` transcript scan is requested. Logged-out
+  or unsupported clients show unavailable data. Logging into Claude Desktop alone
+  does not establish a working CLI quota source.
+- Service reads happen at most once every five minutes per provider; manual
+  refresh has a 30-second minimum interval. Network requests go through the
+  providers' existing clients. No prompts or paid model calls are sent.
+- The pet shows **remaining** percentage for the most constrained reported
+  window; details show every available window and the last successful read time.
+  Missing windows, failed reads and elapsed resets never imply 100% remaining.
+  Quota data stays in memory and is excluded from savings exports.
+- ChatGPT chat quotas and Antigravity quotas are not connected in this version.
+  TokenCut filters selected tool results; it does not intercept all chat input,
+  generated replies or model reasoning, and it cannot increase subscription limits.
 
 ### Conservative RTK adapter
 
