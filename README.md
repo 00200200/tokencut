@@ -13,7 +13,7 @@
   <p align="center">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00f5a0?style=for-the-badge&logo=opensourceinitiative&logoColor=white" alt="MIT license"></a>
     <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-00d9f5?style=for-the-badge&logo=python&logoColor=white" alt="Python versions"></a>
-    <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/tests-36%20passed-22c55e?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests"></a>
+    <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/tests-37%20passed-22c55e?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests"></a>
     <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-261230.svg?style=for-the-badge&labelColor=000000" alt="Ruff"></a>
     <a href="https://github.com/00200200/tokencut/stargazers"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=for-the-badge&label=Star%20Us!&color=7928ca" alt="GitHub stars"></a>
   </p>
@@ -219,6 +219,7 @@ cargo test 2>&1 | tokencut pipe
 | `tokencut diff [--staged]` | Slims unified git diffs by folding lockfiles and collapsing extra context. |
 | `tokencut lint [file]` | Lints `CLAUDE.md` / `.cursorrules` for token bloat and cache-busting timestamps. |
 | `tokencut mcp` | Starts the stdio JSON-RPC Model Context Protocol server. |
+| `tokencut stats` | Displays lifetime token savings and estimated dollars saved in USD. |
 | `tokencut demo` | Interactive visual demo benchmarking token savings on realistic failure traces. |
 
 ---

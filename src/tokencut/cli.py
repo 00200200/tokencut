@@ -19,6 +19,7 @@ from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
 from tokencut.core.rules_linter import lint_rule_content, minify_rules
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import auto_specialize_command_output
+from tokencut.core.telemetry import TelemetryStore
 from tokencut.core.tree_scanner import render_tree, scan_directory
 from tokencut.mcp.server import run_mcp_stdio_server
 from tokencut.metrics.pricing import estimate_savings
@@ -55,7 +56,7 @@ def run(
 
     duration = time.perf_counter() - start_time
 
-    # Step 1: Check specialized command handler (e.g. git log / git status)
+    # Step 1: Check specialized command handler
     specialized = auto_specialize_command_output(full_cmd, raw_output)
     base_text = specialized if specialized is not None else raw_output
 
@@ -69,20 +70,35 @@ def run(
     if compacted:
         console.print(compacted)
 
-    if not quiet and raw_output:
+    if raw_output:
         metrics = compute_metrics(raw_output, compacted)
         saved = metrics.saved_tokens
         savings = estimate_savings(saved.claude, saved.openai, saved.gemini)
 
-        footer = (
-            f"[bold cyan]tokencut[/bold cyan] "
-            f"tokens saved: [bold green]~{saved.avg:,}[/bold green] "
-            f"([bold green]-{metrics.reduction_pct}%[/bold green]) | "
-            f"Claude: -{saved.claude:,} · GPT-4o: -{saved.openai:,} · Gemini: -{saved.gemini:,} | "
-            f"est. saved: [bold yellow]{savings.format_avg()}[/bold yellow] | "
-            f"time: {duration:.2f}s"
-        )
-        err_console.print(footer)
+        # Record telemetry
+        try:
+            telemetry = TelemetryStore()
+            telemetry.record(
+                raw_claude=metrics.raw_tokens.claude,
+                compact_claude=metrics.compact_tokens.claude,
+                raw_openai=metrics.raw_tokens.openai,
+                compact_openai=metrics.compact_tokens.openai,
+                raw_gemini=metrics.raw_tokens.gemini,
+                compact_gemini=metrics.compact_tokens.gemini,
+            )
+        except Exception:
+            pass
+
+        if not quiet:
+            footer = (
+                f"[bold cyan]tokencut[/bold cyan] "
+                f"tokens saved: [bold green]~{saved.avg:,}[/bold green] "
+                f"([bold green]-{metrics.reduction_pct}%[/bold green]) | "
+                f"Claude: -{saved.claude:,} · GPT-4o: -{saved.openai:,} · Gemini: -{saved.gemini:,} | "
+                f"est. saved: [bold yellow]{savings.format_avg()}[/bold yellow] | "
+                f"time: {duration:.2f}s"
+            )
+            err_console.print(footer)
 
     sys.exit(proc.returncode)
 
@@ -164,6 +180,28 @@ def tree(
             top_table.add_row(rel, f"{tok:,}", f"{pct:.1f}%")
 
         console.print(top_table)
+
+
+@app.command()
+def stats():
+    """Display lifetime token savings telemetry and financial metrics."""
+    telemetry = TelemetryStore()
+    s = telemetry.get_stats()
+
+    table = Table(title="⚡ tokencut Lifetime Savings Telemetry")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="bold")
+
+    table.add_row("Total Executions", f"{s.total_runs:,}")
+    table.add_row("Total Claude Tokens Saved", f"[bold green]-{s.saved_claude:,}[/bold green]")
+    table.add_row("Total OpenAI Tokens Saved", f"[bold green]-{s.saved_openai:,}[/bold green]")
+    table.add_row("Total Gemini Tokens Saved", f"[bold green]-{s.saved_gemini:,}[/bold green]")
+    table.add_row("Average Reduction Ratio", f"[bold yellow]-{s.reduction_pct}%[/bold yellow]")
+    table.add_row(
+        "Estimated Money Saved", f"[bold yellow]${s.estimated_usd_saved:.4f} USD[/bold yellow]"
+    )
+
+    console.print(table)
 
 
 @app.command()
