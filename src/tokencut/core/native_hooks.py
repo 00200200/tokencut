@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
+from tokencut.core.companion_state import already_wrapped, paused
 from tokencut.core.safe_filter import safe_compact_output
+from tokencut.core.telemetry import record_text
 
 
 def claude_post_tool_use(payload: Any) -> dict[str, Any]:
@@ -20,7 +24,8 @@ def claude_post_tool_use(payload: Any) -> dict[str, Any]:
     metadata and stderr; do not turn a failing/interrupted command into success.
     Malformed or unsupported events fail open with no additional model context.
     """
-    if not isinstance(payload, dict):
+    start = time.perf_counter()
+    if paused() or not isinstance(payload, dict):
         return {}
     if payload.get("hook_event_name") != "PostToolUse" or payload.get("tool_name") != "Bash":
         return {}
@@ -31,7 +36,7 @@ def claude_post_tool_use(payload: Any) -> dict[str, Any]:
     if original.get("isImage") or original.get("interrupted"):
         return {}
     command = tool_input.get("command", "")
-    if not isinstance(command, str):
+    if not isinstance(command, str) or already_wrapped(command):
         return {}
     result = original.copy()
     for stream in ("stdout", "stderr"):
@@ -42,6 +47,22 @@ def claude_post_tool_use(payload: Any) -> dict[str, Any]:
             result[stream] = safe_compact_output(text, command=command)
     if result == original:
         return {}
+    identity = payload.get("tool_use_id")
+    session = payload.get("session_id")
+    event_id = (
+        "hook:" + hashlib.sha256(f"{session}:{identity}".encode()).hexdigest()
+        if isinstance(identity, str) and isinstance(session, str)
+        else None
+    )
+    record_text(
+        "".join(original.get(k) or "" for k in ("stdout", "stderr")),
+        "".join(result.get(k) or "" for k in ("stdout", "stderr")),
+        client="claude-code",
+        project=payload.get("cwd"),
+        delivery="prepared",
+        event_id=event_id,
+        duration_s=time.perf_counter() - start,
+    )
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "updatedToolOutput": result}}
 
 

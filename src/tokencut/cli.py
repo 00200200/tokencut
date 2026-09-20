@@ -20,6 +20,7 @@ from rich.table import Table
 from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
+from tokencut.core.companion_state import already_wrapped, paused
 from tokencut.core.config import load_config
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.doctor import (
@@ -28,6 +29,7 @@ from tokencut.core.doctor import (
     configure_shell_alias,
     run_all_diagnostics,
 )
+from tokencut.core.engines import filter_rtk, select_engine
 from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
 from tokencut.core.json_slimmer import slim_json
 from tokencut.core.native_hooks import install_claude_hook, run_hook_filter
@@ -36,7 +38,7 @@ from tokencut.core.rules_linter import lint_rule_content, minify_rules
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import auto_specialize_command_output
-from tokencut.core.telemetry import TelemetryStore
+from tokencut.core.telemetry import TelemetryStore, record_text, recovery_engine
 from tokencut.core.tree_scanner import render_tree, scan_directory
 from tokencut.mcp.server import run_mcp_stdio_server
 from tokencut.metrics.tokenizer import compute_metrics, count_tokens
@@ -52,6 +54,24 @@ console = Console()
 err_console = Console(stderr=True)
 
 
+def _emit(text: str) -> str:
+    emitted = text + ("\n" if text and not text.endswith("\n") else "")
+    sys.stdout.write(emitted)
+    return emitted
+
+
+@app.command()
+def monitor(stdio: Annotated[bool, typer.Option("--stdio")] = False):
+    """Local companion JSON-lines protocol (stdin/stdout; no listening port)."""
+    from tokencut.core.monitor import Monitor
+
+    service = Monitor()
+    if stdio:
+        service.serve(sys.stdin, sys.stdout)
+    else:
+        sys.stdout.write(json.dumps(service.snapshot(), ensure_ascii=False) + "\n")
+
+
 @app.command()
 def run(
     command: Annotated[list[str], typer.Argument(help="Command and arguments to execute")],
@@ -60,6 +80,7 @@ def run(
         int | None, typer.Option("--budget", "-b", min=1, help="Strict token ceiling budget")
     ] = None,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Omit the summary footer")] = False,
+    engine: Annotated[str, typer.Option("--engine", help="auto|tokencut|rtk|none")] = "auto",
     safe: Annotated[
         bool,
         typer.Option(
@@ -70,6 +91,19 @@ def run(
 ):
     """Execute a command and optimize its output for AI context windows."""
     full_cmd = shlex.join(command)
+    try:
+        selected = select_engine(engine, command)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--engine") from exc
+    if selected == "rtk" and (budget is not None or not safe):
+        if engine == "rtk":
+            raise typer.BadParameter(
+                "RTK cannot be combined with --budget or --compact", param_hint="--engine"
+            )
+        selected = "tokencut"
+    wrapped = already_wrapped(full_cmd)
+    if wrapped:
+        selected = "none"
     start_time = time.perf_counter()
 
     # Preserve argument boundaries and literal shell metacharacters. Shell syntax
@@ -86,7 +120,11 @@ def run(
     base_text = specialized if specialized is not None else raw_output
 
     # Step 2: Apply adaptive budget or standard compaction
-    if budget is not None:
+    if selected == "none":
+        compacted = raw_output
+    elif selected == "rtk":
+        compacted = filter_rtk(raw_output, command, proc.returncode)
+    elif budget is not None:
         compacted = compress_to_budget(
             base_text, max_tokens=budget, source="run", original_text=raw_output
         )
@@ -104,27 +142,19 @@ def run(
         if not compacted.endswith("\n"):
             sys.stdout.write("\n")
 
-    if raw_output:
+    if raw_output and not quiet and not safe:
         metrics = compute_metrics(raw_output, compacted)
-        # Record telemetry
-        try:
-            telemetry = TelemetryStore()
-            telemetry.record(
-                raw_claude=metrics.raw_tokens.claude,
-                compact_claude=metrics.compact_tokens.claude,
-                raw_openai=metrics.raw_tokens.openai,
-                compact_openai=metrics.compact_tokens.openai,
-                raw_gemini=metrics.raw_tokens.gemini,
-                compact_gemini=metrics.compact_tokens.gemini,
-            )
-        except Exception:
-            pass
-
         if not quiet and not safe:
             err_console.print(
                 f"[tokencut: estimated text reduction {metrics.reduction_pct}%; {duration:.2f}s]",
                 markup=False,
             )
+
+    if not wrapped:
+        emitted = compacted + ("\n" if compacted and not compacted.endswith("\n") else "")
+        record_text(
+            raw_output, emitted, duration_s=time.perf_counter() - start_time, engine=selected
+        )
 
     if proc.returncode != 0:
         raise typer.Exit(code=proc.returncode)
@@ -156,7 +186,7 @@ def cat(
         err_console.print(f"[bold red]File not found:[/bold red] {file_path}")
         raise typer.Exit(code=1)
 
-    raw_content = file_path.read_text(encoding="utf-8", errors="replace")
+    start = time.perf_counter()
     output = extract_symbol_or_range(
         file_path,
         symbol=symbol,
@@ -165,17 +195,17 @@ def cat(
         strip_comments=strip_comments,
     )
 
-    if budget:
+    requested = output
+    if budget and not paused():
         output = compress_to_budget(output, max_tokens=budget, source=str(file_path))
-
-    console.print(output)
-
-    if skeleton or lines or symbol or strip_comments or budget:
-        metrics = compute_metrics(raw_content, output)
-        err_console.print(
-            f"[dim]tokencut: original {metrics.raw_tokens.avg:,} tokens -> {metrics.compact_tokens.avg:,} tokens "
-            f"(-{metrics.reduction_pct}%)[/dim]"
-        )
+    record_text(
+        requested,
+        _emit(output),
+        operation="read",
+        project=file_path,
+        duration_s=time.perf_counter() - start,
+        engine="none" if paused() else "tokencut",
+    )
 
 
 @app.command(name="json")
@@ -193,6 +223,7 @@ def json_cmd(
     ] = False,
 ):
     """Compact large JSON payloads, folding arrays and truncating long strings."""
+    start = time.perf_counter()
     if target:
         p = Path(target)
         if p.exists() and p.is_file():
@@ -206,18 +237,20 @@ def json_cmd(
         err_console.print("[dim]No JSON input received.[/dim]")
         return
 
-    slimmed = slim_json(
-        raw_text,
-        max_array_items=max_items,
-        max_string_len=max_str,
-        cache_full=not no_cache,
+    slimmed = (
+        raw_text
+        if paused()
+        else slim_json(
+            raw_text, max_array_items=max_items, max_string_len=max_str, cache_full=not no_cache
+        )
     )
-    console.print(slimmed)
-
-    metrics = compute_metrics(raw_text, slimmed)
-    err_console.print(
-        f"[dim]tokencut json: original {metrics.raw_tokens.avg:,} -> {metrics.compact_tokens.avg:,} tokens "
-        f"(-{metrics.reduction_pct}%)[/dim]"
+    record_text(
+        raw_text,
+        _emit(slimmed),
+        operation="json",
+        project=p if target and p.is_file() else None,
+        duration_s=time.perf_counter() - start,
+        engine="none" if paused() else "tokencut",
     )
 
 
@@ -233,13 +266,10 @@ def retrieve(
     """Retrieve full uncompressed raw output from the local Compress-Cache-Retrieve store."""
     cache = ContextCache()
     raw = cache.retrieve(ref_id, lines_range=lines)
-    sys.stdout.write(raw)
-    if not raw.endswith("\n"):
-        sys.stdout.write("\n")
+    emitted = _emit(raw)
     # Recovery is additional context, not a second saving of the original log.
     try:
-        counts = count_tokens(raw)
-        TelemetryStore().record(0, counts.claude, 0, counts.openai, 0, counts.gemini)
+        record_text("", emitted, operation="retrieve", engine=recovery_engine(ref_id))
     except Exception:
         pass
 
@@ -486,12 +516,15 @@ def pipe(
     ] = None,
 ):
     """Stream or pipe standard input through tokencut."""
+    start = time.perf_counter()
     raw_input = sys.stdin.read()
     if not raw_input:
         return
 
     trimmed = raw_input.strip()
-    if (trimmed.startswith("{") and trimmed.endswith("}")) or (
+    if paused():
+        compacted = raw_input
+    elif (trimmed.startswith("{") and trimmed.endswith("}")) or (
         trimmed.startswith("[") and trimmed.endswith("]")
     ):
         if len(trimmed) > 500:
@@ -504,7 +537,13 @@ def pipe(
         opts = CleanerOptions(max_lines=max_lines)
         compacted = compact_terminal_output(raw_input, opts)
 
-    sys.stdout.write(compacted + "\n")
+    record_text(
+        raw_input,
+        _emit(compacted),
+        operation="pipe",
+        duration_s=time.perf_counter() - start,
+        engine="none" if paused() else "tokencut",
+    )
 
 
 @app.command()
@@ -512,20 +551,24 @@ def diff(
     staged: Annotated[bool, typer.Option("--staged", "-s", help="Inspect staged changes")] = False,
 ):
     """Slim git diff by folding lockfiles and suppressing excessive context."""
-    cmd = "git diff --cached" if staged else "git diff"
-    res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    start = time.perf_counter()
+    cmd = ["git", "diff", "--no-ext-diff", "--no-textconv", "--no-color"]
+    if staged:
+        cmd.append("--cached")
+    res = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
     raw_diff = res.stdout
-
-    if not raw_diff.strip():
-        console.print("[dim]No git changes detected.[/dim]")
-        return
-
-    slimmed = slim_git_diff(raw_diff)
-    console.print(slimmed)
-
-    metrics = compute_metrics(raw_diff, slimmed)
-    err_console.print(
-        f"[dim]tokencut diff: saved {metrics.saved_tokens.avg:,} tokens (-{metrics.reduction_pct}%)[/dim]"
+    if res.returncode:
+        sys.stderr.write(res.stderr)
+        raise typer.Exit(res.returncode)
+    slimmed = raw_diff if paused() else slim_git_diff(raw_diff)
+    emitted = _emit(slimmed)
+    sys.stderr.write(res.stderr)
+    record_text(
+        raw_diff + res.stderr,
+        emitted + res.stderr,
+        operation="diff",
+        duration_s=time.perf_counter() - start,
+        engine="none" if paused() else "tokencut",
     )
 
 

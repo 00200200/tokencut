@@ -43,3 +43,12 @@ jobs:
           wheel="$(realpath dist/*.whl)"
           cd "$(mktemp -d)"
           uv tool run --isolated --from "$wheel" tokencut demo --json
+
+  macos-companion:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native menu bar app
+        run: bash macos/build.sh
+      - name: Verify local app signature
+        run: codesign --verify --deep --strict macos/build/TokenCut.app

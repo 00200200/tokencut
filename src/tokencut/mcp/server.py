@@ -3,17 +3,22 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
+from contextvars import ContextVar
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
 from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
+from tokencut.core.companion_state import already_wrapped, client_name, paused
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.json_slimmer import slim_json
 from tokencut.core.redactor import redact_secrets
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
+from tokencut.core.telemetry import record_text, recovery_engine
 from tokencut.core.tree_scanner import format_tree_as_text, scan_directory
 from tokencut.metrics.tokenizer import count_tokens
 
@@ -189,14 +194,46 @@ def _budget(arguments: dict[str, Any]) -> int:
     return value
 
 
-def _record(raw: str, output: str) -> str:
+_START: ContextVar[float | None] = ContextVar("tokencut_started", default=None)
+
+
+def _timed(handler):
+    @wraps(handler)
+    def wrapped(arguments):
+        token = _START.set(time.perf_counter())
+        try:
+            return handler(arguments)
+        finally:
+            _START.reset(token)
+
+    return wrapped
+
+
+def _record(raw: str, output: str, *, operation="exec", project=None, duration_s=None) -> str:
     global _SESSION_SAVED_CLAUDE, _SESSION_SAVED_OPENAI, _SESSION_SAVED_GEMINI
     before, after = count_tokens(raw), count_tokens(output)
     # Signed deltas expose expansion and charge subsequent retrievals in full.
     _SESSION_SAVED_CLAUDE += before.claude - after.claude
     _SESSION_SAVED_OPENAI += before.openai - after.openai
     _SESSION_SAVED_GEMINI += before.gemini - after.gemini
+    if duration_s is None and _START.get() is not None:
+        duration_s = time.perf_counter() - _START.get()
+    record_text(
+        raw,
+        output,
+        operation=operation,
+        project=project,
+        duration_s=duration_s,
+        client=client_name("mcp"),
+        engine="none" if paused() else "tokencut",
+    )
     return output
+
+
+def _compress(text, budget, **kwargs):
+    if paused():
+        return kwargs.get("original_text", text) + kwargs.get("suffix", "")
+    return compress_to_budget(text, budget, **kwargs)
 
 
 def _cwd(arguments: dict[str, Any]) -> str | None:
@@ -206,7 +243,9 @@ def _cwd(arguments: dict[str, Any]) -> str | None:
     return cwd
 
 
+@_timed
 def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
+    start = time.perf_counter()
     budget = _budget(arguments)
     command = arguments["command"]
     max_lines = arguments.get("max_lines", 80)
@@ -233,10 +272,14 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
             combined_raw = combined_raw.decode("utf-8", errors="replace")
         footer = "\n[command timed out after 120s; output may be partial]"
 
-    if any(key in arguments for key in ("max_tokens", "max_lines", "budget")):
+    if already_wrapped(command):
+        return combined_raw + footer
+    if paused():
+        output = combined_raw + footer
+    elif any(key in arguments for key in ("max_tokens", "max_lines", "budget")):
         opts = CleanerOptions(max_lines=max_lines, enable_cache=False)
         compacted = compact_terminal_output(combined_raw, opts)
-        output = compress_to_budget(
+        output = _compress(
             compacted,
             budget,
             original_text=combined_raw,
@@ -245,9 +288,12 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
         )
     else:
         output = safe_compact_output(combined_raw, command=command) + footer
-    return _record(combined_raw, output)
+    return _record(
+        combined_raw, output, project=_cwd(arguments), duration_s=time.perf_counter() - start
+    )
 
 
+@_timed
 def handle_tokencut_read(arguments: dict[str, Any]) -> str:
     budget = _budget(arguments)
     path = arguments["path"]
@@ -256,11 +302,12 @@ def handle_tokencut_read(arguments: dict[str, Any]) -> str:
     symbol = arguments.get("symbol")
 
     extracted = extract_symbol_or_range(path, symbol=symbol, lines_range=lines, skeleton=skeleton)
-    output = compress_to_budget(extracted, budget, source="read")
+    output = _compress(extracted, budget, source="read")
     # Compare with the requested view, not an unrequested full-file read.
-    return _record(extracted, output)
+    return _record(extracted, output, operation="read", project=path)
 
 
+@_timed
 def handle_tokencut_retrieve(arguments: dict[str, Any]) -> str:
     budget = _budget(arguments)
     ref_id = arguments["ref_id"]
@@ -269,10 +316,14 @@ def handle_tokencut_retrieve(arguments: dict[str, Any]) -> str:
     retrieved = cache.retrieve(ref_id, lines_range=lines)
     if retrieved.startswith("Error:"):
         return retrieved
-    output = compress_to_budget(retrieved, budget, source="retrieve")
-    return _record("", output)
+    output = _compress(retrieved, budget, source="retrieve")
+    if recovery_engine(ref_id) == "rtk":
+        record_text("", output, operation="retrieve", client=client_name("mcp"), engine="rtk")
+        return output
+    return _record("", output, operation="retrieve")
 
 
+@_timed
 def handle_tokencut_diff(arguments: dict[str, Any]) -> str:
     budget = _budget(arguments)
     staged = arguments.get("staged", False)
@@ -286,7 +337,7 @@ def handle_tokencut_diff(arguments: dict[str, Any]) -> str:
         raise ValueError(f"git diff failed ({res.returncode}): {res.stderr[:500]}")
     raw_diff = res.stdout
     output = (
-        compress_to_budget(
+        _compress(
             slim_git_diff(raw_diff),
             budget,
             original_text=raw_diff,
@@ -295,9 +346,10 @@ def handle_tokencut_diff(arguments: dict[str, Any]) -> str:
         if raw_diff
         else "No git changes detected."
     )
-    return _record(raw_diff, output)
+    return _record(raw_diff, output, operation="diff", project=_cwd(arguments))
 
 
+@_timed
 def handle_tokencut_tree(arguments: dict[str, Any]) -> str:
     budget = _budget(arguments)
     path_str = arguments.get("path", ".")
@@ -310,9 +362,10 @@ def handle_tokencut_tree(arguments: dict[str, Any]) -> str:
 
     root_node, _ = scan_directory(target, max_depth=max_depth)
     raw = format_tree_as_text(root_node, root_node.tokens)
-    return _record(raw, compress_to_budget(raw, budget, source="tree"))
+    return _record(raw, _compress(raw, budget, source="tree"), operation="tree", project=target)
 
 
+@_timed
 def handle_tokencut_json(arguments: dict[str, Any]) -> str:
     budget = _budget(arguments)
     max_items = arguments.get("max_items", 3)
@@ -327,8 +380,8 @@ def handle_tokencut_json(arguments: dict[str, Any]) -> str:
         return "Error: either json_str or path must be provided."
 
     preview = slim_json(raw_str, max_array_items=max_items, cache_full=False)
-    output = compress_to_budget(preview, budget, original_text=raw_str, source="json")
-    return _record(raw_str, output)
+    output = _compress(preview, budget, original_text=raw_str, source="json")
+    return _record(raw_str, output, operation="json", project=path_str)
 
 
 def handle_tokencut_stats() -> str:

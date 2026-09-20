@@ -42,11 +42,18 @@ class ContextCache:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_hash ON output_cache(content_hash)")
             conn.commit()
 
-    def store(self, content: str, source: str = "exec") -> str:
+    def store(self, content: str, source: str = "exec", *, namespace: str = "") -> str:
         """Store redacted content and return a human-readable reference ID."""
         content = redact_secrets(content)
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        ref_id = f"tc_{content_hash[:16]}"
+        # Separate measurement owners without breaking existing stable refs.
+        # Hash the digest, not a raw-text prefix (which could alias another log).
+        ref_hash = (
+            hashlib.sha256(f"{namespace}:{content_hash}".encode()).hexdigest()
+            if namespace
+            else content_hash
+        )
+        ref_id = f"tc_{ref_hash[:16]}"
 
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(

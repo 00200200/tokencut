@@ -50,6 +50,72 @@ need separate evaluation.
 
 ---
 
+## macOS menu bar companion (local preview)
+
+A native SwiftUI panel shows **estimated tool-output reduction**, before/after counts,
+recovery costs, seven days of history and breakdowns by client, Git project and tool.
+The UI is in Polish, follows the system appearance, and runs without a Dock icon.
+It does not measure subscription quota, model reasoning, or task quality.
+
+Build with Apple's Swift toolchain (macOS 13+), after installing this checkout:
+
+```bash
+uv tool install --force .
+bash macos/build.sh
+open macos/build/TokenCut.app
+```
+
+The build is locally ad-hoc signed, not notarized or a public installer. The default
+backend is `~/.local/bin/tokencut`; set `TOKENCUT_EXECUTABLE` while building to override
+it. Double-click the app to open an optional panel window. The menu item shows
+`TC —` when no measurements exist, and `TC Ⅱ` while paused. Refresh is at most every
+5 seconds while visible, 30 seconds in the background. The pause is reversible;
+it affects new wrapper, MCP and hook transformations, not already running calls.
+
+The app owns a `tokencut monitor --stdio` subprocess; there is no network listener or
+AI call. JSON-lines requests support `snapshot`, `pause` (boolean `paused`), `check`,
+and `export`, with an echoed `id` and `result` or `error`. The check exercises a fresh
+local MCP connection; it does **not** establish that another running app loaded it.
+Existing MCP sessions must reconnect after upgrading the executable.
+
+- `telemetry.db` stores counters and metadata beside each client's `cache.db`.
+  Recovery content stays in `cache.db`, never in telemetry or exports.
+- The collector discovers the configured Codex sandbox cache without granting it
+  additional permissions; aggregates live in `~/.tokencut/metrics.db`. Set
+  `TOKENCUT_STATE_DIR` to isolate companion state during development.
+- Event IDs make collection and repeated Claude hook delivery idempotent. Legacy
+  counts retain unknown client/project, separately from current measurements.
+- The main counter uses `o200k_base`, includes retrieval costs and can be negative.
+  Claude hook reductions are **prepared**, separately displayed, because there is
+  no acceptance acknowledgment. Alternate tokenizer estimates are not added to it.
+- Serena remains an independent MCP. Its card shows detected configuration and a
+  setup link; the app never activates a project or fabricates Serena savings.
+- Add `TOKENCUT_CLIENT=codex|claude-code|claude-desktop|antigravity` to an MCP entry's
+  environment for attribution. Without a known client, it is labeled `mcp`/`cli`.
+  No conversations or session transcripts are inspected.
+
+### Conservative RTK adapter
+
+`tokencut run --engine auto|tokencut|rtk|none -- COMMAND` executes COMMAND once.
+`auto` considers only literal `git status` and `git diff --stat` with RTK 0.49.0;
+other commands and missing/unverified RTK versions use TokenCut. An explicit budget
+or compact profile uses TokenCut; combining those with explicit RTK is rejected
+before execution. Install optional RTK from its official Homebrew formula: `brew install rtk`.
+
+RTK receives captured output through **`rtk pipe`**, never the user command. Every
+nonblank line must survive unchanged and in order; otherwise the adapter returns
+the original buffer. Errors and filter failures keep the original without rerunning
+the command. Reduced output has a recovery reference, whose overhead is included.
+This first adapter is intentionally narrow: ordinary Git output often saves nothing.
+RTK's command wrapper for `git status` in 0.49.0 runs Git twice and is not used.
+RTK network telemetry is disabled in the adapter; no RTK command-history database
+is needed. Its local adapter counter uses **bytes / 4**, including recovery, and is
+never added to TokenCut's tokenizer counter. Standalone RTK usage is not imported.
+
+Companion preference changes have unique backups beside `companion.json`. Restore
+one of those files to roll back a preference change. Client configuration changes
+should preserve other MCP entries and keep a backup before reconnecting a client.
+
 ## Where it helps
 
 Verbose tests, builds, files, and lockfile diffs can fill an agent's context with
@@ -73,7 +139,7 @@ Task success, follow-up reads, prompt caching, and model reasoning all matter.
 | Tool | Main use | Relationship to TokenCut |
 | :--- | :--- | :--- |
 | [Serena](https://github.com/oraios/serena) | Semantic navigation and editing through language servers | Complementary; TokenCut does not implement reference-aware refactoring. |
-| [RTK](https://github.com/rtk-ai/rtk) | Command-specific output filtering | A relevant baseline for terminal workloads. |
+| [RTK](https://github.com/rtk-ai/rtk) | Command-specific output filtering | Optional guarded stdin adapter; separately measured. |
 | [Repomix](https://github.com/yamadashy/repomix) | Packaging repository context | A relevant baseline for repository exploration. |
 | **TokenCut** | Conservative command filtering, bounded reads, local retrieval | Compare on total tokens per successfully completed task. |
 
