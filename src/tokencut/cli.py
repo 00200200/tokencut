@@ -11,11 +11,14 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
+from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
 from tokencut.core.rules_linter import lint_rule_content, minify_rules
 from tokencut.core.skeleton import extract_symbol_or_range
+from tokencut.core.specialized import auto_specialize_command_output
 from tokencut.core.tree_scanner import render_tree, scan_directory
 from tokencut.mcp.server import run_mcp_stdio_server
 from tokencut.metrics.pricing import estimate_savings
@@ -36,6 +39,9 @@ err_console = Console(stderr=True)
 def run(
     command: Annotated[list[str], typer.Argument(help="Command and arguments to execute")],
     max_lines: Annotated[int, typer.Option("--max-lines", "-m", help="Max lines to keep")] = 80,
+    budget: Annotated[
+        int | None, typer.Option("--budget", "-b", help="Strict token ceiling budget")
+    ] = None,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Omit the summary footer")] = False,
 ):
     """Execute a command and optimize its output for AI context windows."""
@@ -48,8 +54,17 @@ def run(
         raw_output += ("\n" if raw_output else "") + proc.stderr
 
     duration = time.perf_counter() - start_time
-    opts = CleanerOptions(max_lines=max_lines)
-    compacted = compact_terminal_output(raw_output, opts)
+
+    # Step 1: Check specialized command handler (e.g. git log / git status)
+    specialized = auto_specialize_command_output(full_cmd, raw_output)
+    base_text = specialized if specialized is not None else raw_output
+
+    # Step 2: Apply adaptive budget or standard compaction
+    if budget:
+        compacted = compress_to_budget(base_text, max_tokens=budget, source=full_cmd)
+    else:
+        opts = CleanerOptions(max_lines=max_lines)
+        compacted = compact_terminal_output(base_text, opts)
 
     if compacted:
         console.print(compacted)
@@ -82,6 +97,9 @@ def cat(
         str | None, typer.Option("--lines", "-l", help="Line range (e.g. 10-40)")
     ] = None,
     symbol: Annotated[str | None, typer.Option("--symbol", "-y", help="Target symbol name")] = None,
+    budget: Annotated[
+        int | None, typer.Option("--budget", "-b", help="Strict token ceiling budget")
+    ] = None,
 ):
     """View file with intelligent token compaction or AST skeleton extraction."""
     if not file_path.exists():
@@ -91,9 +109,12 @@ def cat(
     raw_content = file_path.read_text(encoding="utf-8", errors="replace")
     output = extract_symbol_or_range(file_path, symbol=symbol, lines_range=lines, skeleton=skeleton)
 
+    if budget:
+        output = compress_to_budget(output, max_tokens=budget, source=str(file_path))
+
     console.print(output)
 
-    if skeleton or lines or symbol:
+    if skeleton or lines or symbol or budget:
         metrics = compute_metrics(raw_content, output)
         err_console.print(
             f"[dim]tokencut: original {metrics.raw_tokens.avg:,} tokens -> {metrics.compact_tokens.avg:,} tokens "
@@ -132,7 +153,6 @@ def tree(
     rich_tree = render_tree(root_node, root_node.tokens)
     console.print(rich_tree)
 
-    # Top Token Consumers Table
     if all_files:
         top_table = Table(title="Top Token Consumers (Candidates for Skeleton / Exclusion)")
         top_table.add_column("File", style="cyan")
@@ -147,16 +167,48 @@ def tree(
 
 
 @app.command()
+def hook(
+    install: Annotated[
+        bool, typer.Option("--install", "-i", help="Install shell wrapper to ~/.zshrc")
+    ] = False,
+):
+    """Configure Claude Code or terminal hooks for automatic optimization."""
+    if install:
+        zshrc = install_zsh_hook()
+        console.print(f"[green]✓ Successfully installed alias to {zshrc}![/green]")
+        console.print("Run [bold cyan]source ~/.zshrc[/bold cyan] to enable [bold]cc-run[/bold].")
+    else:
+        console.print(
+            Panel(
+                "[bold cyan]tokencut Harness Integration[/bold cyan]\n\n"
+                "1. [bold]Claude Code MCP:[/bold]\n"
+                f"   {setup_claude_code_mcp_config()}\n\n"
+                "2. [bold]Shell Alias (run with --install):[/bold]\n"
+                "   alias cc-run='tokencut run'\n",
+                title="Auto-Wiring",
+                border_style="cyan",
+            )
+        )
+
+
+@app.command()
 def pipe(
     max_lines: Annotated[int, typer.Option("--max-lines", "-m", help="Max lines to keep")] = 80,
+    budget: Annotated[
+        int | None, typer.Option("--budget", "-b", help="Strict token ceiling")
+    ] = None,
 ):
     """Stream or pipe standard input through tokencut."""
     raw_input = sys.stdin.read()
     if not raw_input:
         return
 
-    opts = CleanerOptions(max_lines=max_lines)
-    compacted = compact_terminal_output(raw_input, opts)
+    if budget:
+        compacted = compress_to_budget(raw_input, max_tokens=budget)
+    else:
+        opts = CleanerOptions(max_lines=max_lines)
+        compacted = compact_terminal_output(raw_input, opts)
+
     sys.stdout.write(compacted + "\n")
 
 

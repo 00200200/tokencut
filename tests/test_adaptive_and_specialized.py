@@ -1,0 +1,70 @@
+from tokencut.core.adaptive import compress_to_budget
+from tokencut.core.specialized import (
+    auto_specialize_command_output,
+    filter_git_log,
+    filter_git_status,
+)
+from tokencut.metrics.tokenizer import count_tokens
+
+SAMPLE_GIT_LOG = """commit a1b2c3d4e5f67890abcdef1234567890abcdef12
+Author: Alice Developer <alice@example.com>
+Date:   Mon Sep 15 14:00:00 2026 +0200
+
+    feat(auth): implement JWT verification and token refresh
+
+commit f1e2d3c4b5a67890abcdef1234567890abcdef12
+Author: Bob Maintainer <bob@example.com>
+Date:   Sun Sep 14 10:00:00 2026 +0200
+
+    fix(db): handle connection pool timeout gracefully
+"""
+
+SAMPLE_GIT_STATUS = """On branch main
+Changes to be committed:
+	modified:   src/main.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	tmp/cache/chunk1.json
+	tmp/cache/chunk2.json
+	tmp/cache/chunk3.json
+	tmp/cache/chunk4.json
+	single_file.txt
+"""
+
+
+def test_filter_git_log():
+    compact = filter_git_log(SAMPLE_GIT_LOG)
+    assert "a1b2c3d" in compact
+    assert "[Alice Developer]" in compact
+    assert "feat(auth): implement JWT" in compact
+    assert "Date:" not in compact
+    assert len(compact.splitlines()) < len(SAMPLE_GIT_LOG.splitlines())
+
+
+def test_filter_git_status():
+    compact = filter_git_status(SAMPLE_GIT_STATUS)
+    assert "tmp/ (4 untracked files)" in compact
+    assert "single_file.txt" in compact
+
+
+def test_auto_specialize():
+    res_log = auto_specialize_command_output("git log -n 10", SAMPLE_GIT_LOG)
+    assert res_log is not None
+    assert "a1b2c3d" in res_log
+
+    res_none = auto_specialize_command_output("pytest -v", "some output")
+    assert res_none is None
+
+
+def test_compress_to_budget():
+    large_text = "This is a sentence that has some words and will be repeated many times. " * 80
+    initial_tokens = count_tokens(large_text).claude
+    assert initial_tokens > 200
+
+    # Request strict budget of 50 tokens
+    budget_fitted = compress_to_budget(large_text, max_tokens=60, provider="claude")
+    fitted_tokens = count_tokens(budget_fitted).claude
+
+    assert fitted_tokens <= 60
+    assert "Ref: tc_" in budget_fitted
