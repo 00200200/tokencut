@@ -7,13 +7,13 @@
 
   <p align="center">
     <strong>High-performance context compression engine and universal MCP server.</strong><br />
-    Reduces token consumption by 60–85% across Claude Code, Cursor, Codex, and Gemini CLI without degrading reasoning or losing tracebacks.
+    Reduces token consumption by 60–85% across Claude Desktop, ChatGPT macOS, Cursor, Claude Code, and terminal CLI without degrading reasoning or losing tracebacks.
   </p>
 
   <p align="center">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00f5a0?style=flat-square&logo=opensourceinitiative&logoColor=white" alt="MIT license"></a>
     <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-00d9f5?style=flat-square&logo=python&logoColor=white" alt="Python versions"></a>
-    <a href="https://github.com/00200200/tokencut/actions"><img src="https://img.shields.io/badge/tests-62%20passed-22c55e?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
+    <a href="https://github.com/00200200/tokencut/actions"><img src="https://img.shields.io/badge/tests-65%20passed-22c55e?style=flat-square&logo=pytest&logoColor=white" alt="Tests"></a>
     <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-261230.svg?style=flat-square&labelColor=000000" alt="Ruff"></a>
     <a href="https://github.com/00200200/tokencut"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=flat-square&color=7928ca" alt="GitHub stars"></a>
   </p>
@@ -189,11 +189,65 @@ pip install tokencut
 
 ---
 
-## Integrations
+## Integrations & Supported Platforms
 
-### Claude Code
-Register `tokencut` as a native MCP server:
+`tokencut` operates across desktop applications, AI-enabled IDEs, coding agents, and terminal command-line pipelines.
 
+### 1-Click Auto-Configuration
+Configure all desktop and editor integrations automatically:
+```bash
+uvx tokencut install --all
+```
+Or verify setup status across all targets with:
+```bash
+uvx tokencut doctor
+```
+
+---
+
+### Claude Desktop (macOS)
+Auto-configure `~/Library/Application Support/Claude/claude_desktop_config.json`:
+```bash
+uvx tokencut install --claude-desktop
+```
+Or manually add:
+```json
+{
+  "mcpServers": {
+    "tokencut": {
+      "command": "uvx",
+      "args": ["tokencut", "mcp"]
+    }
+  }
+}
+```
+
+### ChatGPT Desktop (macOS)
+Compatible with ChatGPT Desktop via Developer Mode local MCP tools or CLI piping:
+```bash
+# Start MCP server for ChatGPT Developer Mode
+uvx tokencut mcp
+```
+
+### Cursor & Windsurf
+Auto-configure `~/.cursor/mcp.json`:
+```bash
+uvx tokencut install --cursor
+```
+Or manually add to `mcp.json`:
+```json
+{
+  "mcpServers": {
+    "tokencut": {
+      "command": "uvx",
+      "args": ["tokencut", "mcp"]
+    }
+  }
+}
+```
+
+### Claude Code CLI
+Register `tokencut` as a native MCP server in one command:
 ```bash
 claude mcp add tokencut uvx tokencut mcp
 ```
@@ -207,36 +261,19 @@ This exposes seven tools directly to Claude:
 - `tokencut_json`: Compresses large JSON payloads and API responses with schema retention.
 - `tokencut_stats`: Reports session and lifetime token savings.
 
-You can also wrap commands directly:
+### Terminal CLI & POSIX Pipelines (Gemini CLI, Codex, bash, zsh)
+`tokencut` integrates into standard terminal workflows:
 ```bash
-tokencut run -- npm test
-```
+# Add 'cc' shortcut to ~/.zshrc or ~/.bashrc
+uvx tokencut install --alias
 
-### Cursor & Windsurf
-Add to your `mcp.json` (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
+# Run commands with automatic token compaction
+cc pytest -v tests/
+cc npm test
 
-```json
-{
-  "mcpServers": {
-    "tokencut": {
-      "command": "uvx",
-      "args": ["tokencut", "mcp"]
-    }
-  }
-}
-```
-
-### Gemini CLI, Codex, and Unix Pipelines
-`tokencut` integrates into standard POSIX pipes:
-
-```bash
+# Pipe stdout/stderr through tokencut
 cargo test 2>&1 | tokencut pipe
-```
-
-Add a shell alias for seamless execution:
-
-```bash
-alias cc="tokencut run --"
+curl https://api.github.com/repos/00200200/tokencut/commits | tokencut json
 ```
 
 ### GitHub Actions CI Gatekeeper

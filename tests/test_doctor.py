@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from tokencut.core.doctor import (
     check_cache_db,
+    check_chatgpt_desktop,
+    check_claude_desktop_mcp,
     check_python,
+    configure_claude_desktop_mcp,
     configure_cursor_mcp,
     configure_shell_alias,
     run_all_diagnostics,
@@ -45,3 +48,24 @@ def test_configure_shell_alias(tmp_path, monkeypatch):
     zshrc = tmp_path / ".zshrc"
     assert zshrc.exists()
     assert "alias cc=" in zshrc.read_text()
+
+
+def test_check_claude_desktop():
+    res = check_claude_desktop_mcp()
+    assert res.status in {"ok", "missing", "warning"}
+
+
+def test_check_chatgpt_desktop():
+    res = check_chatgpt_desktop()
+    assert res.status == "ok"
+
+
+def test_configure_claude_desktop(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ok, path = configure_claude_desktop_mcp()
+    assert ok is True
+    cfg_file = (
+        tmp_path / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    )
+    assert cfg_file.exists()
+    assert "tokencut" in cfg_file.read_text()

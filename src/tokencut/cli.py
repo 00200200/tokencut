@@ -17,7 +17,12 @@ from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.config import load_config
 from tokencut.core.diff_slimmer import slim_git_diff
-from tokencut.core.doctor import configure_cursor_mcp, configure_shell_alias, run_all_diagnostics
+from tokencut.core.doctor import (
+    configure_claude_desktop_mcp,
+    configure_cursor_mcp,
+    configure_shell_alias,
+    run_all_diagnostics,
+)
 from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
 from tokencut.core.json_slimmer import slim_json
 from tokencut.core.pr_analyzer import analyze_pr_tokens
@@ -348,6 +353,10 @@ def doctor(
         c_ok, c_msg = configure_cursor_mcp()
         if c_ok:
             console.print(f"[green]✓ Configured Cursor MCP in {c_msg}[/green]")
+        if sys.platform == "darwin":
+            cd_ok, cd_msg = configure_claude_desktop_mcp()
+            if cd_ok:
+                console.print(f"[green]✓ Configured Claude Desktop MCP in {cd_msg}[/green]")
         a_ok, a_msg = configure_shell_alias()
         if a_ok:
             console.print(f"[green]✓ Configured shell alias in {a_msg}[/green]")

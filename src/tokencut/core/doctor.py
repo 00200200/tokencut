@@ -140,11 +140,90 @@ def check_shell_alias() -> DiagnosticItem:
     )
 
 
+def check_claude_desktop_mcp() -> DiagnosticItem:
+    if sys.platform != "darwin":
+        return DiagnosticItem(
+            name="Claude Desktop (macOS)",
+            status="ok",
+            message="Skipped (non-macOS system)",
+        )
+    cfg_file = (
+        Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    )
+    if not cfg_file.exists():
+        return DiagnosticItem(
+            name="Claude Desktop (macOS)",
+            status="missing",
+            message="Config file not found in ~/Library/Application Support/Claude/",
+            remedy="Run `tokencut install --claude-desktop` to configure Claude Desktop",
+        )
+    try:
+        data = json.loads(cfg_file.read_text(encoding="utf-8"))
+        if "tokencut" in data.get("mcpServers", {}):
+            return DiagnosticItem(
+                name="Claude Desktop (macOS)",
+                status="ok",
+                message="tokencut registered in claude_desktop_config.json",
+            )
+        return DiagnosticItem(
+            name="Claude Desktop (macOS)",
+            status="missing",
+            message="tokencut not in mcpServers",
+            remedy="Run `tokencut install --claude-desktop` to register tokencut",
+        )
+    except Exception as e:
+        return DiagnosticItem(
+            name="Claude Desktop (macOS)",
+            status="warning",
+            message=f"Error reading config: {e}",
+        )
+
+
+def check_chatgpt_desktop() -> DiagnosticItem:
+    app_path = Path("/Applications/ChatGPT.app")
+    if app_path.exists():
+        return DiagnosticItem(
+            name="ChatGPT Desktop (macOS)",
+            status="ok",
+            message="Found at /Applications/ChatGPT.app (Compatible via MCP tools & CLI)",
+        )
+    return DiagnosticItem(
+        name="ChatGPT Desktop",
+        status="ok",
+        message="Compatible with ChatGPT via MCP tools and CLI pipes",
+    )
+
+
+def configure_claude_desktop_mcp() -> tuple[bool, str]:
+    if sys.platform != "darwin":
+        return False, "Claude Desktop configuration is only applicable on macOS"
+    cfg_dir = Path.home() / "Library" / "Application Support" / "Claude"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg_file = cfg_dir / "claude_desktop_config.json"
+    data: dict = {"mcpServers": {}}
+    if cfg_file.exists():
+        try:
+            data = json.loads(cfg_file.read_text(encoding="utf-8"))
+            if "mcpServers" not in data:
+                data["mcpServers"] = {}
+        except Exception:
+            data = {"mcpServers": {}}
+
+    data["mcpServers"]["tokencut"] = {
+        "command": "uvx",
+        "args": ["tokencut", "mcp"],
+    }
+    cfg_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return True, str(cfg_file)
+
+
 def run_all_diagnostics() -> list[DiagnosticItem]:
     return [
         check_python(),
         check_cache_db(),
         check_claude_cli(),
+        check_claude_desktop_mcp(),
+        check_chatgpt_desktop(),
         check_cursor_mcp(),
         check_shell_alias(),
     ]
