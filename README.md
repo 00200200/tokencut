@@ -71,6 +71,12 @@ bash macos/build.sh
 open macos/build/TokenCut.app
 ```
 
+Preview releases also include a prebuilt macOS ZIP, Python packages and SHA-256
+checksums on [GitHub Releases](https://github.com/00200200/tokencut/releases).
+Install the matching TokenCut CLI first, extract the app into `~/Applications`,
+and launch it. The app resolves `~/.local/bin/tokencut` for the current user.
+The ZIP filename states its CPU architecture; it is not a universal binary.
+
 The build is locally ad-hoc signed, not notarized or a public installer. The default
 backend is `~/.local/bin/tokencut`; set `TOKENCUT_EXECUTABLE` while building to override
 it. Double-click the app to restore the pet. Its menu can open the full panel,
