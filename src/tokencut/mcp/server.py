@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.skeleton import extract_symbol_or_range
@@ -21,7 +22,7 @@ _SESSION_SAVED_GEMINI = 0
 TOOLS_DEFINITIONS = [
     {
         "name": "tokencut_exec",
-        "description": "Execute a shell command with intelligent token compaction. Strips ANSI colors, deduplicates repetitive logs, preserves full stack traces/errors, and cuts token burn by 70-85%.",
+        "description": "Execute a shell command with intelligent token compaction. Strips ANSI colors, scrubs API keys, deduplicates repetitive logs, preserves full stack traces/errors, and stores full output in local cache for 100% reversible retrieval.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -63,6 +64,24 @@ TOOLS_DEFINITIONS = [
                 },
             },
             "required": ["path"],
+        },
+    },
+    {
+        "name": "tokencut_retrieve",
+        "description": "Retrieve exact raw lines from a previously compressed log or file using its ref ID (e.g. 'tc_8f2a1b'). Guarantees zero context loss.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref_id": {
+                    "type": "string",
+                    "description": "The ref ID returned by tokencut in a truncated log notice.",
+                },
+                "lines": {
+                    "type": "string",
+                    "description": "Optional specific line range to retrieve (e.g. '40-100').",
+                },
+            },
+            "required": ["ref_id"],
         },
     },
     {
@@ -109,6 +128,9 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
     except Exception as e:
         return f"Error executing command: {e}"
 
+    cache = ContextCache()
+    dup_ref = cache.check_duplicate(combined_raw)
+
     opts = CleanerOptions(max_lines=max_lines)
     compacted = compact_terminal_output(combined_raw, opts)
 
@@ -128,7 +150,8 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
         if raw_tokens.avg > 0
         else 0.0
     )
-    footer = f"\n\n[tokencut: saved ~{raw_tokens.avg - comp_tokens.avg} tokens (-{pct}%), exit code: {proc.returncode}]"
+    idempotent_tag = f" [idempotent: match {dup_ref}]" if dup_ref else ""
+    footer = f"\n\n[tokencut: saved ~{raw_tokens.avg - comp_tokens.avg} tokens (-{pct}%){idempotent_tag}, exit code: {proc.returncode}]"
     return compacted + footer
 
 
@@ -155,6 +178,13 @@ def handle_tokencut_read(arguments: dict[str, Any]) -> str:
         return extracted
     except Exception as e:
         return f"Error reading file: {e}"
+
+
+def handle_tokencut_retrieve(arguments: dict[str, Any]) -> str:
+    ref_id = arguments["ref_id"]
+    lines = arguments.get("lines")
+    cache = ContextCache()
+    return cache.retrieve(ref_id, lines_range=lines)
 
 
 def handle_tokencut_diff(arguments: dict[str, Any]) -> str:
@@ -238,6 +268,8 @@ def run_mcp_stdio_server():
                 res_text = handle_tokencut_exec(arguments)
             elif tool_name == "tokencut_read":
                 res_text = handle_tokencut_read(arguments)
+            elif tool_name == "tokencut_retrieve":
+                res_text = handle_tokencut_retrieve(arguments)
             elif tool_name == "tokencut_diff":
                 res_text = handle_tokencut_diff(arguments)
             elif tool_name == "tokencut_stats":

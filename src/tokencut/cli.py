@@ -11,10 +11,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.rules_linter import lint_rule_content, minify_rules
 from tokencut.core.skeleton import extract_symbol_or_range
+from tokencut.core.tree_scanner import render_tree, scan_directory
 from tokencut.mcp.server import run_mcp_stdio_server
 from tokencut.metrics.pricing import estimate_savings
 from tokencut.metrics.tokenizer import compute_metrics, count_tokens
@@ -49,7 +51,6 @@ def run(
     opts = CleanerOptions(max_lines=max_lines)
     compacted = compact_terminal_output(raw_output, opts)
 
-    # Print output
     if compacted:
         console.print(compacted)
 
@@ -98,6 +99,51 @@ def cat(
             f"[dim]tokencut: original {metrics.raw_tokens.avg:,} tokens -> {metrics.compact_tokens.avg:,} tokens "
             f"(-{metrics.reduction_pct}%)[/dim]"
         )
+
+
+@app.command()
+def retrieve(
+    ref_id: Annotated[
+        str, typer.Argument(help="Reference ID from tokencut log notice (e.g. 'tc_8f2a1b')")
+    ],
+    lines: Annotated[
+        str | None, typer.Option("--lines", "-l", help="Line range to inspect (e.g. 20-60)")
+    ] = None,
+):
+    """Retrieve full uncompressed raw output from the local Compress-Cache-Retrieve store."""
+    cache = ContextCache()
+    raw = cache.retrieve(ref_id, lines_range=lines)
+    console.print(raw)
+
+
+@app.command()
+def tree(
+    directory: Annotated[Path, typer.Argument(help="Root directory to analyze")] = Path("."),
+    depth: Annotated[int, typer.Option("--depth", "-d", help="Max directory depth to display")] = 3,
+):
+    """Visualize repository token breakdown and identify token-hogging files."""
+    if not directory.exists() or not directory.is_dir():
+        err_console.print(f"[bold red]Invalid directory:[/bold red] {directory}")
+        raise typer.Exit(code=1)
+
+    with console.status("[bold cyan]Scanning repository token distribution...[/bold cyan]"):
+        root_node, all_files = scan_directory(directory.resolve(), max_depth=depth)
+
+    rich_tree = render_tree(root_node, root_node.tokens)
+    console.print(rich_tree)
+
+    # Top Token Consumers Table
+    if all_files:
+        top_table = Table(title="Top Token Consumers (Candidates for Skeleton / Exclusion)")
+        top_table.add_column("File", style="cyan")
+        top_table.add_column("Tokens", style="bold yellow")
+        top_table.add_column("% of Repo", style="magenta")
+
+        for rel, tok in all_files[:6]:
+            pct = (tok / root_node.tokens * 100) if root_node.tokens > 0 else 0
+            top_table.add_row(rel, f"{tok:,}", f"{pct:.1f}%")
+
+        console.print(top_table)
 
 
 @app.command()
@@ -201,7 +247,6 @@ def demo():
         )
     )
 
-    # Simulated realistic pytest output with massive noisy passes + failing assertion
     noisy_pytest = (
         "pytest -v tests/\n"
         + "\n".join(

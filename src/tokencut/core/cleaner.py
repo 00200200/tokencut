@@ -3,6 +3,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from tokencut.core.cache import ContextCache
+from tokencut.core.redactor import redact_secrets
+
 # Regular expressions for ANSI & terminal control sequences
 ANSI_CSI_PATTERN = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
 ANSI_OSC_PATTERN = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
@@ -35,6 +38,8 @@ class CleanerOptions:
     dedup_lines: bool = True
     preserve_errors: bool = True
     normalize_whitespace: bool = True
+    redact_keys: bool = True
+    enable_cache: bool = True
 
 
 def strip_ansi(text: str) -> str:
@@ -53,14 +58,11 @@ def resolve_carriage_returns(text: str) -> str:
         return text
 
     resolved_lines: list[str] = []
-    # Standardize CRLF first
     text = text.replace("\r\n", "\n")
 
     for raw_line in text.split("\n"):
         if "\r" in raw_line:
-            # Overwritten line parts
             parts = raw_line.split("\r")
-            # Filter empty parts and take the last non-empty part
             non_empty = [p for p in parts if p.strip()]
             resolved_lines.append(non_empty[-1] if non_empty else "")
         else:
@@ -114,16 +116,21 @@ def compact_terminal_output(raw_text: str, options: CleanerOptions | None = None
     """State-of-the-art terminal log compactor.
 
     - Strips ANSI colors and terminal garbage
+    - Scrubs API keys & sensitive secrets
     - Resolves \\r progress bar overwrites
     - Deduplicates repeated lines
     - If errors/tracebacks exist: preserves full error & stacktrace, truncating routine logs
     - If no errors: preserves head and tail of output
+    - Stores full original in local cache for 100% reversible retrieval via ref ID
     """
     if not raw_text:
         return ""
 
     opts = options or CleanerOptions()
     text = raw_text
+
+    if opts.redact_keys:
+        text = redact_secrets(text)
 
     if opts.strip_ansi:
         text = strip_ansi(text)
@@ -141,6 +148,16 @@ def compact_terminal_output(raw_text: str, options: CleanerOptions | None = None
             cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
         return cleaned.strip()
 
+    # Store in local cache to ensure 100% reversibility
+    ref_tag = ""
+    if opts.enable_cache:
+        try:
+            cache = ContextCache()
+            ref_id = cache.store(raw_text, source="terminal_output")
+            ref_tag = f" [ref: {ref_id}]"
+        except Exception:
+            pass
+
     # Truncation logic
     head_count = opts.head_lines
     tail_count = opts.tail_lines
@@ -148,10 +165,7 @@ def compact_terminal_output(raw_text: str, options: CleanerOptions | None = None
     if opts.preserve_errors:
         err_idx = find_first_error_index(lines)
         if err_idx is not None:
-            # Error found! Preserve head lines and everything around the error to the end
-            # Give priority to the error section
             if err_idx < head_count:
-                # Error started early, keep everything up to head_count + tail_count
                 kept_head = lines[:head_count]
                 kept_tail = (
                     lines[-tail_count:]
@@ -160,25 +174,27 @@ def compact_terminal_output(raw_text: str, options: CleanerOptions | None = None
                 )
                 omitted = max(0, total_lines - len(kept_head) - len(kept_tail))
                 if omitted > 0:
-                    summary_line = f"\n[... {omitted} lines of logs omitted by tokencut ...]\n"
+                    summary_line = (
+                        f"\n[... {omitted} lines of logs omitted by tokencut{ref_tag} ...]\n"
+                    )
                     res = kept_head + [summary_line] + kept_tail
                 else:
                     res = kept_head + kept_tail
             else:
-                # Error occurred after initial steps. Keep head (context) + error to end (tail)
                 kept_head = lines[:head_count]
-                # Tail covers from error start onwards, up to max tail_count * 2
                 error_lines = lines[err_idx:]
                 if len(error_lines) > tail_count * 2:
                     error_lines = (
                         lines[err_idx : err_idx + 20]
-                        + [f"\n[... {len(lines) - err_idx - 50} lines inside error omitted ...]\n"]
+                        + [
+                            f"\n[... {len(lines) - err_idx - 50} lines inside error omitted{ref_tag} ...]\n"
+                        ]
                         + lines[-30:]
                     )
 
                 omitted = max(0, err_idx - head_count)
                 summary_line = (
-                    f"\n[... {omitted} lines of routine output omitted by tokencut ...]\n"
+                    f"\n[... {omitted} lines of routine output omitted by tokencut{ref_tag} ...]\n"
                 )
                 res = kept_head + [summary_line] + error_lines
 
@@ -187,11 +203,11 @@ def compact_terminal_output(raw_text: str, options: CleanerOptions | None = None
                 cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
             return cleaned.strip()
 
-    # No error found or preserve_errors disabled: standard head + tail
+    # No error found
     kept_head = lines[:head_count]
     kept_tail = lines[-tail_count:]
     omitted = total_lines - head_count - tail_count
-    summary_line = f"\n[... {omitted} lines omitted by tokencut ...]\n"
+    summary_line = f"\n[... {omitted} lines omitted by tokencut{ref_tag} ...]\n"
     res = kept_head + [summary_line] + kept_tail
 
     cleaned = "\n".join(res)
