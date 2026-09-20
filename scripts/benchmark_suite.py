@@ -78,7 +78,7 @@ index 3333333..4444444 100644
         ("Git Diff with modified lockfile", m_diff),
     ]
 
-    table = Table(title="tokencut SOTA Benchmark Results")
+    table = Table(title="tokencut Benchmark Results")
     table.add_column("Workload / Scenario", style="cyan")
     table.add_column("Raw Tokens", style="red")
     table.add_column("tokencut Tokens", style="green")

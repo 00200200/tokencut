@@ -27,7 +27,7 @@ from tokencut.metrics.tokenizer import compute_metrics, count_tokens
 
 app = typer.Typer(
     name="tokencut",
-    help="⚡ SOTA Token Optimizer for Claude Code, OpenAI/Codex, and Gemini CLI.",
+    help="Context compression engine and MCP server for Claude Code, Cursor, and Gemini CLI.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -188,7 +188,7 @@ def stats():
     telemetry = TelemetryStore()
     s = telemetry.get_stats()
 
-    table = Table(title="⚡ tokencut Lifetime Savings Telemetry")
+    table = Table(title="tokencut Lifetime Savings Telemetry")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="bold")
 
