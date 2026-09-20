@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from tokencut.core.doctor import (
     check_cache_db,
     check_chatgpt_desktop,
@@ -62,10 +64,9 @@ def test_check_chatgpt_desktop():
 
 def test_configure_claude_desktop(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    ok, path = configure_claude_desktop_mcp()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
+    ok, path_str = configure_claude_desktop_mcp()
     assert ok is True
-    cfg_file = (
-        tmp_path / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
-    )
+    cfg_file = Path(path_str)
     assert cfg_file.exists()
     assert "tokencut" in cfg_file.read_text()

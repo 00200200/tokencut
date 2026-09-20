@@ -140,40 +140,49 @@ def check_shell_alias() -> DiagnosticItem:
     )
 
 
-def check_claude_desktop_mcp() -> DiagnosticItem:
-    if sys.platform != "darwin":
-        return DiagnosticItem(
-            name="Claude Desktop (macOS)",
-            status="ok",
-            message="Skipped (non-macOS system)",
+def get_claude_desktop_config_path() -> Path:
+    if sys.platform == "darwin":
+        return (
+            Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
         )
-    cfg_file = (
-        Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
-    )
+    elif sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+        return base / "Claude" / "claude_desktop_config.json"
+    else:
+        config_home = os.environ.get("XDG_CONFIG_HOME", "")
+        base = Path(config_home) if config_home else Path.home() / ".config"
+        return base / "Claude" / "claude_desktop_config.json"
+
+
+def check_claude_desktop_mcp() -> DiagnosticItem:
+    cfg_file = get_claude_desktop_config_path()
+    platform_label = "macOS" if sys.platform == "darwin" else ("Windows" if sys.platform == "win32" else "Linux")
+    name = f"Claude Desktop ({platform_label})"
     if not cfg_file.exists():
         return DiagnosticItem(
-            name="Claude Desktop (macOS)",
+            name=name,
             status="missing",
-            message="Config file not found in ~/Library/Application Support/Claude/",
+            message=f"Config file not found in {cfg_file.parent}",
             remedy="Run `tokencut install --claude-desktop` to configure Claude Desktop",
         )
     try:
         data = json.loads(cfg_file.read_text(encoding="utf-8"))
         if "tokencut" in data.get("mcpServers", {}):
             return DiagnosticItem(
-                name="Claude Desktop (macOS)",
+                name=name,
                 status="ok",
-                message="tokencut registered in claude_desktop_config.json",
+                message=f"tokencut registered in {cfg_file.name}",
             )
         return DiagnosticItem(
-            name="Claude Desktop (macOS)",
+            name=name,
             status="missing",
             message="tokencut not in mcpServers",
             remedy="Run `tokencut install --claude-desktop` to register tokencut",
         )
     except Exception as e:
         return DiagnosticItem(
-            name="Claude Desktop (macOS)",
+            name=name,
             status="warning",
             message=f"Error reading config: {e}",
         )
@@ -194,12 +203,9 @@ def check_chatgpt_desktop() -> DiagnosticItem:
     )
 
 
-def configure_claude_desktop_mcp() -> tuple[bool, str]:
-    if sys.platform != "darwin":
-        return False, "Claude Desktop configuration is only applicable on macOS"
-    cfg_dir = Path.home() / "Library" / "Application Support" / "Claude"
-    cfg_dir.mkdir(parents=True, exist_ok=True)
-    cfg_file = cfg_dir / "claude_desktop_config.json"
+def configure_claude_desktop_mcp(target_file: Path | None = None) -> tuple[bool, str]:
+    cfg_file = target_file or get_claude_desktop_config_path()
+    cfg_file.parent.mkdir(parents=True, exist_ok=True)
     data: dict = {"mcpServers": {}}
     if cfg_file.exists():
         try:
