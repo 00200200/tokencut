@@ -116,6 +116,51 @@ Existing MCP sessions must reconnect after upgrading the executable.
   environment for attribution. Without a known client, it is labeled `mcp`/`cli`.
   No conversations or session transcripts are inspected.
 
+### Task memory and native compaction
+
+The **Context** tab shows saved task checkpoints, observed native compactions,
+and prepared hook context. It does not estimate savings from unseen chat history.
+The client still decides when to compact; TokenCut makes no extra AI calls.
+
+`tokencut_context` provides `save`, `read`, `list`, and `forget`. A checkpoint contains
+`goal`, `constraints`, `decisions`, `progress`, `next_steps`, and `references`.
+Use an absolute `root` and a distinct `task` ID. Saving requires `expected_revision`
+(`0` for a new task); conflicting updates fail instead of overwriting newer notes.
+Notes are capped at 1,500 `o200k_base` tokens, with no silent truncation, and the
+last 20 revisions can be read. `forget` requires the current revision and deletes
+all retained notes for that task. CLI fallback: `tokencut context --request-file request.json`
+or pipe the same JSON request into `tokencut context`.
+
+Opt into lifecycle hooks after configuring the TokenCut MCP server:
+
+```sh
+tokencut context-install --client codex --cache-dir /absolute/path/to/codex-tokencut-cache
+tokencut context-install --client claude-code --cache-dir "$HOME/.tokencut"
+```
+
+The cache must match the client's `TOKENCUT_CACHE_DIR`. Installation preserves
+existing hooks/settings and creates a private backup. Reopen the session after
+installing; **Codex hooks also require native review and trust**. TokenCut never
+changes trust records or bypasses that review. "Configured" and "hook execution
+observed" are separate states; protocol tests do not prove live-client activation.
+
+At session start the hook tells the agent its exact task ID. The agent saves
+checkpoints at useful milestones during its existing work. On resume or after
+native compaction, the hook prepares the same session's latest checkpoint. It
+does not load another task merely because it shares a project, restore after
+`clear`, alter your messages, or trigger compaction on every turn. Continuing in a
+different session requires explicitly reading the previous task's notes.
+
+Explicit notes live in a private `context.db` beside the client's cache, separate
+from telemetry. Clearing that cache also removes the notes. They are not a full
+transcript backup; verify old notes against current files and newer user requests.
+No transcripts, prompts or native summaries are scanned or automatically stored.
+Known secret patterns are redacted, but do not put credentials in notes.
+Statistics exports contain only metadata/counts. Hook text counts as **prepared
+overhead**, and MCP/CLI replies count as returned overhead, never invented savings.
+Full conversation usage, cache-hit rates and native compaction cost are not yet
+connected to this panel. Native compaction can itself consume provider usage.
+
 ### Account limits
 
 - Codex uses the logged-in local CLI's documented

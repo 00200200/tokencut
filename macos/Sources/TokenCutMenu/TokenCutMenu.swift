@@ -34,6 +34,12 @@ struct Legacy: Decodable {
     let events: Int
     let net: Int?
 }
+struct TaskMemory: Decodable {
+    let available: Bool
+    let tasks, noteTokens, preparedTokens: Int
+    let lastSaved, lastCompact, lastRestore: Double?
+    let clients, configuredClients, issues: [String]
+}
 struct Snapshot: Decodable {
     let generatedAt: Double
     let paused: Bool
@@ -45,6 +51,7 @@ struct Snapshot: Decodable {
     let sources, issues: [String]
     let integrations: [Integration]
     let lastCheck: Check?
+    let context: TaskMemory?
 }
 
 func compact(_ value: Int) -> String {
@@ -264,6 +271,7 @@ struct PanelView: View {
                 Text("Savings").tag(0)
                 Text("Tools").tag(1)
                 Text("Limits").tag(2)
+                Text("Context").tag(3)
             }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 16)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -273,7 +281,8 @@ struct PanelView: View {
                         if data.paused { notice("Optimization paused. Tools return full output. Recovery is still available.", icon: "pause.circle", color: .orange) }
                         if model.tab == 0 { savings(data) }
                         else if model.tab == 1 { integrations(data) }
-                        else { QuotaDetails(model: model) }
+                        else if model.tab == 2 { QuotaDetails(model: model) }
+                        else { taskMemory(data.context) }
                     } else if model.error == nil {
                         Card { Text("Loading local measurements…").foregroundStyle(.secondary) }
                     }
@@ -394,6 +403,59 @@ struct PanelView: View {
             Text("\(data.otherMethodEvents) measurements using another method; excluded from o200k_base.").font(.caption).foregroundStyle(.secondary)
         }
     }
+    @ViewBuilder private func taskMemory(_ memory: TaskMemory?) -> some View {
+        Card {
+            Text("Task memory").font(.headline)
+            if let memory, memory.available {
+                Text("\(memory.tasks) saved tasks · \(count(memory.noteTokens)) note tokens")
+                    .font(.title3.monospacedDigit())
+                Text("Short checkpoints retain goals, constraints, decisions and next steps. Up to 20 revisions per task.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let timestamp = memory.lastSaved {
+                    Text("Last saved: " + Date(timeIntervalSince1970: timestamp).formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en_US"))))
+                        .font(.caption)
+                }
+            } else {
+                Text("No task-memory data yet").foregroundStyle(.secondary)
+            }
+        }
+        Card {
+            Text("Native compaction").font(.headline)
+            if let memory {
+                Text(memory.configuredClients.isEmpty ? "Hooks not configured" : "Configured: " + memory.configuredClients.joined(separator: ", "))
+                    .font(.caption)
+                Text(memory.clients.isEmpty ? "No hook execution observed" : "Hook execution observed: " + memory.clients.joined(separator: ", "))
+                    .font(.caption).foregroundStyle(.secondary)
+                if memory.configuredClients.contains("codex") && !memory.clients.contains("codex") {
+                    Text("Codex requires you to review and trust the installed hooks.").font(.caption).foregroundStyle(.secondary)
+                }
+                if let timestamp = memory.lastCompact {
+                    Text("Last observed compaction: " + Date(timeIntervalSince1970: timestamp).formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en_US"))))
+                        .font(.caption)
+                } else {
+                    Text("No compaction observed").font(.caption).foregroundStyle(.secondary)
+                }
+                if memory.lastRestore != nil {
+                    Text("A saved checkpoint was prepared for restoration.").font(.caption)
+                }
+                if memory.available {
+                    Text("Prepared hook context: \(count(memory.preparedTokens)) tokens · o200k_base")
+                        .font(.caption.monospacedDigit())
+                }
+                ForEach(memory.issues, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
+            }
+            Text("Your client controls compaction. TokenCut restores notes for the same session after compaction or resume; it does not rewrite chat history.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Card {
+            Label("Measurement boundaries", systemImage: "info.circle").font(.headline)
+            Text("Prepared context is added text, not savings. Delivery to the model is not acknowledged. Full conversation tokens, cache hits and compaction costs are not connected here.")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("No extra AI calls. Explicit notes stay local and out of statistics exports. Native compaction may consume usage.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
     @ViewBuilder private func integrations(_ data: Snapshot) -> some View {
         ForEach(data.integrations) { item in
             Card {

@@ -140,6 +140,9 @@ class Monitor:
         }
 
     def snapshot(self) -> dict:
+        from tokencut.core.context_hooks import configured_context_clients
+        from tokencut.core.task_context import context_summary
+
         discovered, clients, issues = self.discover()
         sources = self.sources if self.sources is not None else discovered
         issues = list(issues) + self.collect(sources)
@@ -241,6 +244,8 @@ class Monitor:
                 },
             ],
             "last_check": self.last_check,
+            "context": context_summary(sources)
+            | {"configured_clients": configured_context_clients()},
         }
 
     def check(self) -> dict:
