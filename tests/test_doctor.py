@@ -17,9 +17,11 @@ from tokencut.core.doctor import (
     check_claude_desktop_mcp,
     check_codex_mcp,
     check_python,
+    check_windsurf_mcp,
     configure_claude_desktop_mcp,
     configure_cursor_mcp,
     configure_shell_alias,
+    configure_windsurf_mcp,
     run_all_diagnostics,
 )
 
@@ -288,3 +290,30 @@ def test_codex_missing_disabled_or_invalid_is_not_marked_working(
     result = check_codex_mcp(target)
     assert result.status == status
     assert phrase in result.message
+
+
+def test_check_windsurf_mcp():
+    res = check_windsurf_mcp()
+    assert res.status in {"ok", "missing", "warning"}
+    assert "Windsurf" in res.name
+
+
+def test_configure_windsurf_mcp(tmp_path, monkeypatch):
+    target = tmp_path / "mcp_config.json"
+    monkeypatch.setattr(doctor, "get_windsurf_mcp_config_path", lambda: target)
+    monkeypatch.setattr(
+        doctor, "_local_mcp_command", lambda: {"command": "/bin/tokencut", "args": ["mcp"]}
+    )
+    ok, path_str = configure_windsurf_mcp(target)
+    assert ok is True
+    assert target.exists()
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert "tokencut" in data["mcpServers"]
+
+
+def test_configure_shell_alias_fish(tmp_path):
+    fish_config = tmp_path / "config.fish"
+    ok, path_str = configure_shell_alias(fish_config)
+    assert ok is True
+    content = fish_config.read_text(encoding="utf-8")
+    assert "alias cc 'tokencut run --'" in content

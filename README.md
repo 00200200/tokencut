@@ -52,6 +52,11 @@ need separate evaluation.
 
 ## macOS desktop pet (local preview)
 
+<div align="center">
+  <img src="assets/pet-3d.png" alt="TokenCut macOS Desktop Pet Companion" width="220" />
+  <p><em>TokenCut Desktop Pet — A draggable macOS companion monitoring real-time tool output reduction and model quota windows.</em></p>
+</div>
+
 A small draggable SwiftUI pet lives above other windows, remembers its position,
 and keeps working across Spaces. Click it to see quota windows, reset times and
 **estimated tool-output reduction**, before/after counts,
@@ -463,7 +468,7 @@ This exposes tools; it does not filter every conversation or other tool result.
 
 ### Cursor & Windsurf
 
-Use `tokencut install --cursor` for `~/.cursor/mcp.json`, or merge this entry
+Use `tokencut install --cursor` for `~/.cursor/mcp.json`, `tokencut install --windsurf` for `~/.codeium/windsurf/mcp_config.json`, or merge this entry
 into the client's MCP configuration:
 
 ```json
