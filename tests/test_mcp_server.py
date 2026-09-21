@@ -195,6 +195,8 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
         "tokencut_diff",
         "tokencut_tree",
         "tokencut_json",
+        "tokencut_clip",
+        "tokencut_pack",
         "tokencut_stats",
     }
     assert responses[2]["id"] == 3
@@ -351,3 +353,41 @@ def test_mcp_edit_symbol_preview_and_apply(tmp_path):
     )
     assert "Updated calc.py:" in applied
     assert "# updated" in f.read_text()
+
+
+def test_mcp_clip():
+    noisy = "LOG: starting job\n" * 40 + "LOG: done\n"
+    res = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 100,
+            "method": "tools/call",
+            "params": {
+                "name": "tokencut_clip",
+                "arguments": {"text": noisy, "budget": 500},
+            },
+        }
+    )
+    assert not res["result"]["isError"]
+    text = res["result"]["content"][0]["text"]
+    assert "preceding line repeated" in text
+    assert "LOG: done" in text
+
+
+def test_mcp_pack(tmp_path):
+    (tmp_path / "main.py").write_text("def run():\n    return 42\n")
+    res = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 101,
+            "method": "tools/call",
+            "params": {
+                "name": "tokencut_pack",
+                "arguments": {"root": str(tmp_path), "budget": 1000},
+            },
+        }
+    )
+    assert not res["result"]["isError"]
+    text = res["result"]["content"][0]["text"]
+    assert "TokenCut Context Bundle" in text
+    assert "main.py" in text

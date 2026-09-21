@@ -159,6 +159,117 @@ def edit_symbol(
         raise typer.BadParameter(str(exc)) from exc
 
 
+@app.command("clip")
+def clip_command(
+    file: Annotated[
+        Path | None,
+        typer.Option("--file", "-f", help="Read input from file instead of clipboard/stdin"),
+    ] = None,
+    budget: Annotated[
+        int, typer.Option("--budget", "-b", min=64, max=100000, help="Target token budget ceiling")
+    ] = 2000,
+    copy: Annotated[
+        bool, typer.Option("--copy", "-c", help="Copy compacted output back to clipboard")
+    ] = False,
+    stats: Annotated[
+        bool, typer.Option("--stats", "-s", help="Print token reduction stats to stderr")
+    ] = False,
+):
+    """Compact noisy terminal text, test logs, diffs, JSON, or tracebacks from clipboard or stdin."""
+    from tokencut.core.clip import compact_text, get_clipboard, set_clipboard
+
+    if file is not None:
+        try:
+            raw = file.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise typer.BadParameter(f"Cannot read file: {exc}") from exc
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read()
+    else:
+        raw = get_clipboard()
+        if not raw:
+            err_console.print("[yellow]Clipboard is empty and no stdin provided.[/yellow]")
+            raise typer.Exit(code=1)
+
+    result = compact_text(raw, budget=budget)
+
+    if copy:
+        if set_clipboard(result.text):
+            err_console.print(
+                f"[green]Compacted text ({result.compacted_tokens} tokens) copied to clipboard![/green]"
+            )
+        else:
+            err_console.print("[yellow]Failed to copy to clipboard.[/yellow]")
+
+    if stats:
+        err_console.print(
+            f"[dim]Tokens: {result.original_tokens} -> {result.compacted_tokens} "
+            f"({result.reduction_pct}% reduction, saved {result.saved_tokens} tok) "
+            f"[type: {result.content_type}][/dim]"
+        )
+
+    _emit(result.text)
+
+
+@app.command("pack")
+def pack_command(
+    paths: Annotated[list[Path] | None, typer.Argument(help="Files or directories to pack")] = None,
+    root: Annotated[
+        Path | None, typer.Option("--root", "-r", help="Project root directory")
+    ] = None,
+    budget: Annotated[
+        int, typer.Option("--budget", "-b", min=100, max=200000, help="Target token budget ceiling")
+    ] = 4000,
+    skeleton: Annotated[
+        bool, typer.Option("--skeleton", "-s", help="Force AST skeletonization on code files")
+    ] = False,
+    copy: Annotated[
+        bool, typer.Option("--copy", "-c", help="Copy packed bundle to clipboard")
+    ] = False,
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Write bundle to output file")
+    ] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="Emit pack summary as JSON")] = False,
+):
+    """Pack repository files into an AI-optimized context bundle with AST skeletons and secret scrubbing."""
+    from tokencut.core.clip import set_clipboard
+    from tokencut.core.pack import pack_context
+
+    project_root = (root or Path.cwd()).resolve()
+    path_strs = [str(p) for p in paths] if paths else None
+    result = pack_context(
+        paths=path_strs,
+        root=project_root,
+        budget=budget,
+        force_skeleton=skeleton,
+    )
+
+    if json_output:
+        _emit(json.dumps(result.to_dict(), indent=2))
+        return
+
+    if output is not None:
+        try:
+            output.write_text(result.bundle_text, encoding="utf-8")
+            err_console.print(f"[green]Packed bundle written to {output}[/green]")
+        except OSError as exc:
+            raise typer.BadParameter(f"Failed to write output file: {exc}") from exc
+    else:
+        _emit(result.bundle_text)
+
+    if copy:
+        if set_clipboard(result.bundle_text):
+            err_console.print(
+                f"[green]Packed bundle ({result.packed_tokens} tokens) copied to clipboard![/green]"
+            )
+        else:
+            err_console.print("[yellow]Failed to copy to clipboard.[/yellow]")
+
+    err_console.print(
+        f"[dim]Packed {result.file_count} files: {result.original_tokens} -> {result.packed_tokens} tokens ({result.reduction_pct}% saved)[/dim]"
+    )
+
+
 @app.command()
 def monitor(stdio: Annotated[bool, typer.Option("--stdio")] = False):
     """Local companion JSON-lines protocol (stdin/stdout; no listening port)."""
