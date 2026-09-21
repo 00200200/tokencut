@@ -284,3 +284,32 @@ def test_mcp_code_and_search_recovery_obey_output_budget(tmp_path):
     assert "function_99" in recovered and count_tokens(recovered).claude <= 256
     with pytest.raises(ValueError):
         server.handle_tokencut_retrieve({"ref_id": ref, "query": "function_99", "lines": "1-2"})
+
+
+def test_code_index_outline_mode(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    source = (
+        "class AuthService:\n"
+        "    def __init__(self, key: str) -> None:\n"
+        "        self.key = key\n\n"
+        "    def authenticate(self, user: str) -> bool:\n"
+        "        return True\n\n"
+        "def helper() -> None:\n"
+        "    pass\n"
+    )
+    (root / "auth.py").write_text(source)
+    index = CodeIndex(root)
+
+    # Query outline with file param
+    outline = index.query(mode="outline", file="auth.py")
+    assert "# outline:" in outline
+    assert "auth.py:1-6 [class_definition] AuthService" in outline
+    assert "auth.py:2-3 [function_definition] AuthService.__init__" in outline
+    assert "auth.py:5-6 [function_definition] AuthService.authenticate | def authenticate(self, user: str) -> bool:" in outline
+    assert "auth.py:8-9 [function_definition] helper | def helper() -> None:" in outline
+
+    # Query outline via MCP server
+    mcp_res = server.handle_tokencut_code({"root": str(root), "mode": "outline", "file": "auth.py"})
+    assert "AuthService.authenticate" in mcp_res
+

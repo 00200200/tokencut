@@ -83,13 +83,44 @@ TOOLS_DEFINITIONS = [
                 },
                 "mode": {
                     "type": "string",
-                    "enum": ["map", "symbols", "occurrences", "search", "pattern"],
+                    "enum": ["map", "symbols", "occurrences", "search", "pattern", "outline"],
                 },
                 "query": {"type": "string"},
                 "file": {"type": "string", "description": "Optional file relative to root."},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 30},
             },
             "required": ["root"],
+        },
+    },
+    {
+        "name": "tokencut_edit_symbol",
+        "description": "Precisely replace a class, function, or method declaration in an absolute source file by symbol selector, with diff preview and hash-guarded atomic updates. Replaces heavyweight LSP tools.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute source file path.",
+                },
+                "selector": {
+                    "type": "string",
+                    "description": "Qualified symbol name, e.g. 'Class.method' or 'function_name', optionally '@line'.",
+                },
+                "replacement": {
+                    "type": "string",
+                    "description": "New source text for the symbol declaration and body.",
+                },
+                "expected_hash": {
+                    "type": "string",
+                    "description": "SHA-256 digest of the entire file prior to modification (returned by tokencut_read).",
+                },
+                "apply": {
+                    "type": "boolean",
+                    "description": "Set true to write the modification to disk atomically; false (default) returns a unified diff preview.",
+                    "default": False,
+                },
+            },
+            "required": ["path", "selector", "replacement", "expected_hash"],
         },
     },
     {
@@ -230,10 +261,12 @@ TOOLS_DEFINITIONS = [
 
 for _tool in TOOLS_DEFINITIONS:
     _tool["annotations"] = {
-        "readOnlyHint": _tool["name"] not in {"tokencut_exec", "tokencut_context"},
-        "destructiveHint": _tool["name"] in {"tokencut_exec", "tokencut_context"},
+        "readOnlyHint": _tool["name"]
+        not in {"tokencut_exec", "tokencut_context", "tokencut_edit_symbol"},
+        "destructiveHint": _tool["name"]
+        in {"tokencut_exec", "tokencut_context", "tokencut_edit_symbol"},
     }
-    if _tool["name"] not in {"tokencut_stats", "tokencut_context"}:
+    if _tool["name"] not in {"tokencut_stats", "tokencut_context", "tokencut_edit_symbol"}:
         _tool["inputSchema"]["properties"]["max_tokens"] = {
             "type": "integer",
             "minimum": 64,
@@ -507,6 +540,29 @@ def handle_tokencut_context(arguments: dict[str, Any]) -> str:
     return _record("", output, operation="context", project=arguments.get("root"))
 
 
+def handle_tokencut_edit_symbol(arguments: dict[str, Any]) -> str:
+    from tokencut.core.symbol_edit import replace_symbol
+
+    path_str = arguments.get("path")
+    if not path_str:
+        raise ValueError("path is required")
+    selector = arguments.get("selector")
+    if not selector:
+        raise ValueError("selector is required")
+    replacement = arguments.get("replacement")
+    if replacement is None:
+        raise ValueError("replacement is required")
+    expected_hash = arguments.get("expected_hash")
+    if not expected_hash:
+        raise ValueError("expected_hash is required")
+    apply = bool(arguments.get("apply", False))
+
+    path = Path(path_str).resolve()
+    result = replace_symbol(path, selector, replacement, expected_hash, apply=apply)
+    output = redact_secrets(result)
+    return _record("", output, operation="edit_symbol", project=path)
+
+
 def _respond(req: Any) -> dict[str, Any] | None:
     if (
         not isinstance(req, dict)
@@ -532,7 +588,7 @@ def _respond(req: Any) -> dict[str, Any] | None:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "tokencut", "version": "0.1.0"},
-                "instructions": "Use tokencut_code for local map, symbol, text and structural searches; tokencut_read for exact qualified symbols. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
+                "instructions": "Use tokencut_code for local map, symbol, text, outline, and structural searches; tokencut_read for exact qualified symbols; tokencut_edit_symbol for hash-guarded atomic symbol replacements. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
             },
         }
     if method == "tools/list":
@@ -544,6 +600,7 @@ def _respond(req: Any) -> dict[str, Any] | None:
     handlers = {
         "tokencut_context": handle_tokencut_context,
         "tokencut_code": handle_tokencut_code,
+        "tokencut_edit_symbol": handle_tokencut_edit_symbol,
         "tokencut_exec": handle_tokencut_exec,
         "tokencut_read": handle_tokencut_read,
         "tokencut_retrieve": handle_tokencut_retrieve,

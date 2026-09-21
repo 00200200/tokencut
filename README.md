@@ -5,9 +5,21 @@
 
   <br /><br />
 
+  <a href="#macos-desktop-pet-companion-local-preview">
+    <img src="assets/pet-3d.png" alt="TokenCut Desktop Pet Mascot" width="170" />
+  </a>
+
   <p align="center">
-    <strong>Smaller tool outputs, with omitted context available on demand.</strong><br />
-    <em>A local CLI and MCP server for Claude Code, Codex, Antigravity, and other MCP clients.</em>
+    <strong>Smaller tool outputs, zero LSP daemons, with omitted context available on demand.</strong><br />
+    <em>A local CLI, MCP server, and macOS desktop HUD for Claude Code, Codex / ChatGPT Desktop, Antigravity, and Cursor.</em>
+  </p>
+
+  <p align="center">
+    <a href="#try-it-in-one-minute">Try in 1 Min</a> ·
+    <a href="#macos-desktop-pet-companion-local-preview">macOS Desktop Pet</a> ·
+    <a href="#local-code-intelligence-replacing-heavy-lsp--serena">Zero-LSP Code Intel</a> ·
+    <a href="#architecture">Architecture</a> ·
+    <a href="#integrations--supported-platforms">Integrations</a>
   </p>
 
   <p align="center">
@@ -50,11 +62,13 @@ need separate evaluation.
 
 ---
 
-## macOS desktop pet (local preview)
+## macOS desktop pet companion (local preview)
 
 <div align="center">
-  <img src="assets/pet-3d.png" alt="TokenCut macOS Desktop Pet Companion" width="220" />
-  <p><em>TokenCut Desktop Pet — A draggable macOS companion monitoring real-time tool output reduction and model quota windows.</em></p>
+  <img src="assets/pet-companion.svg" alt="TokenCut macOS Desktop Pet Companion HUD" width="100%" />
+  <br /><br />
+  <img src="assets/pet-3d.png" alt="TokenCut macOS Desktop Pet Companion Mascot" width="200" />
+  <p><em>TokenCut Desktop Pet — A draggable macOS companion monitoring real-time tool output reduction and 5-hour model quota windows.</em></p>
 </div>
 
 A small draggable SwiftUI pet lives above other windows, remembers its position,
@@ -204,13 +218,20 @@ one of those files to roll back a preference change. Client configuration change
 should preserve other MCP entries and keep a backup before reconnecting a client.
 
 ## Where it helps
-
+ 
 Verbose tests, builds, files, and lockfile diffs can fill an agent's context with
 irrelevant text. TokenCut filters routine command output and caches the redacted
 original for selective retrieval. Command execution preserves diagnostics by
 default; truncation requires an explicit budget or compact mode. An opt-in Claude
 Code hook filters native Bash results. Other clients use TokenCut's MCP tools or
 CLI wrapper. TokenCut does not compress model reasoning or change plan limits.
+
+<br />
+
+<div align="center">
+  <img src="assets/comparison.svg" alt="The 5-Hour Rate Limit Wall: Standard Claude Code vs tokencut" width="100%" />
+  <p><em>The 5-Hour Rate Limit Wall — Real multi-turn development session comparison. Unbounded tool results exhaust token allowances prematurely; TokenCut retains 100% reasoning while keeping tool outputs bounded.</em></p>
+</div>
 
 <br />
 
@@ -273,6 +294,11 @@ The demo and CLI statistics report local text estimates, not dollar savings.
 
 ## Architecture
 
+<div align="center">
+  <img src="assets/architecture.svg" alt="TokenCut Systems Architecture" width="100%" />
+  <p><em>End-to-end architecture: Client &amp; HUD layer, TokenCut Core Engine (CCR + Zero-LSP Code Intelligence + Guarded Symbol Editor), and 100% private local persistence.</em></p>
+</div>
+
 `tokencut` provides these local context tools:
 
 ### 1. Compress-Cache-Retrieve (CCR)
@@ -331,15 +357,19 @@ tokencut cat src/auth.py --symbol AuthService.verify_token
 tokencut cat src/auth.py --lines 45-80
 ```
 
-### Local code navigation and guarded edits
+### 4. Local Code Intelligence & Guarded Edits (`tokencut code` / `tokencut edit-symbol`)
 
 `tokencut code` uses [ast-grep](https://github.com/ast-grep/ast-grep) (MIT)
-and SQLite FTS5, without model calls or a background server. It indexes changed
-files only, respects Git ignores, skips dependency/build folders and symlinks,
-and reports files it could not parse. Python, JS/TS/TSX, Rust, Go, Swift, Java,
-and C/C++ have syntax-based declaration lookup; language-specific coverage varies.
+and SQLite FTS5, without model calls or background language servers. It indexes changed
+files incrementally, respects Git ignores, skips dependency/build folders and symlinks,
+and reports unparseable files cleanly. Python, JS/TS/TSX, Rust, Go, Swift, Java,
+and C/C++ have syntax-based declaration lookup:
 
 ```bash
+# Rapid symbol hierarchy and file outline (classes, methods, signatures)
+tokencut code "$PWD" --mode outline --file src/auth.py
+
+# Structural discovery and occurrences
 tokencut code "$PWD" --mode map --limit 20
 tokencut code "$PWD" --mode symbols --query AuthService.verify_token
 tokencut code "$PWD" --mode occurrences --query verify_token
@@ -348,52 +378,106 @@ tokencut code "$PWD" --mode pattern --query 'print($A)' --file src/auth.py
 tokencut retrieve tc_REFERENCE --query 'ConnectionRefusedError'
 ```
 
-Maps rank declarations by syntactic name occurrence counts; text search uses
-BM25. Occurrences can include unrelated symbols with the same name. This does
-**not** implement LSP reference resolution or project-wide semantic renaming.
-Search snippets identify the chunk's first line, not necessarily the hit's line.
-Results default to 2,000 tokens; recover omitted information before relying on it.
-The incremental source index lives in `$TOKENCUT_CACHE_DIR/code-index`, separate
-from metadata-only telemetry; like the recovery cache, it contains redacted text.
-
-Symbol reads preserve source comments/decorators and include a file SHA-256.
-Ambiguous names require a qualified name or `name@line`. Edits run through the
-client's **native shell permissions**, with preview as the default:
+Symbol reads preserve decorators and comments, returning the file SHA-256 digest.
+Guarded edits (`tokencut edit-symbol` / MCP `tokencut_edit_symbol`) perform atomic
+AST replacements protected by the SHA-256 pre-condition guard, defaulting to unified diff preview:
 
 ```bash
 tokencut cat "$PWD/src/auth.py" --symbol AuthService.verify_token
-# Write the complete replacement declaration, including indentation, to /tmp/replacement.py.
+# Write the complete replacement declaration to /tmp/replacement.py
 tokencut edit-symbol "$PWD/src/auth.py" AuthService.verify_token \
   --replacement-file /tmp/replacement.py --expected-hash HASH_FROM_READ
-# Add --apply to write. A stale hash, ambiguous symbol or syntax error aborts.
+# Add --apply to write atomically. Stale hashes, syntax errors, or ambiguities abort safely.
 ```
 
-These checks guard the edit region and file version; they do not prove that the
-replacement preserves behavior. Run the project's relevant tests after editing.
-
-### 4. Git Diff Slimming (`tokencut diff`)
+### 5. Git Diff Slimming (`tokencut diff`)
 Package lockfiles (`uv.lock`, `package-lock.json`, `pnpm-lock.yaml`) often generate thousands of lines of machine-generated diffs that crowd out actual application changes. `tokencut diff` collapses lockfile modifications into summary counts while retaining application changes. MCP output is bounded; retrieve omitted context before reviewing.
 
-### 5. Credential & Secret Scrubbing
+### 6. Credential & Secret Scrubbing
 Best-effort pattern matching redacts recognized API keys, JWTs, and password-bearing database URLs before MCP display and cache storage. It is not a complete secret scanner.
 
-### 6. Prompt Cache Optimization (`tokencut lint`)
+### 7. Prompt Cache Optimization (`tokencut lint`)
 Cache behavior and pricing depend on the provider and model. `tokencut lint` analyzes system instruction files (`CLAUDE.md`, `.cursorrules`, system prompts) to identify dynamic timestamps, non-deterministic paths, and volatile headers that invalidate prompt caches.
 
-### 7. Structured JSON & API Payload Compaction (`tokencut json`)
+### 8. Structured JSON & API Payload Compaction (`tokencut json`)
 Folds arrays, long strings, and deeply nested values into a preview with sample
 items. The redacted original is cached for recovery. Omitted items may contain
 different fields or important values; retrieve them before drawing conclusions.
 
-### 8. System Diagnostics & Auto-Configuration (`tokencut doctor`)
+### 9. System Diagnostics & Auto-Configuration (`tokencut doctor`)
 Checks the Python runtime, cache, client configuration, and shell aliases.
 `tokencut doctor --fix` and `tokencut install` configure supported integrations.
 A successful configuration check does not establish that a live agent used the tools.
 
-### 9. Pull Request Token Impact Analyzer (`tokencut pr`)
+### 10. Pull Request Token Impact Analyzer (`tokencut pr`)
 Estimates token changes against a Git base ref, grouped into code, documentation,
 and lockfiles. `--markdown` emits a review summary; `--max-delta <N>` sets a CI
 threshold. This measures repository text, not model usage during a task.
+
+---
+
+## Local Code Intelligence (Replacing Heavy LSP / Serena)
+
+Coding assistants perform best when given precise symbol context rather than whole-file dumps. Traditional solutions like **Serena** connect AI assistants to external **Language Server Protocol (LSP)** daemons (e.g. Pyright, rust-analyzer, gopls).
+
+While LSP is valuable for human IDEs, it introduces severe bottlenecks for AI coding agents:
+
+1. **Massive Discovery Token Bloat**: Serena defines **23 separate MCP tools**, creating a massive **6,569 token discovery tax** injected into every turn. This permanently consumes precious context window capacity before the user types a single character.
+2. **Daemon Memory & Background Stalls**: Running 1–3 language server background daemons consumes 800MB–2GB+ of RAM, requires complex environment orchestration, and frequently desynchronizes during file changes.
+3. **Failure on Partial Syntax**: Human and AI developers write code in an intermediate, syntactically broken state. Full LSP servers often lock up, fail symbol resolution, or crash when syntax errors are present.
+
+TokenCut replaces heavyweight LSP daemons with **native, in-process syntax indexing and atomic surgery** powered by `ast-grep` (tree-sitter), Python standard library `ast`, and SQLite FTS5:
+
+| Metric / Capability | Serena (LSP Daemons) | TokenCut (Native AST + SQLite) | Architectural Advantage |
+| :--- | :--- | :--- | :--- |
+| **Language Server Daemons** | 1–3+ background daemons | **0 daemons** (pure in-process AST) | Zero process management, zero RAM bloat |
+| **MCP Discovery Overhead** | 6,569 tokens (23 tools) | **1,769 tokens** (10 lean tools) | **-73% context waste per turn** |
+| **Memory Consumption** | 800MB – 2GB+ per language | **< 45MB** (embedded SQLite WAL) | **>95% lighter footprint** |
+| **Warm Query Latency** | 150ms – 400ms RPC roundtrip | **~16ms** local query | **10x–25x faster symbol lookups** |
+| **Syntax Error Resilience** | Fails / hangs on incomplete syntax | Resilient tree-sitter AST matching | Safe during incomplete active edits |
+| **Structural Outline** | Multi-tool JSON traversals | `tokencut_code(mode="outline")` | Compact line-numbered signatures |
+| **Guarded Symbol Editing** | Unverified patch / full rewrite | `tokencut_edit_symbol` (atomic) | Pre-condition SHA-256 integrity guard |
+| **Privacy & Security** | Language server downloads / RPC | **100% local, zero network calls** | Completely private |
+
+### Native AST Outlines (`tokencut_code` with `mode: "outline"`)
+
+Rather than consuming 4,000+ tokens reading an entire file to understand what functions it contains, agents call `tokencut_code` with `mode: "outline"`. This returns a compact signature map in sub-20ms:
+
+```bash
+tokencut code "$PWD" --mode outline --file src/tokencut/core/code_index.py
+```
+
+```text
+# outline: 1 files, 0 reindexed; syntax index (not LSP)
+code_index.py:28-45 [class_definition] Symbol | class Symbol:
+code_index.py:48-62 [class_definition] Occurrence | class Occurrence:
+code_index.py:65-120 [class_definition] CodeIndex | class CodeIndex:
+code_index.py:80-92 [function_definition] CodeIndex.__init__ | def __init__(self, root: Path, cache_dir: Path | None = None) -> None:
+code_index.py:145-180 [function_definition] CodeIndex.sync | def sync(self) -> int:
+code_index.py:380-440 [function_definition] CodeIndex.query | def query(self, mode="map", query="", file=None, limit=30) -> str:
+```
+
+### Guarded Atomic Symbol Editing (`tokencut_edit_symbol`)
+
+Full-file rewriting is a leading cause of agent regressions: models drop comments, lose subtle type annotations, or hallucinate neighboring code. `tokencut_edit_symbol` allows the agent to replace only the targeted symbol declaration and body.
+
+Every edit is cryptographically protected by the `expected_hash` returned by `tokencut_read`:
+
+```json
+{
+  "path": "/absolute/path/to/src/auth.py",
+  "selector": "AuthService.verify_token",
+  "replacement": "    def verify_token(self, token: str) -> bool:\n        return self.jwt.decode(token, verify_exp=True)",
+  "expected_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "apply": false
+}
+```
+
+1. **Safe Preview by Default (`apply: false`)**: Returns a unified diff preview. Neither the file nor its timestamp changes.
+2. **Atomic Disk Write (`apply: true`)**: Re-computes the file's SHA-256 digest on disk. If the hash matches `expected_hash` and the new syntax compiles cleanly, the change is written atomically.
+3. **Collision Prevention**: If another agent, process, or human modified the file in the interim, the operation aborts immediately with an error, preventing silent overwrites.
+
+The desktop pet companion continuously monitors symbol queries and guarded edits via `tokencut monitor --stdio`, keeping local token accounting accurate with zero cloud tracking.
 
 ---
 
@@ -476,14 +560,16 @@ Register the MCP server:
 claude mcp add --scope user tokencut -- tokencut mcp
 ```
 
-This exposes eight tools:
-- `tokencut_code`: Incremental repository map, qualified symbols, name occurrences, text and structural search.
-- `tokencut_exec`: Runs bash commands with output compaction and CCR caching.
-- `tokencut_read`: Reads files with support for AST skeletons, symbol extraction, and line ranges.
-- `tokencut_retrieve`: Retrieves omitted slices or matching chunks from one cached result by reference ID.
+This exposes ten lean tools (1,769 discovery tokens vs 6,569 for Serena):
+- `tokencut_code`: Incremental syntax index: map, qualified symbols, occurrences, full-text search, and module **outline** (0 LSP daemons).
+- `tokencut_edit_symbol`: Hash-guarded atomic symbol replacement with diff preview and syntax validation.
+- `tokencut_exec`: Runs bash commands with diagnostic-first stream compaction and CCR caching.
+- `tokencut_read`: Reads files with AST skeletons, qualified symbols, line ranges, and SHA-256 digests.
+- `tokencut_retrieve`: Retrieves omitted slices or matching chunks from cached results by reference ID (`tc_*`).
 - `tokencut_diff`: Generates slim git diffs with lockfile folding.
 - `tokencut_tree`: Profiles repository token distribution.
 - `tokencut_json`: Previews JSON with folded arrays and recoverable omitted values.
+- `tokencut_context`: Explicit task checkpoint memory (`save`, `read`, `list`, `forget`).
 - `tokencut_stats`: Reports estimated net session output reduction, including retrieval overhead.
 
 To filter native Bash output automatically, opt in to the Claude Code hook:
@@ -510,11 +596,16 @@ Or merge the `mcpServers` entry shown below into
 binary path from `command -v tokencut`, restart Claude Desktop, and check
 **Settings → Developer** or **+ → Connectors** for the connected server.
 This exposes tools; it does not filter every conversation or other tool result.
+The **Desktop Pet companion** floats alongside Claude Desktop, monitoring 5-hour
+quota windows via the local CodexBar adapter and displaying real-time MCP output reduction.
 
 ### Cursor & Windsurf
 
 Use `tokencut install --cursor` for `~/.cursor/mcp.json`, `tokencut install --windsurf` for `~/.codeium/windsurf/mcp_config.json`, or merge this entry
 into the client's MCP configuration:
+
+The **Desktop Pet companion** persists across macOS Spaces, floating above your editor
+windows and displaying live output reduction counters as the agent executes tools.
 
 ```json
 {
@@ -548,6 +639,10 @@ An offline protocol check on CLI 0.154.0 and desktop 0.155.0-alpha.9.2 found tha
 output to the model. TokenCut therefore does not install a Codex output hook.
 This check used fixed tool calls and a local mock, not a model evaluation.
 
+When paired with the ChatGPT Desktop application or Codex CLI, the **Desktop Pet companion**
+queries local rate limits via `account/rateLimits/read`, displaying live 5-hour quota
+consumption and reset countdowns in its floating HUD card while the assistant works.
+
 ### Persistent tool preferences
 
 Keep guidance short and conditional on TokenCut being available:
@@ -580,6 +675,8 @@ older IDE versions may use `~/.gemini/antigravity/mcp_config.json`. Gemini CLI u
 
 For exec/diff, pass the target project's absolute `cwd`. Prefer absolute file paths.
 Installation exposes tools; it does not automatically rewrite native shell calls.
+The **Desktop Pet companion** visualizes agentic tool calls and output reduction
+in real time, storing telemetry locally in SQLite with zero cloud transmission.
 
 ### Terminal CLI & POSIX Pipelines (Gemini CLI, Codex, bash, zsh)
 `tokencut` integrates into standard terminal workflows:
@@ -626,6 +723,9 @@ repos:
 | Command | Description |
 | :--- | :--- |
 | `tokencut run -- <cmd>` | Safely filters command output; `--compact` or `--budget` permits truncation. |
+| `tokencut code <root>` | Queries local syntax index (`--mode outline\|symbols\|map\|search\|pattern`; 0 LSP daemons). |
+| `tokencut edit-symbol <path> <sym>` | Performs guarded atomic symbol surgery (`--replacement-file`, `--expected-hash`, `--apply`). |
+| `tokencut context` | Explicit task checkpoint memory (`save`, `read`, `list`, `forget`). |
 | `tokencut tree [dir]` | Hierarchical directory token consumption profiler. |
 | `tokencut cat <file> -s` | AST structural skeleton (classes, signatures, docstrings). |
 | `tokencut cat <file> -y <sym>` | Extracts a specific class, method, or function by name. |

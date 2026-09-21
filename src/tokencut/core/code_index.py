@@ -380,8 +380,8 @@ class CodeIndex:
             return len(seen)
 
     def query(self, mode="map", query="", file=None, limit=30) -> str:
-        if mode not in {"map", "symbols", "occurrences", "search", "pattern"}:
-            raise ValueError("mode must be map, symbols, occurrences, search, or pattern")
+        if mode not in {"map", "symbols", "occurrences", "search", "pattern", "outline"}:
+            raise ValueError("mode must be map, symbols, occurrences, search, pattern, or outline")
         if type(limit) is not int or not 1 <= limit <= 200:
             raise ValueError("limit must be 1–200")
         if file is not None:
@@ -394,7 +394,19 @@ class CodeIndex:
         total = self.sync()
         header = f"# {mode}: {total} files, {self.updated} reindexed; syntax index (not LSP)\n"
         with self.connect() as db:
-            if mode in {"symbols", "map"}:
+            if mode == "outline":
+                target_file = file or (query if query and not query.startswith("-") else None)
+                rows = db.execute(
+                    """SELECT s.path,s.qualified,s.line,s.end_line,s.kind,s.signature
+                    FROM symbols s WHERE (? IS NULL OR s.path=?)
+                    ORDER BY s.path,s.line LIMIT ?""",
+                    (target_file, target_file, limit + 1),
+                ).fetchall()
+                body = "\n".join(
+                    f"{p}:{line}-{end} [{kind}] {name} | {signature}"
+                    for p, name, line, end, kind, signature in rows[:limit]
+                )
+            elif mode in {"symbols", "map"}:
                 rows = db.execute(
                     """SELECT s.path,s.qualified,s.line,s.end_line,s.signature,
                     (SELECT COUNT(*) FROM occurrences o WHERE o.name=s.name) AS score

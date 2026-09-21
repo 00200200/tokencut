@@ -1,0 +1,213 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 680" width="1100" height="680" role="img" aria-label="TokenCut Architecture Diagram">
+  <defs>
+    <linearGradient id="arcBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#080d16"/>
+      <stop offset="100%" stop-color="#030509"/>
+    </linearGradient>
+    <linearGradient id="clientGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#141f33"/>
+      <stop offset="100%" stop-color="#0c1524"/>
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0e1e2c"/>
+      <stop offset="100%" stop-color="#07131e"/>
+    </linearGradient>
+    <linearGradient id="petGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00f5a0"/>
+      <stop offset="100%" stop-color="#00d9f5"/>
+    </linearGradient>
+    <linearGradient id="modGrad1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0c2324"/>
+      <stop offset="100%" stop-color="#061618"/>
+    </linearGradient>
+    <linearGradient id="modGrad2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#171830"/>
+      <stop offset="100%" stop-color="#0b0c1c"/>
+    </linearGradient>
+    <linearGradient id="modGrad3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#261b14"/>
+      <stop offset="100%" stop-color="#150e09"/>
+    </linearGradient>
+    <filter id="boxShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      @keyframes dashFlow {
+        to { stroke-dashoffset: -24; }
+      }
+      @keyframes pulseDot {
+        0%, 100% { r: 3.5; opacity: 1; }
+        50% { r: 5; opacity: 0.5; }
+      }
+      .flow-line {
+        stroke-dasharray: 6 6;
+        animation: dashFlow 1.2s linear infinite;
+      }
+      .beacon-dot {
+        animation: pulseDot 2s ease-in-out infinite;
+      }
+    </style>
+  </defs>
+
+  <!-- Main Background -->
+  <rect width="1100" height="680" rx="16" fill="url(#arcBg)" stroke="#162338" stroke-width="1.5"/>
+
+  <!-- Top Title -->
+  <g transform="translate(48, 36)">
+    <rect width="260" height="26" rx="13" fill="#0d1829" stroke="#1d304f" stroke-width="1"/>
+    <circle cx="14" cy="13" r="4" fill="#00f5a0" class="beacon-dot"/>
+    <text x="28" y="17" fill="#8ea2c6" font-size="11" font-weight="700" class="mono" letter-spacing="1.2">SYSTEMS ARCHITECTURE</text>
+  </g>
+  <text x="325" y="54" fill="#f8fafc" font-size="16" font-weight="700" class="sans">TokenCut Bounded-Context Engine &amp; Companion Dataflow</text>
+
+  <!-- ================= LAYER 1: CLIENTS & PET COMPANION ================= -->
+  <g transform="translate(48, 80)">
+    <!-- Container Box -->
+    <rect width="1004" height="110" rx="12" fill="url(#clientGrad)" stroke="#1d2d47" stroke-width="1.2" filter="url(#boxShadow)"/>
+    <text x="24" y="26" fill="#8ea2c6" font-size="11" font-weight="700" class="mono" letter-spacing="1">CLIENT &amp; HUD LAYER (DESKTOP APPS, IDES, CLI PIPELINES)</text>
+
+    <!-- App 1: macOS Desktop Pet HUD -->
+    <g transform="translate(24, 40)">
+      <rect width="210" height="52" rx="8" fill="#091d24" stroke="#00f5a0" stroke-width="1.5"/>
+      <circle cx="18" cy="26" r="5" fill="#00f5a0"/>
+      <text x="32" y="24" fill="#ffffff" font-size="12" font-weight="700" class="mono">macOS Desktop Pet</text>
+      <text x="32" y="40" fill="#a7f3d0" font-size="10" class="mono">Floating HUD · Quota Radar</text>
+    </g>
+
+    <!-- App 2: Codex & ChatGPT Desktop -->
+    <g transform="translate(250, 40)">
+      <rect width="180" height="52" rx="8" fill="#0c1524" stroke="#223552" stroke-width="1"/>
+      <circle cx="18" cy="26" r="4" fill="#38bdf8"/>
+      <text x="30" y="24" fill="#ffffff" font-size="12" font-weight="700" class="mono">Codex / ChatGPT</text>
+      <text x="30" y="40" fill="#94a3b8" font-size="10" class="mono">Desktop app · CLI · MCP</text>
+    </g>
+
+    <!-- App 3: Claude Code & Desktop -->
+    <g transform="translate(446, 40)">
+      <rect width="180" height="52" rx="8" fill="#0c1524" stroke="#223552" stroke-width="1"/>
+      <circle cx="18" cy="26" r="4" fill="#fbbf24"/>
+      <text x="30" y="24" fill="#ffffff" font-size="12" font-weight="700" class="mono">Claude Code &amp; Desktop</text>
+      <text x="30" y="40" fill="#94a3b8" font-size="10" class="mono">Bash hook · MCP server</text>
+    </g>
+
+    <!-- App 4: Cursor & Windsurf -->
+    <g transform="translate(642, 40)">
+      <rect width="165" height="52" rx="8" fill="#0c1524" stroke="#223552" stroke-width="1"/>
+      <circle cx="18" cy="26" r="4" fill="#a78bfa"/>
+      <text x="30" y="24" fill="#ffffff" font-size="12" font-weight="700" class="mono">Cursor / Windsurf</text>
+      <text x="30" y="40" fill="#94a3b8" font-size="10" class="mono">AI IDE · stdio MCP</text>
+    </g>
+
+    <!-- App 5: Antigravity / Gemini CLI -->
+    <g transform="translate(823, 40)">
+      <rect width="157" height="52" rx="8" fill="#0c1524" stroke="#223552" stroke-width="1"/>
+      <circle cx="18" cy="26" r="4" fill="#00d9f5"/>
+      <text x="30" y="24" fill="#ffffff" font-size="12" font-weight="700" class="mono">Antigravity / CLI</text>
+      <text x="30" y="40" fill="#94a3b8" font-size="10" class="mono">Agentic IDE · POSIX</text>
+    </g>
+  </g>
+
+  <!-- Flow Arrows from Layer 1 to Layer 2 -->
+  <g stroke="#00f5a0" stroke-width="1.5" class="flow-line">
+    <line x1="177" y1="190" x2="177" y2="230"/>
+    <line x1="364" y1="190" x2="364" y2="230"/>
+    <line x1="560" y1="190" x2="560" y2="230"/>
+    <line x1="748" y1="190" x2="748" y2="230"/>
+    <line x1="925" y1="190" x2="925" y2="230"/>
+  </g>
+
+  <!-- ================= LAYER 2: TOKENCUT CORE ENGINE ================= -->
+  <g transform="translate(48, 230)">
+    <!-- Container Box -->
+    <rect width="1004" height="270" rx="14" fill="url(#coreGrad)" stroke="#00f5a0" stroke-width="1.8" filter="url(#boxShadow)"/>
+    <rect x="0" y="0" width="1004" height="36" rx="14" fill="#091b26"/>
+    <rect x="0" y="24" width="1004" height="12" fill="#091b26"/>
+    <circle cx="24" cy="18" r="5" fill="#00f5a0"/>
+    <text x="38" y="22" fill="#00f5a0" font-size="12" font-weight="700" class="mono">TOKENCUT HIGH-PERFORMANCE CORE ENGINE (ZERO EXTERNAL DAEMONS)</text>
+    <text x="980" y="22" text-anchor="end" fill="#8ea2c6" font-size="11" class="mono">stdio JSON-RPC / Native CLI</text>
+
+    <!-- Sub-Module A: Compress-Cache-Retrieve (CCR) -->
+    <g transform="translate(24, 52)">
+      <rect width="305" height="195" rx="10" fill="url(#modGrad1)" stroke="#00f5a0" stroke-width="1.2"/>
+      <circle cx="20" cy="24" r="4.5" fill="#00f5a0"/>
+      <text x="34" y="28" fill="#00f5a0" font-size="12" font-weight="700" class="mono">COMPRESS-CACHE-RETRIEVE</text>
+      
+      <text x="18" y="55" fill="#f1f5f9" font-size="11" font-weight="600" class="sans">Diagnostic-First Output Folding</text>
+      <text x="18" y="74" fill="#94a3b8" font-size="10.5" class="mono">· pytest / jest / build log parser</text>
+      <text x="18" y="92" fill="#94a3b8" font-size="10.5" class="mono">· Preserves exact failure tails</text>
+      <text x="18" y="110" fill="#94a3b8" font-size="10.5" class="mono">· Best-effort secret scrubber</text>
+      <text x="18" y="128" fill="#94a3b8" font-size="10.5" class="mono">· Reversible refs (tc_8f2a1b)</text>
+      
+      <rect x="18" y="146" width="269" height="34" rx="6" fill="#04201c" stroke="#00f5a0" stroke-width="0.8"/>
+      <text x="28" y="167" fill="#6ee7b7" font-size="10.5" font-weight="700" class="mono">70%–85% Typical Stream Reduction</text>
+    </g>
+
+    <!-- Sub-Module B: Local Code Intelligence (Replacing Serena/LSP) -->
+    <g transform="translate(349, 52)">
+      <rect width="320" height="195" rx="10" fill="url(#modGrad2)" stroke="#00d9f5" stroke-width="1.2"/>
+      <circle cx="20" cy="24" r="4.5" fill="#00d9f5"/>
+      <text x="34" y="28" fill="#00d9f5" font-size="12" font-weight="700" class="mono">LOCAL CODE INTEL (NO-LSP)</text>
+      
+      <text x="18" y="55" fill="#f1f5f9" font-size="11" font-weight="600" class="sans">AST Indexer &amp; Guarded Editor</text>
+      <text x="18" y="74" fill="#94a3b8" font-size="10.5" class="mono">· ast-grep + Tree-Sitter + SQLite</text>
+      <text x="18" y="92" fill="#94a3b8" font-size="10.5" class="mono">· 0 language servers · ~16ms warm</text>
+      <text x="18" y="110" fill="#94a3b8" font-size="10.5" class="mono">· map, symbols, outline, search</text>
+      <text x="18" y="128" fill="#94a3b8" font-size="10.5" class="mono">· tokencut_edit_symbol (guarded)</text>
+      
+      <rect x="18" y="146" width="284" height="34" rx="6" fill="#0a182e" stroke="#00d9f5" stroke-width="0.8"/>
+      <text x="28" y="167" fill="#7dd3fc" font-size="10.5" font-weight="700" class="mono">1,769 vs 6,569 Discovery Tokens (-73%)</text>
+    </g>
+
+    <!-- Sub-Module C: Task Memory & Quota Sentinel -->
+    <g transform="translate(689, 52)">
+      <rect width="291" height="195" rx="10" fill="url(#modGrad3)" stroke="#fbbf24" stroke-width="1.2"/>
+      <circle cx="20" cy="24" r="4.5" fill="#fbbf24"/>
+      <text x="34" y="28" fill="#fbbf24" font-size="12" font-weight="700" class="mono">TASK MEMORY &amp; QUOTA RADAR</text>
+      
+      <text x="18" y="55" fill="#f1f5f9" font-size="11" font-weight="600" class="sans">Session Checkpoints &amp; Limits</text>
+      <text x="18" y="74" fill="#94a3b8" font-size="10.5" class="mono">· tokencut_context (save/read)</text>
+      <text x="18" y="92" fill="#94a3b8" font-size="10.5" class="mono">· Reversible revision chain</text>
+      <text x="18" y="110" fill="#94a3b8" font-size="10.5" class="mono">· Native compaction lifecycle hooks</text>
+      <text x="18" y="128" fill="#94a3b8" font-size="10.5" class="mono">· Codex RPC &amp; Claude limits</text>
+      
+      <rect x="18" y="146" width="255" height="34" rx="6" fill="#20150a" stroke="#fbbf24" stroke-width="0.8"/>
+      <text x="28" y="167" fill="#fde68a" font-size="10.5" font-weight="700" class="mono">Zero Model Billing Interception</text>
+    </g>
+  </g>
+
+  <!-- Flow Arrows from Layer 2 to Layer 3 -->
+  <g stroke="#38bdf8" stroke-width="1.5" class="flow-line">
+    <line x1="200" y1="500" x2="200" y2="538"/>
+    <line x1="510" y1="500" x2="510" y2="538"/>
+    <line x1="835" y1="500" x2="835" y2="538"/>
+  </g>
+
+  <!-- ================= LAYER 3: LOCAL STORAGE & RECOVERY STORE ================= -->
+  <g transform="translate(48, 538)">
+    <rect width="1004" height="106" rx="12" fill="#070c16" stroke="#1c2c45" stroke-width="1.2" filter="url(#boxShadow)"/>
+    <text x="24" y="24" fill="#8ea2c6" font-size="11" font-weight="700" class="mono" letter-spacing="1">LOCAL PERSISTENCE &amp; ISOLATION (ZERO CLOUD TRANSMISSION · ~/.tokencut/)</text>
+
+    <!-- Storage 1: cache.db -->
+    <g transform="translate(24, 38)">
+      <rect width="305" height="52" rx="6" fill="#091422" stroke="#16273f" stroke-width="1"/>
+      <text x="16" y="23" fill="#f1f5f9" font-size="12" font-weight="700" class="mono">cache.db (SQLite WAL)</text>
+      <text x="16" y="39" fill="#94a3b8" font-size="10" class="mono">Chunked recovery store &amp; redacted logs</text>
+    </g>
+
+    <!-- Storage 2: code-index.db -->
+    <g transform="translate(349, 38)">
+      <rect width="320" height="52" rx="6" fill="#091422" stroke="#16273f" stroke-width="1"/>
+      <text x="16" y="23" fill="#f1f5f9" font-size="12" font-weight="700" class="mono">code-index (SQLite FTS5)</text>
+      <text x="16" y="39" fill="#94a3b8" font-size="10" class="mono">Incremental syntax index &amp; symbol hash cache</text>
+    </g>
+
+    <!-- Storage 3: context.db & telemetry.db -->
+    <g transform="translate(689, 38)">
+      <rect width="291" height="52" rx="6" fill="#091422" stroke="#16273f" stroke-width="1"/>
+      <text x="16" y="23" fill="#f1f5f9" font-size="12" font-weight="700" class="mono">context.db &amp; metrics.db</text>
+      <text x="16" y="39" fill="#94a3b8" font-size="10" class="mono">Private task revisions &amp; local counter deltas</text>
+    </g>
+  </g>
+</svg>

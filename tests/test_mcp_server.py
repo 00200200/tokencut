@@ -188,6 +188,7 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
     assert {tool["name"] for tool in responses[1]["result"]["tools"]} == {
         "tokencut_context",
         "tokencut_code",
+        "tokencut_edit_symbol",
         "tokencut_exec",
         "tokencut_read",
         "tokencut_retrieve",
@@ -315,3 +316,39 @@ def test_protocol_survives_bad_messages(monkeypatch):
     responses = [json.loads(line) for line in output.getvalue().splitlines()]
     assert [r.get("error", {}).get("code") for r in responses] == [-32700, -32600, -32601, None]
     assert responses[-1]["id"] == 2
+
+
+def test_mcp_edit_symbol_preview_and_apply(tmp_path):
+    f = tmp_path / "calc.py"
+    f.write_text("class Calculator:\n    def add(self, a, b):\n        return a + b\n")
+    read_out = server.handle_tokencut_read({"path": str(f), "symbol": "Calculator.add"})
+    assert "sha256=" in read_out
+    hash_val = read_out.split("sha256=")[1].strip().split()[0]
+
+    # Preview diff
+    preview = server.handle_tokencut_edit_symbol(
+        {
+            "path": str(f),
+            "selector": "Calculator.add",
+            "replacement": "    def add(self, a, b):\n        # updated\n        return a + b",
+            "expected_hash": hash_val,
+            "apply": False,
+        }
+    )
+    assert "# Preview only" in preview
+    assert "+        # updated" in preview
+    assert "# updated" not in f.read_text()
+
+    # Apply diff
+    applied = server.handle_tokencut_edit_symbol(
+        {
+            "path": str(f),
+            "selector": "Calculator.add",
+            "replacement": "    def add(self, a, b):\n        # updated\n        return a + b",
+            "expected_hash": hash_val,
+            "apply": True,
+        }
+    )
+    assert "Updated calc.py:" in applied
+    assert "# updated" in f.read_text()
+
