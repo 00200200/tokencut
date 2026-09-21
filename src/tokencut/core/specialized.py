@@ -1,8 +1,45 @@
 from __future__ import annotations
 
+import re
 
-def filter_git_log(raw_log: str, max_commits: int = 15) -> str:
-    """Compress verbose git log into dense 1-line format, saving ~75% tokens."""
+from tokencut.core.diff_slimmer import slim_git_diff
+
+# `git log` indents commit messages by exactly four spaces. Patch bodies (-p) and
+# --stat blocks sit at other indents, so they must be detected explicitly instead
+# of being mistaken for message text.
+_COMMIT_RE = re.compile(r"^commit ([0-9a-f]{7,40})\b")
+_DIFF_RE = re.compile(r"^diff --(?:git|cc|combined) ")
+_STAT_FILE_RE = re.compile(r"^ \S.*\|\s+(?:\d+|Bin)\b")
+_STAT_SUMMARY_RE = re.compile(r"^ \d+ files? changed")
+
+
+def _starts_payload(line: str) -> bool:
+    """Detect the first line of a --stat block or a -p patch body."""
+    return bool(_DIFF_RE.match(line) or _STAT_FILE_RE.match(line) or _STAT_SUMMARY_RE.match(line))
+
+
+def _compact_payload(payload_lines: list[str], max_context_lines: int) -> str:
+    """Compact a commit's --stat/-p payload instead of discarding it.
+
+    Stat blocks are already dense and are kept verbatim; patch bodies are routed
+    through the shared diff compactor so added and removed lines survive.
+    """
+    diff_start = next((i for i, line in enumerate(payload_lines) if _DIFF_RE.match(line)), None)
+    if diff_start is None:
+        return "\n".join(payload_lines).strip("\n")
+
+    stat_part = "\n".join(payload_lines[:diff_start]).strip("\n")
+    diff_part = "\n".join(payload_lines[diff_start:])
+    slimmed = slim_git_diff(diff_part, max_context_lines=max_context_lines).strip("\n")
+    return f"{stat_part}\n{slimmed}".strip("\n") if stat_part else slimmed
+
+
+def filter_git_log(raw_log: str, max_commits: int = 15, max_context_lines: int = 2) -> str:
+    """Compress verbose git log into dense 1-line format, saving ~75% tokens.
+
+    Patch bodies (`-p`) and stat blocks (`--stat`) are compacted rather than
+    dropped, and never leak into the commit message.
+    """
     if not raw_log.strip():
         return raw_log
 
@@ -11,21 +48,37 @@ def filter_git_log(raw_log: str, max_commits: int = 15) -> str:
     current_hash = ""
     current_author = ""
     current_msg: list[str] = []
+    current_payload: list[str] = []
+    in_payload = False
 
     def flush_commit():
-        nonlocal current_hash, current_author, current_msg
+        nonlocal current_hash, current_author, current_msg, current_payload, in_payload
         if current_hash:
             msg = " ".join(current_msg).strip()
             author_short = current_author.split("<")[0].strip() if current_author else ""
-            commits.append(f"{current_hash[:7]} [{author_short}] {msg}")
+            entry = f"{current_hash[:7]} [{author_short}] {msg}".rstrip()
+            payload = _compact_payload(current_payload, max_context_lines)
+            if payload:
+                entry = f"{entry}\n{payload}"
+            commits.append(entry)
         current_hash = ""
         current_author = ""
         current_msg = []
+        current_payload = []
+        in_payload = False
 
     for line in lines:
-        if line.startswith("commit "):
+        commit_match = _COMMIT_RE.match(line)
+        if commit_match:
+            # Unified diff bodies always prefix their lines, so a bare `commit <sha>`
+            # at column zero reliably terminates the previous commit's payload.
             flush_commit()
-            current_hash = line.split()[1]
+            current_hash = commit_match.group(1)
+        elif in_payload:
+            current_payload.append(line)
+        elif _starts_payload(line):
+            in_payload = True
+            current_payload.append(line)
         elif line.startswith("Author:"):
             current_author = line.replace("Author:", "").strip()
         elif line.startswith("Date:"):
