@@ -95,3 +95,38 @@ def test_cli_file_and_stdin_prepare_without_usage_events(tmp_path):
     too_large = runner.invoke(app, ["prepare", "--json"], input="a" * (MAX_INPUT_BYTES + 1))
     assert too_large.exit_code != 0
     assert not (Path(os.environ["TOKENCUT_CACHE_DIR"]) / "telemetry.db").exists()
+
+
+def test_prepare_optimize_mode():
+    prompt = """Analyze the following users table:
+```json
+[
+  {"id": 1, "username": "alice", "role": "admin"},
+  {"id": 2, "username": "bob", "role": "engineer"},
+  {"id": 3, "username": "charlie", "role": "tester"}
+]
+```
+Please let me know if there are any issues.
+"""
+    result = prepare_text(prompt, mode="optimize", budget=1000)
+    assert result["mode"] == "optimize"
+    assert result["after"] < result["before"]
+    assert "[id | username | role]" in result["text"]
+    assert "Analyze the following users table:" in result["text"]
+    assert "Please let me know if there are any issues." in result["text"]
+
+
+def test_cli_prepare_optimize_mode(tmp_path):
+    runner = CliRunner()
+    file = tmp_path / "prompt.txt"
+    file.write_text("""Review this table:
+```json
+[{"id": 1, "status": "active"}, {"id": 2, "status": "idle"}]
+```
+Any observations?
+""")
+    result = runner.invoke(app, ["prepare", "--file", str(file), "--mode", "optimize", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["mode"] == "optimize"
+    assert "[id | status]" in payload["text"]

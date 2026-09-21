@@ -86,10 +86,11 @@ struct PrepareView: View {
             }
             HStack(spacing: 12) {
                 Picker("Mode", selection: $model.mode) {
+                    Text("Autonomous optimizer · smart").tag("optimize")
                     Text("Preserve diagnostics").tag("conservative")
                     Text("Conversation summary · lossy").tag("summary")
-                }.frame(maxWidth: 330)
-                if model.mode == "summary" {
+                }.frame(maxWidth: 360)
+                if model.mode == "summary" || model.mode == "optimize" {
                     Picker("Target", selection: $model.budget) {
                         Text("800 tokens").tag(800)
                         Text("1,500 tokens").tag(1500)
@@ -102,8 +103,10 @@ struct PrepareView: View {
             }
             Text(model.mode == "summary"
                  ? "A heuristic summary can miss goals or decisions. Compare both versions before using it. The target is approximate."
+                 : model.mode == "optimize"
+                 ? "Autonomous self-routing optimizer: converts embedded JSON to TOON, slims diffs and logs, aligns system prompts, and enforces token ceilings."
                  : "Folds recognized log noise and exact repeated lines. Keeps diagnostic tails and unfamiliar text; does not rewrite prose.")
-                .font(.caption).foregroundStyle(model.mode == "summary" ? Color.orange : Color.secondary)
+                .font(.caption).foregroundStyle(model.mode == "summary" ? Color.orange : model.mode == "optimize" ? green : Color.secondary)
                 .frame(height: 32, alignment: .topLeading)
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {

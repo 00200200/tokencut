@@ -142,7 +142,65 @@ def _skeletonize_by_regex(source: str) -> str:
             if "TODO" in stripped or "NOTE" in stripped or "@" in stripped:
                 lines.append(line)
 
-    return "\n".join(lines) if lines else source[:500]
+
+def skeletonize_code_ast(source: str, suffix: str) -> str:
+    """Extract AST-accurate code skeleton for TypeScript, JavaScript, Go, Rust, Java, and C/C++ using ast-grep."""
+    lang_map = {
+        ".ts": "typescript",
+        ".tsx": "tsx",
+        ".js": "javascript",
+        ".jsx": "javascript",
+        ".mjs": "javascript",
+        ".cjs": "javascript",
+        ".go": "go",
+        ".rs": "rust",
+        ".java": "java",
+        ".c": "c",
+        ".h": "c",
+        ".cpp": "cpp",
+        ".hpp": "cpp",
+    }
+    lang = lang_map.get(suffix.lower())
+    if not lang:
+        return _skeletonize_by_regex(source)
+
+    try:
+        from ast_grep_py import SgRoot
+
+        root = SgRoot(source, lang)
+        block_kind = (
+            "compound_statement"
+            if lang in {"c", "cpp"}
+            else "statement_block"
+            if lang in {"typescript", "tsx", "javascript"}
+            else "block"
+        )
+        blocks = root.root().find_all(kind=block_kind)
+
+        fn_parent_kinds = {
+            "function_declaration",
+            "function_definition",
+            "method_definition",
+            "method_declaration",
+            "function_item",
+            "constructor_declaration",
+            "arrow_function",
+            "function_expression",
+        }
+
+        edits = []
+        for b in blocks:
+            parent = b.parent()
+            if parent and parent.kind() in fn_parent_kinds:
+                edits.append(b.replace("{\n    ...\n  }"))
+
+        if edits:
+            result = root.root().commit_edits(edits)
+            return result.strip()
+    except Exception:
+        pass
+
+    return _skeletonize_by_regex(source)
 
 
 def skeletonize_json(json_str: str, max_array_items: int = 2) -> str:
@@ -242,7 +300,7 @@ def extract_symbol_or_range(
         if p.suffix == ".py":
             return skeletonize_python(content)
         elif p.suffix in {".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".c", ".cpp"}:
-            return _skeletonize_by_regex(content)
+            return skeletonize_code_ast(content, p.suffix)
         elif p.suffix in {".json", ".yaml", ".yml"}:
             return skeletonize_json(content)
 

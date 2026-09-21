@@ -177,6 +177,7 @@ permissions; do not grant blanket command approval to the wrapper.
 | Command | Use |
 | --- | --- |
 | `tokencut optimize [target] --budget 2000` | Autonomous optimizer: intra-fence compaction, TOON, distill, cache align. |
+| `tokencut prepare --file draft.txt [--mode optimize]` | Preview shorter input on device before pasting into chat. |
 | `tokencut clip --file error.log --budget 1500` | Prepare a compact log for pasting. |
 | `tokencut pack src tests --budget 4000 --skeleton` | Package selected files within a context budget. |
 | `tokencut distill --file conversation.md --budget 800` | Extract a heuristic summary of a supplied transcript. |
