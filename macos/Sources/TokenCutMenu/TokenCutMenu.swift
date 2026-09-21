@@ -98,11 +98,15 @@ actor MonitorBridge {
         output = response.fileHandleForReading
     }
 
-    func request(_ method: String, paused: Bool? = nil) throws -> Data {
+    func request(_ method: String, paused: Bool? = nil, text: String? = nil,
+                 mode: String? = nil, budget: Int? = nil) throws -> Data {
         try start()
         sequence += 1
         var object: [String: Any] = ["id": sequence, "method": method]
         if let paused { object["paused"] = paused }
+        if let text { object["text"] = text }
+        if let mode { object["mode"] = mode }
+        if let budget { object["budget"] = budget }
         var data = try JSONSerialization.data(withJSONObject: object)
         data.append(10)
         try input?.write(contentsOf: data)
@@ -263,6 +267,8 @@ struct PanelView: View {
                     Text("Less context. More clarity.").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button { PrepareWindow.show() } label: { Image(systemName: "square.and.pencil") }
+                    .buttonStyle(.plain).help("Prepare for chat").accessibilityLabel("Prepare for chat")
                 if model.busy { ProgressView().controlSize(.small) }
                 Circle().fill(model.error != nil ? Color.orange : green).frame(width: 7, height: 7)
                     .accessibilityLabel(model.error == nil ? "Local monitor" : "Monitor unavailable")
@@ -300,6 +306,7 @@ struct PanelView: View {
                 Button("Export", action: model.export).keyboardShortcut("e").disabled(model.busy || model.snapshot == nil)
                 Menu {
                     Button("Open dashboard") { PanelWindow.show(model) }
+                    Button("Prepare for chat…") { PrepareWindow.show() }.keyboardShortcut("k")
                     Button("Show pet") { PetWindow.show(model) }
                     Button("Refresh", action: model.refresh).keyboardShortcut("r")
                     Button("Quit TokenCut") { NSApp.terminate(nil) }.keyboardShortcut("q")

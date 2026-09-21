@@ -103,6 +103,43 @@ Keep agent instructions short, for example:
 
 ## Commands and recovery
 
+### Prepare input for any chat
+
+Open **Prepare for chat…** from the pet menu or the dashboard's compose button.
+The native, resizable macOS window compares an editable original and a read-only
+preview. Paste reads the clipboard once, on click. Copy preview replaces the
+clipboard only on click; TokenCut never pastes or sends to another application.
+Editing the original, mode or target invalidates the previous preview.
+
+The default **Preserve diagnostics** mode folds recognized progress and exact
+repeated lines, keeps complete diagnostic tails, and leaves unfamiliar prose
+unchanged. **Conversation summary · lossy** is opt-in and uses local heuristics;
+review goals, constraints, negations and decisions against the original. It
+cannot guarantee equivalent task quality. A draft that cannot become smaller
+is kept after credential redaction, rather than expanded with summary scaffolding.
+
+```sh
+tokencut prepare --file draft.txt
+tokencut prepare --file supplied-transcript.md --mode summary --budget 1500 --json
+```
+
+CLI input comes from the selected file or stdin, never an implicit clipboard
+read. Both interfaces accept up to 128 KiB of UTF-8 text and make no AI calls.
+Preview counts use `o200k_base`; they do not enter the savings ledger because
+TokenCut does not know whether you use the result. Original drafts stay in app
+memory until cleared or quit; compaction may store a redacted recovery copy in
+the existing cache. No draft text is written to telemetry or statistics exports.
+
+This works **before** sending input to Codex, Claude Desktop (including Chat),
+Claude Code or other CLI clients. Existing chat history stays under the client's
+control. The documented prompt hooks in [Codex](https://learn.chatgpt.com/docs/hooks)
+and [Claude Code](https://code.claude.com/docs/en/hooks) add context or block
+submission; they do not provide a transparent replacement of the full conversation.
+Installing MCP does not change this. Task checkpoints below are a separate way
+to carry selected information between native compactions.
+
+### Tool output
+
 ```sh
 tokencut run -- pytest -v
 tokencut cat src/app.py --skeleton
