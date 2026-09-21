@@ -11,7 +11,11 @@ from tokencut.core.json_slimmer import slim_json
 from tokencut.core.optimizer import OptimizeResult, optimize_context
 from tokencut.core.pr_analyzer import PRTokenReport, analyze_pr_tokens
 from tokencut.core.redactor import redact_secrets
-from tokencut.core.skeleton import extract_symbol_or_range, skeletonize_python
+from tokencut.core.skeleton import (
+    extract_symbol_or_range,
+    skeletonize_code_ast,
+    skeletonize_python,
+)
 from tokencut.core.tree_scanner import scan_directory
 from tokencut.metrics.pricing import CostSavings, estimate_savings
 from tokencut.metrics.tokenizer import (
@@ -41,6 +45,7 @@ __all__ = [
     "redact_secrets",
     "run_all_diagnostics",
     "scan_directory",
+    "skeletonize_code_ast",
     "skeletonize_python",
     "slim_git_diff",
     "slim_json",

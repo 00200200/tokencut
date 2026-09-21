@@ -273,9 +273,11 @@ def pack_command(
 @app.command("prepare")
 def prepare_command(
     file: Annotated[Path | None, typer.Option("--file", "-f", help="Read a supplied draft")] = None,
-    mode: Annotated[str, typer.Option(help="conservative or summary (lossy)")] = "conservative",
+    mode: Annotated[
+        str, typer.Option(help="conservative, summary (lossy), or optimize (autonomous)")
+    ] = "conservative",
     budget: Annotated[
-        int, typer.Option(min=128, max=8000, help="Summary target, not a hard cap")
+        int, typer.Option(min=128, max=8000, help="Summary or optimize target budget")
     ] = 1500,
     json_output: Annotated[
         bool, typer.Option("--json", help="Include local preview measurements")
@@ -311,6 +313,10 @@ def prepare_command(
         if mode == "summary":
             err_console.print(
                 "Summary is heuristic and lossy; verify goals, constraints and decisions."
+            )
+        elif mode == "optimize":
+            err_console.print(
+                "Autonomous optimizer applied intra-fence compaction, TOON, or cache alignment."
             )
 
 

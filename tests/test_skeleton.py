@@ -3,6 +3,7 @@ from pathlib import Path
 
 from tokencut.core.skeleton import (
     extract_symbol_or_range,
+    skeletonize_code_ast,
     skeletonize_json,
     skeletonize_python,
 )
@@ -84,3 +85,74 @@ def test_extract_symbol_and_range():
         assert "..." in skel_res
     finally:
         Path(tmp_path).unlink()
+
+
+def test_skeletonize_typescript():
+    ts_code = """
+export interface User {
+    id: number;
+    name: string;
+}
+
+export class UserService {
+    private db: Database;
+
+    constructor(db: Database) {
+        this.db = db;
+        console.log("initialized");
+    }
+
+    public async getUser(id: number): Promise<User> {
+        const user = await this.db.find(id);
+        if (!user) throw new Error("not found");
+        return user;
+    }
+}
+"""
+    skeleton = skeletonize_code_ast(ts_code, ".ts")
+    assert "export interface User" in skeleton
+    assert "id: number" in skeleton
+    assert "export class UserService" in skeleton
+    assert "public async getUser(id: number): Promise<User>" in skeleton
+    assert "const user = await this.db.find(id)" not in skeleton
+    assert "..." in skeleton
+
+
+def test_skeletonize_go():
+    go_code = """package main
+
+type Service struct {
+    port int
+}
+
+func (s *Service) Start() error {
+    log.Println("Starting service on port", s.port)
+    return http.ListenAndServe(fmt.Sprintf(":%d", s.port), nil)
+}
+"""
+    skeleton = skeletonize_code_ast(go_code, ".go")
+    assert "package main" in skeleton
+    assert "type Service struct" in skeleton
+    assert "func (s *Service) Start() error" in skeleton
+    assert "http.ListenAndServe" not in skeleton
+    assert "..." in skeleton
+
+
+def test_skeletonize_rust():
+    rs_code = """pub struct Client {
+    pub timeout_ms: u64,
+}
+
+impl Client {
+    pub fn new(timeout: u64) -> Self {
+        println!("creating new client");
+        Self { timeout_ms: timeout }
+    }
+}
+"""
+    skeleton = skeletonize_code_ast(rs_code, ".rs")
+    assert "pub struct Client" in skeleton
+    assert "impl Client" in skeleton
+    assert "pub fn new(timeout: u64) -> Self" in skeleton
+    assert "creating new client" not in skeleton
+    assert "..." in skeleton
