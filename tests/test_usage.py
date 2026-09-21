@@ -127,6 +127,27 @@ def test_passed_reset_is_not_assumed_to_restore_limit():
     await_idle(collector)
     row = collector.snapshot()[0]
     assert row["status"] == "unavailable" and row["windows"] == []
+    assert row["issue"] == "reset_pending"
+
+
+@pytest.mark.parametrize(
+    "failure, issue",
+    [
+        (FileNotFoundError("private path"), "reader_missing"),
+        (TimeoutError("private data"), "timeout"),
+    ],
+)
+def test_missing_reader_and_timeout_have_actionable_private_diagnostics(failure, issue):
+    def fetch():
+        raise failure
+
+    collector = usage.UsageCollector({"claude": fetch})
+    collector.snapshot()
+    await_idle(collector)
+    row = collector.snapshot()[0]
+    assert row["issue"] == issue
+    assert row["windows"] == []
+    assert "private" not in json.dumps(row)
 
 
 def test_savings_snapshot_does_not_start_quota_probes(tmp_path, monkeypatch):
@@ -174,7 +195,8 @@ for line in sys.stdin:
     assert json.loads(log.read_text()) == ["initialize", "initialized", "account/rateLimits/read"]
 
 
-def test_claude_adapter_uses_cli_usage_without_cost_scan(tmp_path, monkeypatch):
+@pytest.mark.parametrize("elapsed", [0, 35])
+def test_claude_adapter_uses_cli_usage_without_cost_scan(tmp_path, monkeypatch, elapsed):
     log = tmp_path / "arguments.json"
     command = fake_executable(
         tmp_path,
@@ -186,6 +208,10 @@ print(json.dumps([{"provider": "claude", "usage": {"primary": {"usedPercent": 20
 """,
     )
     monkeypatch.setattr(usage, "executable", lambda name: command)
+    # Simulate a slow usage/status cycle without sleeping or making an AI call.
+    # It must still consume EOF after the old 30-second deadline has passed.
+    ticks = iter([0.0, 0.0])
+    monkeypatch.setattr(usage.time, "monotonic", lambda: next(ticks, float(elapsed)))
     assert usage.fetch_claude()[0]["remaining_percent"] == 80
     assert json.loads(log.read_text()) == [
         "usage",

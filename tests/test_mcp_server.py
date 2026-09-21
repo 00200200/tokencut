@@ -4,6 +4,7 @@ import re
 import sys
 
 import pytest
+from typer.testing import CliRunner
 
 from tokencut.core.cache import ContextCache
 from tokencut.mcp import server
@@ -18,6 +19,57 @@ from tokencut.mcp.server import (
     run_mcp_stdio_server,
 )
 from tokencut.metrics.tokenizer import count_tokens
+
+
+def test_coding_profile_keeps_coding_and_recovery_tools_without_hidden_dispatch(monkeypatch):
+    listed = server._respond({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, profile="coding")
+    assert {tool["name"] for tool in listed["result"]["tools"]} == server.CODING_TOOLS
+    assert len(server.TOOLS_DEFINITIONS) > len(server.CODING_TOOLS)
+    monkeypatch.setattr(
+        server, "handle_tokencut_clip", lambda _: pytest.fail("Hidden tool executed")
+    )
+    response = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "tokencut_clip", "arguments": {"text": "input"}},
+        },
+        profile="coding",
+    )
+    assert response["error"]["code"] == -32602
+    for name in {"tokencut_code", "tokencut_edit_symbol", "tokencut_read", "tokencut_retrieve"}:
+        assert next(tool for tool in listed["result"]["tools"] if tool["name"] == name) == next(
+            tool for tool in server.TOOLS_DEFINITIONS if tool["name"] == name
+        )
+
+
+def test_profile_stdio_and_environment_selection(monkeypatch):
+    monkeypatch.delenv("TOKENCUT_MCP_PROFILE", raising=False)
+    from tokencut.cli import app
+
+    request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n"
+    runner = CliRunner()
+    for args, env, expected in (
+        ([], {}, len(server.TOOLS_DEFINITIONS)),
+        (["--profile", "coding"], {}, 8),
+        ([], {"TOKENCUT_MCP_PROFILE": "coding"}, 8),
+        (["--profile", "full"], {"TOKENCUT_MCP_PROFILE": "coding"}, len(server.TOOLS_DEFINITIONS)),
+    ):
+        result = runner.invoke(app, ["mcp", *args], input=request, env=env)
+        assert result.exit_code == 0, result.output
+        assert len(json.loads(result.stdout)["result"]["tools"]) == expected
+    invalid = runner.invoke(app, ["mcp", "--profile", "typo"], input=request)
+    assert invalid.exit_code != 0
+    assert '"result"' not in invalid.stdout
+
+
+def test_coding_profile_reduces_schema_text_and_does_not_advertise_hidden_tools():
+    full = count_tokens(json.dumps(server.tool_definitions())).openai
+    coding = count_tokens(json.dumps(server.tool_definitions("coding"))).openai
+    assert coding < full * 0.75
+    assert "tokencut_pack" not in server.server_instructions("coding")
+    assert "tokencut_pack" in server.server_instructions("full")
 
 
 def test_handle_tokencut_exec():

@@ -5,6 +5,11 @@ struct QuotaWindow: Decodable, Identifiable {
     let id, label: String
     let usedPercent, remainingPercent: Double
     let windowMinutes, resetsAt: Double?
+    var shortLabel: String {
+        if windowMinutes == 300 { return "5h" }
+        if windowMinutes == 10080 { return "7d" }
+        return ""
+    }
 }
 struct QuotaProvider: Decodable, Identifiable {
     let provider, name, source, status, message: String
@@ -13,6 +18,17 @@ struct QuotaProvider: Decodable, Identifiable {
     let windows: [QuotaWindow]
     var id: String { provider }
     var tightest: QuotaWindow? { windows.min { $0.remainingPercent < $1.remainingPercent } }
+    var statusLabel: String {
+        if status == "loading" { return "Checking…" }
+        switch issue {
+        case "cli_not_signed_in", "adapter_unavailable": return "Connect"
+        case "cli_missing", "reader_missing": return "Set up"
+        case "no_windows": return "Not reported"
+        case "timeout": return "Retry"
+        case "reset_pending": return "Refreshing…"
+        default: return "Check limits"
+        }
+    }
 }
 struct QuotaEnvelope: Decodable { let providers: [QuotaProvider] }
 
@@ -38,6 +54,7 @@ struct PetView: View {
                     Menu {
                         Button("Limits and reset") { showLimits() }
                         Button("Savings") { model.tab = 0; PanelWindow.show(model) }
+                        Button("Prepare for chat…") { PrepareWindow.show() }.keyboardShortcut("k")
                         Button("Refresh limits") { model.refreshUsage(force: true) }
                         Button(model.snapshot?.paused == true ? "Resume optimization" : "Pause optimization", action: model.togglePause)
                         Divider()
@@ -61,14 +78,14 @@ struct PetView: View {
                             Text(provider == "codex" ? "Codex" : "Claude").foregroundStyle(mutedInk)
                             Spacer(minLength: 4)
                             if let quota = row?.tightest, row?.status == "ok" {
-                                Text("\(quota.remainingPercent.formatted(.number.precision(.fractionLength(0))))% left")
+                                Text("\(quota.remainingPercent.formatted(.number.precision(.fractionLength(0))))% left\(quota.shortLabel.isEmpty ? "" : " · " + quota.shortLabel)")
                                     .foregroundStyle(quota.remainingPercent <= 15 ? .orange : accent).monospacedDigit().bold()
                             } else {
-                                Text(row?.status == "loading" ? "…" : row?.issue == "cli_not_signed_in" ? "CLI not linked" : "unavailable").foregroundStyle(mutedInk)
+                                Text(row?.statusLabel ?? "Checking…").foregroundStyle(mutedInk)
                             }
                         }.font(.system(size: 11)).padding(.vertical, 2)
                     }.buttonStyle(.plain)
-                    .help("Remaining allowance in the most constrained window. Click for all windows and read times.")
+                    .help(row?.status == "ok" ? "Remaining allowance in the most constrained window. 5h: five hours; 7d: weekly. Click for all windows and read times." : row?.message ?? "Checking the account-limit connection.")
                 }
                 Text(savings).font(.system(size: 10)).foregroundStyle(mutedInk).lineLimit(1)
             }.frame(width: 154)
@@ -88,7 +105,7 @@ struct PetView: View {
         .accessibilityElement(children: .contain)
     }
     private var savings: String {
-        if model.error != nil { return "Text measurements unavailable" }
+        if model.error != nil { return "Open savings to reconnect" }
         if model.snapshot?.paused == true { return "Optimization paused" }
         guard let value = model.snapshot?.today?.net else { return "Savings: no measurements" }
         return "Text today: \(value >= 0 ? "↓" : "↑")\(compact(abs(value))) tokens"
@@ -136,6 +153,21 @@ struct QuotaDetails: View {
                     }
                     Text(provider.source).font(.caption2).foregroundStyle(.secondary)
                     if provider.provider == "claude", provider.status == "unavailable" {
+                        if ["cli_not_signed_in", "adapter_unavailable", "cli_missing"].contains(provider.issue ?? "") {
+                            Text("Connect the quota reader once. Your Claude Desktop session stays separate.")
+                                .font(.caption)
+                            HStack {
+                                Text("claude auth login --claudeai")
+                                    .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                Spacer()
+                                Button("Copy") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString("claude auth login --claudeai", forType: .string)
+                                }.help("Copy the Claude subscription sign-in command")
+                            }
+                            Text("Run in Terminal, finish signing in, then click Refresh limits.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                         Link("View Claude account limits ↗", destination: URL(string: "https://claude.ai/settings/usage")!)
                             .font(.caption)
                     }

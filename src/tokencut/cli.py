@@ -270,6 +270,50 @@ def pack_command(
     )
 
 
+@app.command("prepare")
+def prepare_command(
+    file: Annotated[Path | None, typer.Option("--file", "-f", help="Read a supplied draft")] = None,
+    mode: Annotated[str, typer.Option(help="conservative or summary (lossy)")] = "conservative",
+    budget: Annotated[
+        int, typer.Option(min=128, max=8000, help="Summary target, not a hard cap")
+    ] = 1500,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Include local preview measurements")
+    ] = False,
+):
+    """Preview shorter input before pasting it into any chat; never sends or counts usage."""
+    from tokencut.core.prepare import MAX_INPUT_BYTES, prepare_text
+
+    try:
+        if file is not None:
+            with file.open("rb") as stream:
+                raw = stream.read(MAX_INPUT_BYTES + 1)
+        elif not sys.stdin.isatty():
+            raw = sys.stdin.read(MAX_INPUT_BYTES + 1).encode("utf-8")
+        else:
+            raise ValueError(
+                "Supply --file or pipe text through stdin; clipboard is not read automatically"
+            )
+        if len(raw) > MAX_INPUT_BYTES:
+            raise ValueError("Draft exceeds 128 KiB; select a smaller relevant excerpt")
+        result = prepare_text(raw.decode("utf-8"), mode=mode, budget=budget)
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if json_output:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        sys.stdout.write(result["text"])
+        err_console.print(
+            f"Preview: {result['before']} → {result['after']} local o200k tokens. "
+            "Review before pasting; not counted as usage savings. "
+            "Recognized credentials are redacted; compaction may cache a redacted original."
+        )
+        if mode == "summary":
+            err_console.print(
+                "Summary is heuristic and lossy; verify goals, constraints and decisions."
+            )
+
+
 @app.command("distill")
 def distill_command(
     file: Annotated[
@@ -286,7 +330,7 @@ def distill_command(
         bool, typer.Option("--stats", "-s", help="Print token reduction stats to stderr")
     ] = False,
 ):
-    """Distill multi-turn chat transcripts into dense executive context with zero loss CCR recovery."""
+    """Prepare a lossy transcript summary for review, with a recoverable cached original."""
     from tokencut.core.clip import get_clipboard, set_clipboard
     from tokencut.core.distill import distill_conversation
 
@@ -1163,9 +1207,24 @@ def lint(
 
 
 @app.command()
-def mcp():
+def mcp(
+    profile: Annotated[
+        str,
+        typer.Option(
+            "--profile",
+            envvar="TOKENCUT_MCP_PROFILE",
+            help="coding: 8 core tools; full: all tools (default)",
+        ),
+    ] = "full",
+):
     """Start the Model Context Protocol (MCP) server for Claude Code, Cursor, and Codex."""
-    run_mcp_stdio_server()
+    from tokencut.mcp.server import tool_definitions
+
+    try:
+        tool_definitions(profile)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    run_mcp_stdio_server(profile)
 
 
 @app.command()

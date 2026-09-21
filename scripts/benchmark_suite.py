@@ -16,7 +16,7 @@ from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import skeletonize_python
-from tokencut.mcp.server import TOOLS_DEFINITIONS, handle_tokencut_read
+from tokencut.mcp.server import TOOLS_DEFINITIONS, handle_tokencut_read, tool_definitions
 from tokencut.metrics.tokenizer import compute_metrics
 
 console = Console()
@@ -156,6 +156,9 @@ index 3333333..4444444 100644
                     "tool_schema_o200k_tokens": compute_metrics(
                         "", json.dumps(TOOLS_DEFINITIONS)
                     ).compact_tokens.openai,
+                    "coding_tool_schema_o200k_tokens": compute_metrics(
+                        "", json.dumps(tool_definitions("coding"))
+                    ).compact_tokens.openai,
                     "scenarios": [
                         {
                             "name": name,
@@ -196,6 +199,10 @@ index 3333333..4444444 100644
     )
     console.print(
         "Model quality, subscription quotas, and end-to-end task tokens were not evaluated."
+    )
+    console.print(
+        "Coding profile schema (local o200k estimate): "
+        f"{compute_metrics('', json.dumps(tool_definitions('coding'))).compact_tokens.openai:,} tokens."
     )
 
 

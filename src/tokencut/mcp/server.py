@@ -425,6 +425,47 @@ for _tool in TOOLS_DEFINITIONS:
         )
 
 
+CODING_TOOLS = frozenset(
+    {
+        "tokencut_code",
+        "tokencut_edit_symbol",
+        "tokencut_exec",
+        "tokencut_read",
+        "tokencut_retrieve",
+        "tokencut_context",
+        "tokencut_diff",
+        "tokencut_stats",
+    }
+)
+
+
+def tool_definitions(profile: str = "full") -> list[dict]:
+    """Keep optional transforms out of coding sessions without changing the default API."""
+    if profile not in {"full", "coding"}:
+        raise ValueError("MCP profile must be full or coding")
+    return [tool for tool in TOOLS_DEFINITIONS if profile == "full" or tool["name"] in CODING_TOOLS]
+
+
+def server_instructions(profile: str) -> str:
+    extra = (
+        "Use tokencut_optimize for unified autonomous prompt, code block, table, transcript, and log optimization; "
+        "tokencut_pack for file bundles, tokencut_clip for pasted logs, "
+        "tokencut_distill for supplied transcripts, and tokencut_table for tables. "
+        if profile == "full"
+        else "Optional text transforms remain available through the CLI. "
+    )
+    return (
+        "Use tokencut_code for syntax searches; tokencut_read for exact symbols or ranges; "
+        "tokencut_edit_symbol for hash-guarded edits; tokencut_context for milestone checkpoints. "
+        + extra
+        + "Use tokencut_exec for verbose noninteractive commands with an absolute cwd. "
+        "In Codex prefer tokencut run inside the native shell to retain its sandbox and approvals. "
+        "Omit max_tokens/max_lines to preserve command diagnostics; explicit limits permit truncation. "
+        "Recover needed details with tokencut_retrieve. Do not rerun successful commands just to compress output. "
+        "Keep normal approvals. This server does not intercept chat or change account quotas."
+    )
+
+
 def _budget(arguments: dict[str, Any]) -> int:
     value = arguments.get("max_tokens", arguments.get("budget", 2000))
     if type(value) is not int or not 64 <= value <= 32000:
@@ -777,7 +818,7 @@ def handle_tokencut_edit_symbol(arguments: dict[str, Any]) -> str:
     return _record("", output, operation="edit_symbol", project=path)
 
 
-def _respond(req: Any) -> dict[str, Any] | None:
+def _respond(req: Any, *, profile: str = "full") -> dict[str, Any] | None:
     if (
         not isinstance(req, dict)
         or req.get("jsonrpc") != "2.0"
@@ -802,11 +843,11 @@ def _respond(req: Any) -> dict[str, Any] | None:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "tokencut", "version": "0.1.0"},
-                "instructions": "Use tokencut_optimize for unified autonomous prompt, code block, table, transcript, and log optimization; tokencut_code for local map, symbol, text, outline, callers, and references searches; tokencut_read for exact qualified symbols; tokencut_edit_symbol for hash-guarded atomic symbol replacements; tokencut_pack to bundle multiple files with AST skeletons; tokencut_clip to clean and compact pasted text/logs; tokencut_distill to condense long conversation transcripts; tokencut_table to compress JSON/CSV tables to TOON. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
+                "instructions": server_instructions(profile),
             },
         }
     if method == "tools/list":
-        return {**response, "result": {"tools": TOOLS_DEFINITIONS}}
+        return {**response, "result": {"tools": tool_definitions(profile)}}
     if method == "ping":
         return {**response, "result": {}}
     if method != "tools/call":
@@ -829,7 +870,9 @@ def _respond(req: Any) -> dict[str, Any] | None:
         "tokencut_stats": lambda _: handle_tokencut_stats(),
     }
     name, arguments = params.get("name"), params.get("arguments", {})
-    if not isinstance(name, str) or name not in handlers:
+    if not isinstance(name, str) or name not in {
+        tool["name"] for tool in tool_definitions(profile)
+    }:
         return {**response, "error": {"code": -32602, "message": "Unknown tool"}}
     try:
         _validate_arguments(name, arguments)
@@ -843,8 +886,9 @@ def _respond(req: Any) -> dict[str, Any] | None:
     }
 
 
-def run_mcp_stdio_server():
+def run_mcp_stdio_server(profile: str = "full"):
     """Run JSON-RPC 2.0 stdio loop for Model Context Protocol."""
+    tool_definitions(profile)  # Validate before reading stdin or executing anything.
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -859,7 +903,7 @@ def run_mcp_stdio_server():
                 "error": {"code": -32700, "message": "Parse error"},
             }
         else:
-            resp = _respond(req)
+            resp = _respond(req, profile=profile)
         if resp is not None:
             sys.stdout.write(json.dumps(resp) + "\n")
             sys.stdout.flush()
