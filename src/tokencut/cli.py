@@ -270,6 +270,189 @@ def pack_command(
     )
 
 
+@app.command("distill")
+def distill_command(
+    file: Annotated[
+        Path | None,
+        typer.Option("--file", "-f", help="Read conversation from file instead of clipboard/stdin"),
+    ] = None,
+    budget: Annotated[
+        int, typer.Option("--budget", "-b", min=100, max=100000, help="Target token budget ceiling")
+    ] = 1500,
+    copy: Annotated[
+        bool, typer.Option("--copy", "-c", help="Copy distilled context back to clipboard")
+    ] = False,
+    stats: Annotated[
+        bool, typer.Option("--stats", "-s", help="Print token reduction stats to stderr")
+    ] = False,
+):
+    """Distill multi-turn chat transcripts into dense executive context with zero loss CCR recovery."""
+    from tokencut.core.clip import get_clipboard, set_clipboard
+    from tokencut.core.distill import distill_conversation
+
+    if file is not None:
+        try:
+            raw = file.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise typer.BadParameter(f"Cannot read file: {exc}") from exc
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read()
+    else:
+        raw = get_clipboard()
+        if not raw:
+            err_console.print("[yellow]Clipboard is empty and no stdin provided.[/yellow]")
+            raise typer.Exit(code=1)
+
+    result = distill_conversation(raw, budget=budget)
+
+    if copy:
+        if set_clipboard(result.text):
+            err_console.print(
+                f"[green]Distilled context ({result.distilled_tokens} tokens) copied to clipboard![/green]"
+            )
+        else:
+            err_console.print("[yellow]Failed to copy to clipboard.[/yellow]")
+
+    if stats:
+        err_console.print(
+            f"[dim]Tokens: {result.original_tokens} -> {result.distilled_tokens} "
+            f"({result.reduction_pct}% reduction, saved {result.saved_tokens} tok) "
+            f"[{result.message_count} messages, {len(result.files_referenced)} files][/dim]"
+        )
+
+    _emit(result.text)
+
+
+@app.command("table")
+def table_command(
+    file: Annotated[
+        Path | None,
+        typer.Option("--file", "-f", help="Read tabular data from file instead of stdin/clipboard"),
+    ] = None,
+    budget: Annotated[
+        int, typer.Option("--budget", "-b", min=100, max=100000, help="Target token budget ceiling")
+    ] = 2000,
+    format_type: Annotated[
+        str, typer.Option("--format", help="Output table format: 'toon' or 'markdown'")
+    ] = "toon",
+    copy: Annotated[
+        bool, typer.Option("--copy", "-c", help="Copy compacted table back to clipboard")
+    ] = False,
+    stats: Annotated[
+        bool, typer.Option("--stats", "-s", help="Print token reduction stats to stderr")
+    ] = False,
+):
+    """Compress JSON arrays, CSV, or TSV data into compact TOON or Markdown table."""
+    from tokencut.core.clip import get_clipboard, set_clipboard
+    from tokencut.core.table import compact_table
+
+    if file is not None:
+        try:
+            raw = file.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise typer.BadParameter(f"Cannot read file: {exc}") from exc
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read()
+    else:
+        raw = get_clipboard()
+        if not raw:
+            err_console.print("[yellow]Clipboard is empty and no stdin provided.[/yellow]")
+            raise typer.Exit(code=1)
+
+    result = compact_table(raw, budget=budget, format_type=format_type)
+
+    if copy:
+        if set_clipboard(result.text):
+            err_console.print(
+                f"[green]Compacted table ({result.compacted_tokens} tokens) copied to clipboard![/green]"
+            )
+        else:
+            err_console.print("[yellow]Failed to copy to clipboard.[/yellow]")
+
+    if stats:
+        err_console.print(
+            f"[dim]Tokens: {result.original_tokens} -> {result.compacted_tokens} "
+            f"({result.reduction_pct}% reduction, saved {result.saved_tokens} tok) "
+            f"[{result.row_count} rows, {result.column_count} columns][/dim]"
+        )
+
+    _emit(result.text)
+
+
+prompt_app = typer.Typer(
+    name="prompt",
+    help="Audit and optimize system prompts for Anthropic, OpenAI, and Gemini prompt caching.",
+    no_args_is_help=True,
+)
+app.add_typer(prompt_app, name="prompt")
+
+
+@prompt_app.command("lint")
+def prompt_lint_command(
+    file: Annotated[Path, typer.Argument(help="Path to prompt or instructions file")],
+    json_output: Annotated[bool, typer.Option("--json", help="Emit audit as JSON")] = False,
+):
+    """Audit prompt for cache-busting dynamic elements in prefix."""
+    from tokencut.core.prompt_optimizer import lint_prompt
+
+    try:
+        raw = file.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise typer.BadParameter(f"Cannot read file: {exc}") from exc
+
+    result = lint_prompt(raw)
+    if json_output:
+        _emit(json.dumps(result, indent=2))
+        return
+
+    score = result["cacheability_score"]
+    color = "green" if score >= 80 else "yellow" if score >= 50 else "red"
+    err_console.print(f"[{color}]Prompt Cacheability Score: {score}/100[/{color}]")
+    if result["issues"]:
+        err_console.print("[bold red]Cache-Busting Issues Found in Prefix:[/bold red]")
+        for issue in result["issues"]:
+            err_console.print(f"  • {issue}")
+    if result["recommendations"]:
+        err_console.print("[bold cyan]Recommendations:[/bold cyan]")
+        for rec in result["recommendations"]:
+            err_console.print(f"  → {rec}")
+
+
+@prompt_app.command("align")
+def prompt_align_command(
+    file: Annotated[Path, typer.Argument(help="Path to prompt or instructions file")],
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Write aligned prompt to file")
+    ] = None,
+    copy: Annotated[
+        bool, typer.Option("--copy", "-c", help="Copy aligned prompt to clipboard")
+    ] = False,
+):
+    """Restructure prompt: move static instructions to prefix and isolate dynamic context to suffix."""
+    from tokencut.core.clip import set_clipboard
+    from tokencut.core.prompt_optimizer import align_prompt
+
+    try:
+        raw = file.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise typer.BadParameter(f"Cannot read file: {exc}") from exc
+
+    result = align_prompt(raw)
+    if output is not None:
+        output.write_text(result.aligned_text, encoding="utf-8")
+        err_console.print(f"[green]Aligned prompt written to {output}[/green]")
+    else:
+        _emit(result.aligned_text)
+
+    if copy:
+        if set_clipboard(result.aligned_text):
+            err_console.print("[green]Aligned prompt copied to clipboard![/green]")
+        else:
+            err_console.print("[yellow]Failed to copy to clipboard.[/yellow]")
+
+    err_console.print(f"[dim]Cacheability score: {result.cacheability_score}/100[/dim]")
+
+
 @app.command()
 def monitor(stdio: Annotated[bool, typer.Option("--stdio")] = False):
     """Local companion JSON-lines protocol (stdin/stdout; no listening port)."""

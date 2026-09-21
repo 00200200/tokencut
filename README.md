@@ -431,7 +431,7 @@ TokenCut replaces heavyweight LSP daemons with **native, in-process syntax index
 | Metric / Capability | Serena (LSP Daemons) | TokenCut (Native AST + SQLite) | Architectural Advantage |
 | :--- | :--- | :--- | :--- |
 | **Language Server Daemons** | 1–3+ background daemons | **0 daemons** (pure in-process AST) | Zero process management, zero RAM bloat |
-| **MCP Discovery Overhead** | 6,569 tokens (23 tools) | **~2,000 tokens** (12 lean tools) | **-70% context waste per turn** |
+| **MCP Discovery Overhead** | 6,569 tokens (23 tools) | **~2,200 tokens** (14 lean tools) | **-66% context waste per turn** |
 | **Memory Consumption** | 800MB – 2GB+ per language | **< 45MB** (embedded SQLite WAL) | **>95% lighter footprint** |
 | **Warm Query Latency** | 150ms – 400ms RPC roundtrip | **~16ms** local query | **10x–25x faster symbol lookups** |
 | **Syntax Error Resilience** | Fails / hangs on incomplete syntax | Resilient tree-sitter AST matching | Safe during incomplete active edits |
@@ -566,6 +566,80 @@ tokencut pack --json
 ```
 
 Each packed file is prefaced with an executive token summary table, markdown code fences, and CCR recovery references for any omitted implementations.
+
+---
+
+### In-Chat Conversation & Transcript Distiller (`tokencut distill` / MCP `tokencut_distill`)
+
+During complex agentic coding tasks, multi-turn chat sessions accumulate thousands of tokens of conversational pleasantries, obsolete intermediate code snippets, and verbose error traces. When continuing a conversation or migrating to a fresh prompt, dumping the entire transcript into the context exhausts model attention and token quota.
+
+`tokencut distill` parses conversational transcripts (Markdown dialogues, XML tags, or JSON-lines) and extracts a dense executive context block:
+
+```bash
+# Workflow: copy long chat thread in IDE -> run distill -> paste into fresh session!
+tokencut distill --copy --stats
+
+# Distill transcript file into an executive context within an 800 token budget
+tokencut distill --file session_transcript.md --budget 800 --copy
+```
+
+**Distilled Output Structure:**
+- **Goals & User Inquiries**: What the user requested and technical constraints.
+- **Key Decisions & Agreed Architecture**: Explicit choices and patterns agreed upon during the session.
+- **Resolved Issues & Discarded Attempts**: What failed and why (preventing the model from repeating discarded attempts).
+- **Referenced Files**: File paths touched or examined.
+- **Active Working State**: Current state and immediate next steps.
+- **Zero-Loss CCR Guarantee**: The full original transcript is preserved in SQLite CCR cache (`tokencut retrieve tc_*`).
+
+---
+
+### Columnar & TOON Structured Table Compressor (`tokencut table` / MCP `tokencut_table`)
+
+When agents query SQL databases or inspect REST API endpoints, standard JSON repeats key names for every single row (`{"id": 1, "status": "active", "created_at": "..."}`), wasting **60–75% of context** purely on syntax overhead.
+
+`tokencut table` converts JSON arrays of objects, CSV, or TSV data into **TOON (Token-Optimized Object Notation)** or clean Markdown tables:
+
+```bash
+# Compress JSON API response into TOON format (saving ~65% tokens)
+curl https://api.internal/v1/users | tokencut table --copy
+
+# Compress database query CSV export into a markdown table
+tokencut table query_dump.csv --format markdown --copy
+
+# Enforce a strict 1,000 token budget on large datasets
+tokencut table large_export.json --budget 1000 --copy
+```
+
+**TOON Format Preview:**
+```text
+[id | username | role | active | created_at]
+1 | alice | admin | true | 2026-01-15
+2 | bob | engineer | true | 2026-02-10
+3 | charlie | reviewer | false | 2026-03-01
+```
+
+Omitted rows beyond the budget ceiling are preserved in the local CCR cache with instant recovery references.
+
+---
+
+### Prompt Cache Prefix Aligner & Linter (`tokencut prompt`)
+
+Modern frontier models (Claude 3.7 / 3.5 Sonnet, GPT-4.5 / 4o, Gemini 2.0 / 1.5) offer native **Prompt Caching** (up to 90% cost reduction and 80% lower latency), but require an **exact, byte-level identical static prefix**. Volatile elements in the system prompt prefix (dynamic timestamps, UUIDs, volatile counters) bust the prompt cache on every turn.
+
+`tokencut prompt` audits and aligns prompt templates:
+
+```bash
+# Audit prompt for cache-busting dynamic elements in prefix
+tokencut prompt lint CLAUDE.md
+
+# Automatically align prompt: moves static rules to top and isolates dynamic context to suffix
+tokencut prompt align system_prompt.txt --output optimized_prompt.txt --copy
+```
+
+**What it fixes:**
+- Isolates volatile timestamps and session IDs into a clearly marked dynamic suffix block.
+- Normalizes key order and ensures deterministic formatting.
+- Reports a Prompt Cacheability Score (0–100) and actionable recommendations.
 
 ---
 
@@ -831,6 +905,9 @@ repos:
 | `tokencut hook --install --client claude` | Opts in to conservative filtering of Claude Code Bash results. |
 | `tokencut clip [--copy] [--file]` | In-chat clipboard & log compactor (folds tracebacks, deduplicates lines, scrubs secrets). |
 | `tokencut pack [paths] [--budget] [--skeleton]` | Local AI context packager outclassing Repomix/Gitingest with AST skeletons and hard token budgets. |
+| `tokencut distill [--file] [--copy] [--budget]` | In-chat transcript distiller extracting goals, decisions, and active state with CCR cache. |
+| `tokencut table [file] [--format toon\|markdown]` | Columnar & TOON table compressor eliminating repeated JSON keys by 60–75%. |
+| `tokencut prompt [lint\|align] <file>` | Audits and aligns prompt templates for Anthropic, OpenAI, and Gemini prompt caching. |
 | `tokencut stats [--format]` | Displays estimated lifetime savings in table, JSON, or Markdown. |
 | `tokencut demo` | Interactive visual demo benchmarking token savings on realistic failures. |
 

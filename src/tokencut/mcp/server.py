@@ -310,6 +310,54 @@ TOOLS_DEFINITIONS = [
         },
     },
     {
+        "name": "tokencut_distill",
+        "description": "Distill multi-turn chat transcripts or session histories into dense executive context (goals, decisions, modified files, active state) with zero loss CCR recovery.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "transcript": {
+                    "type": "string",
+                    "description": "Raw multi-turn conversation text or transcript.",
+                },
+                "budget": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 32000,
+                    "default": 1500,
+                    "description": "Target token budget ceiling for distilled context.",
+                },
+            },
+            "required": ["transcript"],
+        },
+    },
+    {
+        "name": "tokencut_table",
+        "description": "Compress JSON arrays of objects, CSV, or TSV data into compact TOON (Token-Optimized Object Notation) or Markdown table, eliminating repeated key bloat by 60-75%.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "description": "Raw JSON object array, CSV, or TSV string.",
+                },
+                "budget": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 32000,
+                    "default": 2000,
+                    "description": "Target token budget ceiling.",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["toon", "markdown"],
+                    "default": "toon",
+                    "description": "Output format: 'toon' (dense delimited) or 'markdown' table.",
+                },
+            },
+            "required": ["data"],
+        },
+    },
+    {
         "name": "tokencut_stats",
         "description": "Report estimated net output reduction, including footers and retrievals. Not model billing or subscription quota.",
         "inputSchema": {
@@ -332,6 +380,8 @@ for _tool in TOOLS_DEFINITIONS:
         "tokencut_edit_symbol",
         "tokencut_clip",
         "tokencut_pack",
+        "tokencut_distill",
+        "tokencut_table",
     }:
         _tool["inputSchema"]["properties"]["max_tokens"] = {
             "type": "integer",
@@ -636,6 +686,33 @@ def handle_tokencut_pack(arguments: dict[str, Any]) -> str:
     return _record("", res.bundle_text, operation="pack", project=root)
 
 
+@_timed
+def handle_tokencut_distill(arguments: dict[str, Any]) -> str:
+    from tokencut.core.distill import distill_conversation
+
+    transcript = arguments.get("transcript", "")
+    budget = arguments.get("budget", 1500)
+    if type(budget) is not int or not 100 <= budget <= 32000:
+        raise ValueError("budget must be an integer between 100 and 32000")
+    res = distill_conversation(transcript, budget=budget)
+    return _record(transcript, res.text, operation="distill")
+
+
+@_timed
+def handle_tokencut_table(arguments: dict[str, Any]) -> str:
+    from tokencut.core.table import compact_table
+
+    data = arguments.get("data", "")
+    budget = arguments.get("budget", 2000)
+    format_type = arguments.get("format", "toon")
+    if type(budget) is not int or not 100 <= budget <= 32000:
+        raise ValueError("budget must be an integer between 100 and 32000")
+    if format_type not in {"toon", "markdown"}:
+        raise ValueError("format must be 'toon' or 'markdown'")
+    res = compact_table(data, budget=budget, format_type=format_type)
+    return _record(data, res.text, operation="table")
+
+
 def handle_tokencut_context(arguments: dict[str, Any]) -> str:
     from tokencut.core.task_context import dispatch_context
 
@@ -691,7 +768,7 @@ def _respond(req: Any) -> dict[str, Any] | None:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "tokencut", "version": "0.1.0"},
-                "instructions": "Use tokencut_code for local map, symbol, text, outline, callers, and references searches; tokencut_read for exact qualified symbols; tokencut_edit_symbol for hash-guarded atomic symbol replacements; tokencut_pack to bundle multiple files with AST skeletons; tokencut_clip to clean and compact pasted text/logs. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
+                "instructions": "Use tokencut_code for local map, symbol, text, outline, callers, and references searches; tokencut_read for exact qualified symbols; tokencut_edit_symbol for hash-guarded atomic symbol replacements; tokencut_pack to bundle multiple files with AST skeletons; tokencut_clip to clean and compact pasted text/logs; tokencut_distill to condense long conversation transcripts; tokencut_table to compress JSON/CSV tables to TOON. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
             },
         }
     if method == "tools/list":
@@ -712,6 +789,8 @@ def _respond(req: Any) -> dict[str, Any] | None:
         "tokencut_json": handle_tokencut_json,
         "tokencut_clip": handle_tokencut_clip,
         "tokencut_pack": handle_tokencut_pack,
+        "tokencut_distill": handle_tokencut_distill,
+        "tokencut_table": handle_tokencut_table,
         "tokencut_stats": lambda _: handle_tokencut_stats(),
     }
     name, arguments = params.get("name"), params.get("arguments", {})
