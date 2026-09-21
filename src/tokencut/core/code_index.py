@@ -289,6 +289,7 @@ class CodeIndex:
                 "CREATE TABLE IF NOT EXISTS occurrences (path TEXT, name TEXT, line INT, col INT, context TEXT)"
             )
             db.execute("CREATE INDEX IF NOT EXISTS occurrence_name ON occurrences(name)")
+            db.execute("CREATE INDEX IF NOT EXISTS symbol_scope ON symbols(path, line, end_line)")
             db.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(path UNINDEXED, first UNINDEXED, body, tokenize='unicode61')"
             )
@@ -380,8 +381,19 @@ class CodeIndex:
             return len(seen)
 
     def query(self, mode="map", query="", file=None, limit=30) -> str:
-        if mode not in {"map", "symbols", "occurrences", "search", "pattern", "outline"}:
-            raise ValueError("mode must be map, symbols, occurrences, search, pattern, or outline")
+        if mode not in {
+            "map",
+            "symbols",
+            "occurrences",
+            "search",
+            "pattern",
+            "outline",
+            "references",
+            "callers",
+        }:
+            raise ValueError(
+                "mode must be map, symbols, occurrences, search, pattern, outline, references, or callers"
+            )
         if type(limit) is not int or not 1 <= limit <= 200:
             raise ValueError("limit must be 1–200")
         if file is not None:
@@ -405,6 +417,36 @@ class CodeIndex:
                 body = "\n".join(
                     f"{p}:{line}-{end} [{kind}] {name} | {signature}"
                     for p, name, line, end, kind, signature in rows[:limit]
+                )
+            elif mode in {"references", "callers"}:
+                target_name = query.split(".")[-1] if query else ""
+                if not target_name:
+                    raise ValueError("query is required to find references/callers")
+                rows = db.execute(
+                    """SELECT o.path, o.line, o.col, o.context,
+                       COALESCE((
+                           SELECT s.qualified || ' [' || s.kind || ']'
+                           FROM symbols s
+                           WHERE s.path = o.path
+                             AND o.line >= s.line AND o.line <= s.end_line
+                             AND s.name != o.name
+                           ORDER BY (s.end_line - s.line) ASC, s.line DESC
+                           LIMIT 1
+                       ), '<module>') AS caller
+                    FROM occurrences o
+                    WHERE o.name = ? AND (? IS NULL OR o.path = ?)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM symbols def_s
+                          WHERE def_s.path = o.path AND def_s.name = o.name AND def_s.line = o.line
+                      )
+                    ORDER BY o.path, o.line LIMIT ?""",
+                    (target_name, file, file, limit + 1),
+                ).fetchall()
+                matched_files = len({r[0] for r in rows[:limit]})
+                header += f"# References and callers for '{target_name}' across {matched_files} files (0 LSP daemons)\n"
+                body = "\n".join(
+                    f"{p}:{line}:{col + 1} in {caller} | {context.strip()}"
+                    for p, line, col, context, caller in rows[:limit]
                 )
             elif mode in {"symbols", "map"}:
                 rows = db.execute(

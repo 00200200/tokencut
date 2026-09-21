@@ -73,7 +73,7 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "tokencut_code",
-        "description": "Search a local syntax index or get a ranked repo map. Use symbols for definitions, occurrences for syntactic name matches (not LSP references), search for text, pattern for ast-grep patterns. Then read a qualified symbol with tokencut_read.",
+        "description": "Search a local syntax index or get a ranked repo map. Use symbols for definitions, occurrences for raw matches, outline for module hierarchy, references or callers to find symbol callers across project (0 LSP daemons), search for text, pattern for ast-grep patterns. Then read with tokencut_read or edit with tokencut_edit_symbol.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -83,7 +83,16 @@ TOOLS_DEFINITIONS = [
                 },
                 "mode": {
                     "type": "string",
-                    "enum": ["map", "symbols", "occurrences", "search", "pattern", "outline"],
+                    "enum": [
+                        "map",
+                        "symbols",
+                        "occurrences",
+                        "search",
+                        "pattern",
+                        "outline",
+                        "references",
+                        "callers",
+                    ],
                 },
                 "query": {"type": "string"},
                 "file": {"type": "string", "description": "Optional file relative to root."},
@@ -250,6 +259,57 @@ TOOLS_DEFINITIONS = [
         },
     },
     {
+        "name": "tokencut_clip",
+        "description": "Compact noisy text, logs, diffs, JSON, or stack traces with secret redaction and CCR recovery caching before pasting or sending in context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "The raw noisy text to compact.",
+                },
+                "budget": {
+                    "type": "integer",
+                    "minimum": 64,
+                    "maximum": 32000,
+                    "default": 2000,
+                    "description": "Target token budget ceiling for compacted output.",
+                },
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "tokencut_pack",
+        "description": "Pack multiple source files or directories into an AI-optimized prompt bundle with AST skeletonization, secret scrubbing, and token budget management.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "root": {
+                    "type": "string",
+                    "description": "Absolute project root directory.",
+                },
+                "paths": {
+                    "type": "array",
+                    "description": "List of relative or absolute file/directory paths to bundle.",
+                },
+                "budget": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 64000,
+                    "default": 4000,
+                    "description": "Token budget ceiling across all packed files.",
+                },
+                "skeleton": {
+                    "type": "boolean",
+                    "description": "If true, force AST structural skeletons for all code files.",
+                    "default": False,
+                },
+            },
+            "required": ["root"],
+        },
+    },
+    {
         "name": "tokencut_stats",
         "description": "Report estimated net output reduction, including footers and retrievals. Not model billing or subscription quota.",
         "inputSchema": {
@@ -266,7 +326,13 @@ for _tool in TOOLS_DEFINITIONS:
         "destructiveHint": _tool["name"]
         in {"tokencut_exec", "tokencut_context", "tokencut_edit_symbol"},
     }
-    if _tool["name"] not in {"tokencut_stats", "tokencut_context", "tokencut_edit_symbol"}:
+    if _tool["name"] not in {
+        "tokencut_stats",
+        "tokencut_context",
+        "tokencut_edit_symbol",
+        "tokencut_clip",
+        "tokencut_pack",
+    }:
         _tool["inputSchema"]["properties"]["max_tokens"] = {
             "type": "integer",
             "minimum": 64,
@@ -526,11 +592,48 @@ def _validate_arguments(name: str, arguments: Any) -> None:
     for required in schema.get("required", []):
         if required not in arguments:
             raise ValueError(f"Missing required argument: {required}")
-    types = {"string": str, "integer": int, "boolean": bool, "object": dict}
+    types = {"string": str, "integer": int, "boolean": bool, "object": dict, "array": list}
     for key, value in arguments.items():
         spec = schema["properties"].get(key)
         if spec and type(value) is not types[spec["type"]]:
             raise ValueError(f"{key} must be {spec['type']}")
+
+
+@_timed
+def handle_tokencut_clip(arguments: dict[str, Any]) -> str:
+    from tokencut.core.clip import compact_text
+
+    text = arguments.get("text", "")
+    budget = arguments.get("budget", 2000)
+    if type(budget) is not int or not 64 <= budget <= 32000:
+        raise ValueError("budget must be an integer between 64 and 32000")
+    res = compact_text(text, budget=budget)
+    return _record(text, res.text, operation="clip")
+
+
+@_timed
+def handle_tokencut_pack(arguments: dict[str, Any]) -> str:
+    from tokencut.core.pack import pack_context
+
+    root_str = arguments.get("root")
+    if not root_str:
+        raise ValueError("root is required")
+    root = Path(root_str).resolve()
+    if not root.is_dir():
+        raise ValueError(f"root must be a valid directory: {root_str}")
+    paths = arguments.get("paths")
+    budget = arguments.get("budget", 4000)
+    if type(budget) is not int or not 100 <= budget <= 64000:
+        raise ValueError("budget must be an integer between 100 and 64000")
+    force_skeleton = bool(arguments.get("skeleton", False))
+
+    res = pack_context(
+        paths=paths,
+        root=root,
+        budget=budget,
+        force_skeleton=force_skeleton,
+    )
+    return _record("", res.bundle_text, operation="pack", project=root)
 
 
 def handle_tokencut_context(arguments: dict[str, Any]) -> str:
@@ -588,7 +691,7 @@ def _respond(req: Any) -> dict[str, Any] | None:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "tokencut", "version": "0.1.0"},
-                "instructions": "Use tokencut_code for local map, symbol, text, outline, and structural searches; tokencut_read for exact qualified symbols; tokencut_edit_symbol for hash-guarded atomic symbol replacements. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
+                "instructions": "Use tokencut_code for local map, symbol, text, outline, callers, and references searches; tokencut_read for exact qualified symbols; tokencut_edit_symbol for hash-guarded atomic symbol replacements; tokencut_pack to bundle multiple files with AST skeletons; tokencut_clip to clean and compact pasted text/logs. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
             },
         }
     if method == "tools/list":
@@ -607,6 +710,8 @@ def _respond(req: Any) -> dict[str, Any] | None:
         "tokencut_diff": handle_tokencut_diff,
         "tokencut_tree": handle_tokencut_tree,
         "tokencut_json": handle_tokencut_json,
+        "tokencut_clip": handle_tokencut_clip,
+        "tokencut_pack": handle_tokencut_pack,
         "tokencut_stats": lambda _: handle_tokencut_stats(),
     }
     name, arguments = params.get("name"), params.get("arguments", {})

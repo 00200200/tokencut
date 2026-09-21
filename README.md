@@ -431,11 +431,12 @@ TokenCut replaces heavyweight LSP daemons with **native, in-process syntax index
 | Metric / Capability | Serena (LSP Daemons) | TokenCut (Native AST + SQLite) | Architectural Advantage |
 | :--- | :--- | :--- | :--- |
 | **Language Server Daemons** | 1–3+ background daemons | **0 daemons** (pure in-process AST) | Zero process management, zero RAM bloat |
-| **MCP Discovery Overhead** | 6,569 tokens (23 tools) | **1,769 tokens** (10 lean tools) | **-73% context waste per turn** |
+| **MCP Discovery Overhead** | 6,569 tokens (23 tools) | **~2,000 tokens** (12 lean tools) | **-70% context waste per turn** |
 | **Memory Consumption** | 800MB – 2GB+ per language | **< 45MB** (embedded SQLite WAL) | **>95% lighter footprint** |
 | **Warm Query Latency** | 150ms – 400ms RPC roundtrip | **~16ms** local query | **10x–25x faster symbol lookups** |
 | **Syntax Error Resilience** | Fails / hangs on incomplete syntax | Resilient tree-sitter AST matching | Safe during incomplete active edits |
 | **Structural Outline** | Multi-tool JSON traversals | `tokencut_code(mode="outline")` | Compact line-numbered signatures |
+| **Callers & References** | `find_referencing_symbols` (LSP) | `tokencut_code(mode="callers"|"references")` | **< 10ms** SQLite subquery, 0 daemons |
 | **Guarded Symbol Editing** | Unverified patch / full rewrite | `tokencut_edit_symbol` (atomic) | Pre-condition SHA-256 integrity guard |
 | **Privacy & Security** | Language server downloads / RPC | **100% local, zero network calls** | Completely private |
 
@@ -455,6 +456,27 @@ code_index.py:65-120 [class_definition] CodeIndex | class CodeIndex:
 code_index.py:80-92 [function_definition] CodeIndex.__init__ | def __init__(self, root: Path, cache_dir: Path | None = None) -> None:
 code_index.py:145-180 [function_definition] CodeIndex.sync | def sync(self) -> int:
 code_index.py:380-440 [function_definition] CodeIndex.query | def query(self, mode="map", query="", file=None, limit=30) -> str:
+```
+
+### Callers & Cross-Symbol References (`mode: "callers"` / `mode: "references"`)
+
+Finding where a function or symbol is invoked usually requires firing up a full language server or running an untargeted `grep` that matches strings in docstrings and comments.
+
+TokenCut queries the local syntax occurrence table in **< 10ms** without language servers, mapping call sites directly to their enclosing functions and classes:
+
+```bash
+# Discover callers: which functions/methods call verify_token?
+tokencut code "$PWD" --mode callers --query verify_token
+
+# Discover references: where is AuthService used across the codebase?
+tokencut code "$PWD" --mode references --query AuthService
+```
+
+Output format clearly identifies the call site line number and the enclosing function context:
+```text
+# callers 'verify_token': 1 occurrences across 1 files
+src/api/routes.py:84 in handle_login:
+        user = verify_token(credentials.token)
 ```
 
 ### Guarded Atomic Symbol Editing (`tokencut_edit_symbol`)
@@ -478,6 +500,72 @@ Every edit is cryptographically protected by the `expected_hash` returned by `to
 3. **Collision Prevention**: If another agent, process, or human modified the file in the interim, the operation aborts immediately with an error, preventing silent overwrites.
 
 The desktop pet companion continuously monitors symbol queries and guarded edits via `tokencut monitor --stdio`, keeping local token accounting accurate with zero cloud tracking.
+
+---
+
+## In-Chat Token Optimization & Context Packager
+
+TokenCut solves the two most common causes of chat context exhaustion when pairing with LLMs:
+1. **Pasting noisy terminal logs, stack traces, diffs, or JSON** into the prompt.
+2. **Packing entire repository trees or directories** into an LLM context without budgets or AST pruning.
+
+---
+
+### In-Chat Clipboard Compactor (`tokencut clip` / MCP `tokencut_clip`)
+
+When developers copy raw terminal logs or test failures into Claude or ChatGPT, they routinely waste 5,000–20,000 tokens on repetitive lines, recursive exception loops, and verbose JSON payloads.
+
+`tokencut clip` reads from your macOS clipboard (or stdin/file), scrubs known credentials, compacts repetitive noise, and copies the clean result straight back to your clipboard:
+
+```bash
+# Workflow: copy noisy logs in your terminal -> run clip -> paste into chat!
+tokencut clip --copy --stats
+
+# Compact a log file with a strict token ceiling
+tokencut clip --file error.log --budget 1500 --copy
+
+# Pipe directly through clip
+cat failure.log | tokencut clip --copy
+```
+
+**Key Optimizations Applied:**
+- **Recursive Exception Folding**: Automatically collapses deep recursive traceback loops (`RecursionError`, repeated frames) down to representative head/tail frames with repeat counters.
+- **Consecutive Line Deduplication**: Folds repeated terminal progress bars, log noise, and polling loops (`preceding line repeated 45 times total`).
+- **Automated Specialized Compaction**: Detects JSON structures (`slim_json`), unified git diffs (`slim_git_diff`), and test suites (`safe_compact_output`) automatically.
+- **Zero-Loss CCR Guarantee**: If a log exceeds the requested `--budget`, omitted sections are saved to SQLite CCR cache with a recoverable reference (`tokencut retrieve tc_*`).
+
+---
+
+### Local AI Context Packager (`tokencut pack` / MCP `tokencut_pack`)
+
+Packing repository code to provide context to an LLM is commonly handled by tools like **Repomix** or web-based services like **Gitingest**. However, both suffer from major flaws:
+
+| Feature / Architecture | Repomix | Gitingest | TokenCut Pack (`tokencut pack`) |
+| :--- | :--- | :--- | :--- |
+| **Privacy & Security** | Local, but no secret scrub | Sends proprietary code to 3rd party web servers | **100% Local (0 network calls) + automatic secret scrubbing** |
+| **Runtime & Dependencies** | Requires Node.js & npm | Web service | **Pure Python / uv — zero Node.js required** |
+| **AST Skeletonization** | Raw file dumps (no AST) | Raw file dumps (no AST) | **Automatic tree-sitter AST skeletons for files > 250 tokens** |
+| **Strict Token Budget** | Warning only | Soft limits | **Hard token ceiling enforcement with graceful line trimming** |
+| **Reversible Recovery** | Irreversible data loss | Irreversible | **Zero-loss CCR cache (`tokencut retrieve tc_*` for full files)** |
+| **macOS Clipboard Copy** | Manual file save / cat | Browser copy | **Direct native clipboard copy (`--copy` / `-c`)** |
+
+#### Packing Examples
+
+```bash
+# Pack entire repository into an AI context bundle within a 4,000 token budget
+tokencut pack --budget 4000 --copy
+
+# Force structural AST skeletons for all files (signatures & outlines only)
+tokencut pack --skeleton --budget 2000 --copy
+
+# Pack specific key files and write to bundle.md
+tokencut pack src/auth.py src/models.py tests/test_auth.py -o bundle.md
+
+# Inspect packed bundle metadata and token savings as JSON
+tokencut pack --json
+```
+
+Each packed file is prefaced with an executive token summary table, markdown code fences, and CCR recovery references for any omitted implementations.
 
 ---
 
@@ -741,6 +829,8 @@ repos:
 | `tokencut lint [file]` | Lints agent instruction files for prompt cache-busting elements. |
 | `tokencut mcp` | Starts the stdio JSON-RPC Model Context Protocol server. |
 | `tokencut hook --install --client claude` | Opts in to conservative filtering of Claude Code Bash results. |
+| `tokencut clip [--copy] [--file]` | In-chat clipboard & log compactor (folds tracebacks, deduplicates lines, scrubs secrets). |
+| `tokencut pack [paths] [--budget] [--skeleton]` | Local AI context packager outclassing Repomix/Gitingest with AST skeletons and hard token budgets. |
 | `tokencut stats [--format]` | Displays estimated lifetime savings in table, JSON, or Markdown. |
 | `tokencut demo` | Interactive visual demo benchmarking token savings on realistic failures. |
 

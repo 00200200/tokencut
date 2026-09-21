@@ -249,3 +249,44 @@ def test_cli_pr():
     res_md = runner.invoke(app, ["pr", "--markdown"])
     assert res_md.exit_code == 0
     assert "Token Impact Report" in res_md.output
+
+
+def test_cli_clip_file(tmp_path):
+    f = tmp_path / "noisy.log"
+    f.write_text("INFO line\n" * 30 + "DONE\n")
+    res = runner.invoke(app, ["clip", "--file", str(f), "--stats"])
+    assert res.exit_code == 0
+    assert "DONE" in res.output
+    assert "preceding line repeated" in res.output
+
+
+def test_cli_clip_stdin():
+    tb = "Traceback (most recent call last):\n" + (
+        "  File 'a.py', line 1, in foo\n    foo()\n" * 10
+    )
+    res = runner.invoke(
+        app,
+        ["clip", "--budget", "500"],
+        input=tb,
+    )
+    assert res.exit_code == 0
+    assert "identical recursive frame repeated" in res.output
+
+
+def test_cli_pack_json(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "test.py").write_text("def foo():\n    return 'bar'\n")
+    res = runner.invoke(app, ["pack", "--root", str(tmp_path), "--json"])
+    assert res.exit_code == 0
+    data = json.loads(res.output)
+    assert data["file_count"] >= 1
+    assert any(f["path"] == "src/test.py" for f in data["files"])
+
+
+def test_cli_pack_output(tmp_path):
+    (tmp_path / "hello.txt").write_text("hello world")
+    out = tmp_path / "bundle.md"
+    res = runner.invoke(app, ["pack", "--root", str(tmp_path), "--output", str(out)])
+    assert res.exit_code == 0
+    assert out.exists()
+    assert "hello world" in out.read_text()

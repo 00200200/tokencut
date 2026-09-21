@@ -315,3 +315,35 @@ def test_code_index_outline_mode(tmp_path):
     # Query outline via MCP server
     mcp_res = server.handle_tokencut_code({"root": str(root), "mode": "outline", "file": "auth.py"})
     assert "AuthService.authenticate" in mcp_res
+
+
+def test_code_index_references_and_callers_mode(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    auth = (
+        "class AuthService:\n    def verify_token(self, token: str) -> bool:\n        return True\n"
+    )
+    api = (
+        "from auth import AuthService\n\n"
+        "def login_endpoint(token: str) -> bool:\n"
+        "    auth = AuthService()\n"
+        "    return auth.verify_token(token)\n"
+    )
+    (root / "auth.py").write_text(auth)
+    (root / "api.py").write_text(api)
+    index = CodeIndex(root)
+
+    # Query callers
+    res = index.query(mode="callers", query="verify_token")
+    assert "# callers:" in res
+    assert "api.py:5:" in res
+    assert "in login_endpoint [function_definition]" in res
+    assert "auth.verify_token(token)" in res
+    # Should not list verify_token's own declaration line in auth.py
+    assert "def verify_token" not in res
+
+    # Query references alias via MCP
+    mcp_res = server.handle_tokencut_code(
+        {"root": str(root), "mode": "references", "query": "AuthService.verify_token"}
+    )
+    assert "login_endpoint" in mcp_res
