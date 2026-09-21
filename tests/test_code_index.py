@@ -306,10 +306,12 @@ def test_code_index_outline_mode(tmp_path):
     assert "# outline:" in outline
     assert "auth.py:1-6 [class_definition] AuthService" in outline
     assert "auth.py:2-3 [function_definition] AuthService.__init__" in outline
-    assert "auth.py:5-6 [function_definition] AuthService.authenticate | def authenticate(self, user: str) -> bool:" in outline
+    assert (
+        "auth.py:5-6 [function_definition] AuthService.authenticate | def authenticate(self, user: str) -> bool:"
+        in outline
+    )
     assert "auth.py:8-9 [function_definition] helper | def helper() -> None:" in outline
 
     # Query outline via MCP server
     mcp_res = server.handle_tokencut_code({"root": str(root), "mode": "outline", "file": "auth.py"})
     assert "AuthService.authenticate" in mcp_res
-

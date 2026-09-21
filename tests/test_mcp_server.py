@@ -351,4 +351,3 @@ def test_mcp_edit_symbol_preview_and_apply(tmp_path):
     )
     assert "Updated calc.py:" in applied
     assert "# updated" in f.read_text()
-
