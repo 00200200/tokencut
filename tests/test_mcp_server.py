@@ -197,6 +197,8 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
         "tokencut_json",
         "tokencut_clip",
         "tokencut_pack",
+        "tokencut_distill",
+        "tokencut_table",
         "tokencut_stats",
     }
     assert responses[2]["id"] == 3
@@ -391,3 +393,41 @@ def test_mcp_pack(tmp_path):
     text = res["result"]["content"][0]["text"]
     assert "TokenCut Context Bundle" in text
     assert "main.py" in text
+
+
+def test_mcp_distill():
+    transcript = "User: Build feature in app.py\n\nAssistant: We decided on SQLite.\n"
+    res = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 102,
+            "method": "tools/call",
+            "params": {
+                "name": "tokencut_distill",
+                "arguments": {"transcript": transcript, "budget": 500},
+            },
+        }
+    )
+    assert not res["result"]["isError"]
+    text = res["result"]["content"][0]["text"]
+    assert "Distilled Conversation Context" in text
+    assert "app.py" in text
+
+
+def test_mcp_table():
+    data = json.dumps([{"id": 1, "status": "ok"}, {"id": 2, "status": "pending"}])
+    res = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 103,
+            "method": "tools/call",
+            "params": {
+                "name": "tokencut_table",
+                "arguments": {"data": data, "budget": 500, "format": "toon"},
+            },
+        }
+    )
+    assert not res["result"]["isError"]
+    text = res["result"]["content"][0]["text"]
+    assert "[id | status]" in text
+    assert "1 | ok" in text

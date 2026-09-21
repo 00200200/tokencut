@@ -290,3 +290,35 @@ def test_cli_pack_output(tmp_path):
     assert res.exit_code == 0
     assert out.exists()
     assert "hello world" in out.read_text()
+
+
+def test_cli_distill(tmp_path):
+    f = tmp_path / "chat.txt"
+    f.write_text("User: Build feature in src/app.py\n\nAssistant: We decided to use SQLite.\n")
+    res = runner.invoke(app, ["distill", "--file", str(f), "--stats"])
+    assert res.exit_code == 0
+    assert "Distilled Conversation Context" in res.output
+    assert "src/app.py" in res.output
+
+
+def test_cli_table(tmp_path):
+    f = tmp_path / "data.json"
+    f.write_text(json.dumps([{"id": 1, "name": "foo"}, {"id": 2, "name": "bar"}]))
+    res = runner.invoke(app, ["table", "--file", str(f), "--stats"])
+    assert res.exit_code == 0
+    assert "[id | name]" in res.output
+    assert "1 | foo" in res.output
+
+
+def test_cli_prompt_lint_and_align(tmp_path):
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("Current time: 2026-09-21\nYou are an AI assistant.\n")
+    res_lint = runner.invoke(app, ["prompt", "lint", str(prompt_file)])
+    assert res_lint.exit_code == 0
+    assert "Cacheability Score" in res_lint.output
+
+    out_file = tmp_path / "aligned.txt"
+    res_align = runner.invoke(app, ["prompt", "align", str(prompt_file), "--output", str(out_file)])
+    assert res_align.exit_code == 0
+    assert out_file.exists()
+    assert "DYNAMIC RUNTIME CONTEXT" in out_file.read_text()
