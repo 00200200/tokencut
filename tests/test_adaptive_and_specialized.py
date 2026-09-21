@@ -6,6 +6,7 @@ from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.specialized import (
     auto_specialize_command_output,
+    filter_cargo_test,
     filter_git_log,
     filter_git_status,
 )
@@ -67,6 +68,40 @@ Date:   Mon Sep 15 14:00:00 2026 +0200
  2 files changed, 16 insertions(+), 8 deletions(-)
 """
 
+SAMPLE_CARGO_PASS = "\n".join(
+    [
+        "   Compiling acme-core v0.4.1 (/src/acme-core)",
+        "     Running unittests src/lib.rs (target/debug/deps/acme_core-3f9a2b1c)",
+        "",
+        "running 48 tests",
+    ]
+    + [f"test module{i // 8}::tests::case_{i} ... ok" for i in range(48)]
+    + [
+        "",
+        "test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; "
+        "finished in 0.31s",
+    ]
+)
+
+SAMPLE_CARGO_FAIL = """running 6 tests
+test config::tests::parses_defaults ... ok
+test config::tests::rejects_unknown_keys ... ok
+test parser::tests::handles_empty ... ok
+test parser::tests::rejects_bad_utf8 ... FAILED
+test parser::tests::roundtrip ... ok
+
+failures:
+
+---- parser::tests::rejects_bad_utf8 stdout ----
+thread 'parser::tests::rejects_bad_utf8' panicked at src/parser.rs:212:9:
+assertion `left == right` failed
+  left: Err(InvalidUtf8)
+ right: Ok(())
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; \
+finished in 0.08s
+"""
+
 
 def test_filter_git_log():
     compact = filter_git_log(SAMPLE_GIT_LOG)
@@ -125,6 +160,61 @@ def test_auto_specialize():
 
     res_none = auto_specialize_command_output("pytest -v", "some output")
     assert res_none is None
+
+
+def test_filter_cargo_test_collapses_passing_runs():
+    compact = filter_cargo_test(SAMPLE_CARGO_PASS)
+
+    assert "[TokenCut: 48 passing tests, 48 progress records]" in compact
+    assert "test module0::tests::case_0 ... ok" not in compact
+    # The authoritative summary and the compile banner must survive.
+    assert "test result: ok. 48 passed; 0 failed" in compact
+    assert "Compiling acme-core v0.4.1" in compact
+    assert count_tokens(compact).claude < count_tokens(SAMPLE_CARGO_PASS).claude
+
+
+def test_filter_cargo_test_keeps_failures_verbatim():
+    compact = filter_cargo_test(SAMPLE_CARGO_FAIL)
+
+    # Everything from the first diagnostic onward is reproduced untouched.
+    assert "test parser::tests::rejects_bad_utf8 ... FAILED" in compact
+    assert "panicked at src/parser.rs:212:9" in compact
+    assert "assertion `left == right` failed" in compact
+    assert "left: Err(InvalidUtf8)" in compact
+    assert "test result: FAILED. 5 passed; 1 failed" in compact
+    # Passes before the failure may still collapse; passes after it must not.
+    assert "test parser::tests::roundtrip ... ok" in compact
+
+
+def test_filter_cargo_test_leaves_output_without_passes_unchanged():
+    raw = "running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored\n"
+
+    assert filter_cargo_test(raw) == raw
+
+
+def test_auto_specialize_routes_cargo_test():
+    compact = auto_specialize_command_output("cargo test --all-features", SAMPLE_CARGO_PASS)
+
+    assert compact is not None
+    assert "[TokenCut: 48 passing tests, 48 progress records]" in compact
+
+
+def test_filter_cargo_test_collapses_tests_named_like_diagnostics():
+    raw = "\n".join(
+        ["running 3 tests"]
+        + [
+            "test error::tests::reports_failure ... ok",
+            "test warning::tests::timeout_is_logged ... ok",
+            "test parser::tests::panicked_input ... ok",
+        ]
+        + ["", "test result: ok. 3 passed; 0 failed; 0 ignored"]
+    )
+
+    compact = filter_cargo_test(raw)
+
+    # "error"/"warning" inside a test name must not stop collapsing.
+    assert "[TokenCut: 3 passing tests, 3 progress records]" in compact
+    assert "test result: ok. 3 passed; 0 failed" in compact
 
 
 def test_compress_to_budget():
