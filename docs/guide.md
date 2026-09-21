@@ -261,6 +261,16 @@ adapter's terminal CLI source. A missing terminal login does not mean the Code
 tab in Claude Desktop is signed out. ChatGPT chat and Antigravity quotas are not
 connected. Unavailable data is not shown as a full allowance.
 
+The pet labels the selected window (`5h` or `7d`) beside its remaining percentage.
+When readings are missing, it shows an action such as **Connect**, **Set up** or
+**Retry**. Click the provider for its specific cause. **Connect** for Claude means
+the quota reader needs a connection, not that Claude Desktop is signed out.
+In Terminal, run `claude auth login --claudeai`, complete the normal subscription
+sign-in, then click **Refresh limits**. The panel can copy this command for you.
+This does not change the active Claude Desktop session. No model call is required.
+Allow up to one minute for the terminal reader's usage/status cycle, especially
+after first sign-in. It runs in the background, so the panel remains responsive.
+
 ## Storage and measurements
 
 `TOKENCUT_CACHE_DIR` selects client storage (default `~/.tokencut`).

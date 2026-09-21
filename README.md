@@ -108,7 +108,11 @@ memory and available account-limit readings. English UI. Local storage. No extra
 *Actual macOS app with an authored transcript fixture. Compare before copying;
 preview counts are not recorded savings. [Log preparation screenshot →](assets/macos-prepare.png)*
 
-<p align="center"><img src="assets/macos-pet.png" width="310" alt="The actual draggable TokenCut pet and HUD, shown without account readings."></p>
+<p align="center"><img src="assets/macos-pet.png" width="310" alt="Native macOS TokenCut pet with example five-hour balances: Codex 68% left and Claude 42% left."></p>
+
+*Example balances: **Codex 68% left · Claude 42% left** in their five-hour windows.
+The pet shows live account readings when connected. These percentages are
+remaining allowance, not savings caused by TokenCut.*
 
 The animation above features the app's bundled artwork. The app uses subtle hover
 motion, not a continuously running 3D renderer. The CLI and MCP do not require the pet.

@@ -20,6 +20,9 @@ import time
 from pathlib import Path
 
 MAX_RESPONSE = 1024 * 1024
+# Claude's adapter can run a 20s usage probe, retry, then enrich with /status.
+# Bound the full cycle without cutting off a valid first-run reading at 30s.
+CLAUDE_QUOTA_TIMEOUT = 60
 
 CLAUDE_ISSUES = {
     "cli_missing": "The terminal Claude Code CLI was not found. Claude Desktop Code uses a separate bundled installation.",
@@ -272,6 +275,7 @@ def fetch_claude() -> list[dict]:
             "--json-only",
         ],
         environment,
+        timeout=CLAUDE_QUOTA_TIMEOUT,
     )
     entries = payload if isinstance(payload, list) else [payload]
     errors = [
@@ -355,6 +359,7 @@ class UsageCollector:
             ):
                 row.update(
                     status="unavailable",
+                    issue="reset_pending",
                     windows=[],
                     message="Reset time has passed; waiting for a fresh reading.",
                 )
@@ -375,6 +380,7 @@ class UsageCollector:
             message = str(exc)
         except FileNotFoundError:
             windows, status = [], "unavailable"
+            issue = "reader_missing"
             message = (
                 "Codex CLI is not installed."
                 if provider == "codex"
@@ -382,6 +388,7 @@ class UsageCollector:
             )
         except (TimeoutError, subprocess.TimeoutExpired):
             windows, status = [], "unavailable"
+            issue = "timeout"
             message = "The quota reader timed out. Try refreshing later."
         except Exception:
             windows, status = [], "unavailable"
