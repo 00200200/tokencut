@@ -46,7 +46,7 @@ tokencut run -- pytest -v
 
 - **Useful output, recoverable detail.** Fold recognized noise, keep diagnostics, and retrieve omitted text by reference.
 - **Code without whole-file dumps.** Search symbols, read exact methods, inspect outlines, and preview edits guarded by a file hash. Syntax indexing runs locally, without language-server daemons.
-- **Context you choose.** Package selected files, compact pasted logs or tables, and save short task checkpoints. Transcript distillation is explicit and lossy; it does not intercept chat.
+- **Context you choose.** Package selected files, compact pasted logs or tables, optimize mixed prompts autonomously, and save short task checkpoints. Transcript distillation is explicit and lossy; it does not intercept chat.
 - **Visible measurements.** Inspect before/after text counts and recovery overhead. Available account-limit readings stay separate from estimated text savings.
 
 Default command filtering preserves unfamiliar output. Stronger truncation is opt-in.
@@ -65,7 +65,7 @@ tokencut prepare --file draft.txt
 
 ## Connect your agent
 
-Use the **coding profile** for everyday development: 8 core tools instead of 14,
+Use the **coding profile** for everyday development: 8 core tools instead of 15,
 with **about 37% smaller tool schemas** in the current local `o200k_base` measurement
 (2,881 → 1,816 tokens). Tool loading varies by client; this is not a per-turn usage guarantee.
 

@@ -26,8 +26,8 @@ sessions after upgrading. Configuration checks do not prove live-client use.
 
 `tokencut mcp --profile coding` exposes code navigation, guarded edits, command
 execution, targeted reads, recovery, diffs, task memory and statistics: 8 tools.
-`tokencut mcp --profile full` exposes all 14 tools, including tree, JSON, clip,
-pack, distill and table. The default remains `full` for existing configurations.
+`tokencut mcp --profile full` exposes all 15 tools, including tree, JSON, clip,
+pack, distill, table and optimize. The default remains `full` for existing configurations.
 `TOKENCUT_MCP_PROFILE=coding` is equivalent; an explicit flag takes precedence.
 Profiles affect discovery and dispatch, not CLI availability or command output.
 
@@ -176,6 +176,7 @@ permissions; do not grant blanket command approval to the wrapper.
 
 | Command | Use |
 | --- | --- |
+| `tokencut optimize [target] --budget 2000` | Autonomous optimizer: intra-fence compaction, TOON, distill, cache align. |
 | `tokencut clip --file error.log --budget 1500` | Prepare a compact log for pasting. |
 | `tokencut pack src tests --budget 4000 --skeleton` | Package selected files within a context budget. |
 | `tokencut distill --file conversation.md --budget 800` | Extract a heuristic summary of a supplied transcript. |
