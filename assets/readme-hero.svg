@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="520" viewBox="0 0 1040 520">
+  <title>TokenCut — keep the signal, cut the noise</title>
+  <desc>Background artwork for the animated README, composed with the existing TokenCut pet by scripts/render_readme.sh. The benchmark is the built-in authored pytest fixture.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0c2021"/><stop offset="1" stop-color="#080f15"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#2ec79b" stop-opacity=".21"/><stop offset="1" stop-color="#2ec79b" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1040" height="520" rx="24" fill="url(#bg)"/>
+  <circle cx="847" cy="193" r="245" fill="url(#glow)"/>
+  <circle cx="847" cy="193" r="185" fill="none" stroke="#21483e" stroke-opacity=".45"/>
+  <circle cx="847" cy="193" r="154" fill="none" stroke="#21483e" stroke-opacity=".35"/>
+  <g fill="#eaf7f3" font-family="Arial, Helvetica, sans-serif">
+    <path d="M51 37c17-8 25 3 18 15-7 10-20 8-20-2 0-7 5-10 13-11-4 4-7 9-9 13" fill="#b3f5cd"/>
+    <text x="83" y="54" font-size="19" font-weight="700" letter-spacing="2">TOKENCUT</text>
+    <text x="49" y="150" font-size="64" font-weight="700" letter-spacing="-2">Keep the signal.</text>
+    <text x="49" y="221" font-size="64" font-weight="700" letter-spacing="-2" fill="#b3f5cd">Cut the noise.</text>
+    <text x="52" y="267" font-size="19" fill="#a7c3bb">Local context tools for your AI coding agent.</text>
+    <text x="52" y="309" font-size="12" letter-spacing="2" fill="#86ac9e">CLI  /  MCP  /  OPTIONAL macOS COMPANION</text>
+  </g>
+  <rect x="50" y="355" width="580" height="116" rx="16" fill="#102c29" stroke="#29463e"/>
+  <rect x="658" y="355" width="332" height="116" rx="16" fill="#b3f5cd"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="73" y="382" font-size="11" letter-spacing="1.2" fill="#a2c0b5">VERBOSE PYTEST · BUILT-IN DEMO</text>
+    <text x="73" y="423" font-size="35" font-weight="700" fill="#effbf5">1,562 <tspan fill="#779e8d">→</tspan> 174 <tspan font-size="16" font-weight="400" fill="#a2c0b5">tokens</tspan></text>
+    <text x="74" y="449" font-size="13" fill="#a2c0b5">Failure preserved. Original recoverable.</text>
+    <text x="683" y="413" font-size="44" font-weight="700" letter-spacing="-1.5" fill="#0d392a">88.9%</text>
+    <text x="685" y="443" font-size="14" fill="#22513f">less tool text in this fixture</text>
+    <text x="52" y="496" font-size="11" fill="#728f86">Local o200k_base estimate · No model calls · Not a subscription-usage claim</text>
+  </g>
+</svg>

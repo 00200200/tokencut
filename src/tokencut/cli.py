@@ -1076,9 +1076,24 @@ def lint(
 
 
 @app.command()
-def mcp():
+def mcp(
+    profile: Annotated[
+        str,
+        typer.Option(
+            "--profile",
+            envvar="TOKENCUT_MCP_PROFILE",
+            help="coding: 8 core tools; full: all tools (default)",
+        ),
+    ] = "full",
+):
     """Start the Model Context Protocol (MCP) server for Claude Code, Cursor, and Codex."""
-    run_mcp_stdio_server()
+    from tokencut.mcp.server import tool_definitions
+
+    try:
+        tool_definitions(profile)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    run_mcp_stdio_server(profile)
 
 
 @app.command()
