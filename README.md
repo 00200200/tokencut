@@ -52,6 +52,17 @@ tokencut run -- pytest -v
 Default command filtering preserves unfamiliar output. Stronger truncation is opt-in.
 Reference resolution uses syntax, not full LSP semantics. [Details and tradeoffs →](docs/guide.md)
 
+### Before you send a message
+
+Open **Prepare for chat** from the macOS pet or dashboard. Paste a log or a supplied
+transcript, compare both versions, and copy the preview into **Codex, Claude Desktop
+or a CLI chat**. No model calls. Conservative filtering is the default; conversation
+summaries are an explicit, lossy option. The same flow works in the terminal:
+
+```sh
+tokencut prepare --file draft.txt
+```
+
 ## Connect your agent
 
 Use the **coding profile** for everyday development: 8 core tools instead of 14,
@@ -91,6 +102,13 @@ inside its native terminal for commands that need its sandbox and approval flow.
 Our mint robot lives in a draggable macOS pet, or hides in the menu bar when you
 want a quiet desktop. Open it for tool-output measurements, recovery costs, task
 memory and available account-limit readings. English UI. Local storage. No extra AI calls.
+
+![The actual native macOS Prepare for chat window, comparing an authored conversation with a locally prepared summary.](assets/macos-conversation.png)
+
+*Actual macOS app with an authored transcript fixture. Compare before copying;
+preview counts are not recorded savings. [Log preparation screenshot →](assets/macos-prepare.png)*
+
+<p align="center"><img src="assets/macos-pet.png" width="310" alt="The actual draggable TokenCut pet and HUD, shown without account readings."></p>
 
 The animation above features the app's bundled artwork. The app uses subtle hover
 motion, not a continuously running 3D renderer. The CLI and MCP do not require the pet.

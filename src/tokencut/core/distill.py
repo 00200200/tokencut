@@ -191,11 +191,17 @@ def distill_conversation(text: str, budget: int = 1500) -> DistillResult:
 
     # Enforce budget ceiling
     if distilled_tokens > budget:
-        lines = distilled_text.splitlines(keepends=True)
-        keep = max(10, int(len(lines) * (budget / distilled_tokens) * 0.8))
-        distilled_text = (
-            "".join(lines[:keep]) + f"\n\n[... truncated to fit {budget} tokens. Ref: {ref_id}]\n"
-        )
+        notice = f"\n\n[Summary truncated to fit {budget} tokens. Full transcript: tokencut retrieve {ref_id}]\n"
+        # A single long assistant line can exceed the entire budget. Bound the
+        # complete emitted text, including recovery, without splitting Unicode.
+        low, high = 0, len(distilled_text)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if count_tokens(distilled_text[:middle] + notice).openai <= budget:
+                low = middle
+            else:
+                high = middle - 1
+        distilled_text = distilled_text[:low] + notice
         distilled_tokens = count_tokens(distilled_text).openai
 
     saved = max(0, original_tokens - distilled_tokens)

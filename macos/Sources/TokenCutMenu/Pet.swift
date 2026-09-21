@@ -38,6 +38,7 @@ struct PetView: View {
                     Menu {
                         Button("Limits and reset") { showLimits() }
                         Button("Savings") { model.tab = 0; PanelWindow.show(model) }
+                        Button("Prepare for chat…") { PrepareWindow.show() }.keyboardShortcut("k")
                         Button("Refresh limits") { model.refreshUsage(force: true) }
                         Button(model.snapshot?.paused == true ? "Resume optimization" : "Pause optimization", action: model.togglePause)
                         Divider()

@@ -323,6 +323,14 @@ class Monitor:
 
     def dispatch(self, request: dict) -> Any:
         operation = request.get("method")
+        if operation == "prepare":
+            from tokencut.core.prepare import prepare_text
+
+            return prepare_text(
+                request.get("text"),
+                mode=request.get("mode", "conservative"),
+                budget=request.get("budget", 1500),
+            )
         if operation in {"usage", "usage-refresh"}:
             return {"providers": self.usage.snapshot(force=operation == "usage-refresh")}
         if operation == "snapshot":
@@ -340,12 +348,13 @@ class Monitor:
         raise ValueError("unknown method")
 
     def serve(self, stream, output):
-        while line := stream.readline(65537):
+        limit = 1024 * 1024  # Allows an explicitly pasted 128 KiB draft, including JSON escapes.
+        while line := stream.readline(limit + 1):
             request = {}
             try:
-                if len(line) > 65536:
+                if len(line) > limit:
                     # Drain a malformed overlong line without parsing its fragments.
-                    while not line.endswith("\n") and (line := stream.readline(65537)):
+                    while not line.endswith("\n") and (line := stream.readline(limit + 1)):
                         pass
                     raise ValueError("request too large")
                 request = json.loads(line)
