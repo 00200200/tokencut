@@ -453,6 +453,93 @@ def prompt_align_command(
     err_console.print(f"[dim]Cacheability score: {result.cacheability_score}/100[/dim]")
 
 
+@app.command("optimize")
+def optimize_command(
+    target: Annotated[
+        str | None,
+        typer.Argument(
+            help="Optional file or directory to optimize (defaults to stdin or clipboard)"
+        ),
+    ] = None,
+    file: Annotated[
+        Path | None,
+        typer.Option("--file", "-f", help="Read input from file instead of stdin/clipboard"),
+    ] = None,
+    budget: Annotated[
+        int, typer.Option("--budget", "-b", min=100, max=200000, help="Target token budget ceiling")
+    ] = 2000,
+    copy: Annotated[
+        bool, typer.Option("--copy", "-c", help="Copy optimized result to clipboard")
+    ] = False,
+    stats: Annotated[
+        bool, typer.Option("--stats", "-s", help="Print token reduction stats to stderr")
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit structured optimization metrics as JSON")
+    ] = False,
+):
+    """Unified autonomous context optimizer.
+
+    Self-routes and applies hybrid intra-fence code compaction, TOON tabular compression,
+    conversation distillation, prompt cache alignment, and secret redaction with 0-loss CCR guarantee.
+    """
+    from tokencut.core.clip import get_clipboard, set_clipboard
+    from tokencut.core.optimizer import optimize_context
+    from tokencut.core.pack import pack_context
+
+    raw = ""
+    input_path = file or (Path(target) if target else None)
+    if input_path is not None:
+        if input_path.exists():
+            if input_path.is_dir():
+                raw = pack_context(input_path, budget=budget).bundle_text
+            else:
+                try:
+                    raw = input_path.read_text(encoding="utf-8", errors="replace")
+                except OSError as exc:
+                    err_console.print(
+                        f"[bold red]Error reading file {input_path}:[/bold red] {exc}"
+                    )
+                    raise typer.Exit(code=1)
+        else:
+            err_console.print(f"[bold red]Target path not found:[/bold red] {input_path}")
+            raise typer.Exit(code=1)
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read()
+    else:
+        clip_content = get_clipboard()
+        if clip_content:
+            raw = clip_content
+            err_console.print("[dim]Reading from clipboard...[/dim]")
+        else:
+            err_console.print("[yellow]Clipboard is empty and no file/stdin provided.[/yellow]")
+            raise typer.Exit(code=1)
+
+    result = optimize_context(raw, budget=budget)
+
+    if json_output:
+        _emit(json.dumps(result.to_dict(), indent=2))
+        return
+
+    if copy:
+        if set_clipboard(result.text):
+            err_console.print(
+                f"[green]Optimized context ({result.optimized_tokens} tokens) copied to clipboard![/green]"
+            )
+        else:
+            err_console.print("[yellow]Failed to copy to clipboard.[/yellow]")
+
+    if stats:
+        stages = " -> ".join(result.pipeline_stages)
+        err_console.print(
+            f"[dim]Tokens: {result.original_tokens} -> {result.optimized_tokens} "
+            f"({result.reduction_pct}% reduction, saved {result.saved_tokens} tok) "
+            f"[mode: {result.primary_mode}, stages: {stages}, ref: {result.ref_id}][/dim]"
+        )
+
+    _emit(result.text)
+
+
 @app.command()
 def monitor(stdio: Annotated[bool, typer.Option("--stdio")] = False):
     """Local companion JSON-lines protocol (stdin/stdout; no listening port)."""

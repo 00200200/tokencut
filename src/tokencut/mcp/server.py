@@ -358,6 +358,27 @@ TOOLS_DEFINITIONS = [
         },
     },
     {
+        "name": "tokencut_optimize",
+        "description": "Unified autonomous context optimizer. Self-routes prompts, intra-fence code blocks (JSON -> TOON, diffs -> slim), conversation transcripts, and noisy logs with secret redaction and 0-loss CCR guarantee.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The raw prompt, code, log, table, or conversation content to optimize.",
+                },
+                "budget": {
+                    "type": "integer",
+                    "minimum": 64,
+                    "maximum": 64000,
+                    "default": 2000,
+                    "description": "Target token budget ceiling for optimized context.",
+                },
+            },
+            "required": ["content"],
+        },
+    },
+    {
         "name": "tokencut_stats",
         "description": "Report estimated net output reduction, including footers and retrievals. Not model billing or subscription quota.",
         "inputSchema": {
@@ -382,6 +403,7 @@ for _tool in TOOLS_DEFINITIONS:
         "tokencut_pack",
         "tokencut_distill",
         "tokencut_table",
+        "tokencut_optimize",
     }:
         _tool["inputSchema"]["properties"]["max_tokens"] = {
             "type": "integer",
@@ -713,6 +735,18 @@ def handle_tokencut_table(arguments: dict[str, Any]) -> str:
     return _record(data, res.text, operation="table")
 
 
+@_timed
+def handle_tokencut_optimize(arguments: dict[str, Any]) -> str:
+    from tokencut.core.optimizer import optimize_context
+
+    content = arguments.get("content", "")
+    budget = arguments.get("budget", 2000)
+    if type(budget) is not int or not 64 <= budget <= 64000:
+        raise ValueError("budget must be an integer between 64 and 64000")
+    res = optimize_context(content, budget=budget)
+    return _record(content, res.text, operation="optimize")
+
+
 def handle_tokencut_context(arguments: dict[str, Any]) -> str:
     from tokencut.core.task_context import dispatch_context
 
@@ -768,7 +802,7 @@ def _respond(req: Any) -> dict[str, Any] | None:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "tokencut", "version": "0.1.0"},
-                "instructions": "Use tokencut_code for local map, symbol, text, outline, callers, and references searches; tokencut_read for exact qualified symbols; tokencut_edit_symbol for hash-guarded atomic symbol replacements; tokencut_pack to bundle multiple files with AST skeletons; tokencut_clip to clean and compact pasted text/logs; tokencut_distill to condense long conversation transcripts; tokencut_table to compress JSON/CSV tables to TOON. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
+                "instructions": "Use tokencut_optimize for unified autonomous prompt, code block, table, transcript, and log optimization; tokencut_code for local map, symbol, text, outline, callers, and references searches; tokencut_read for exact qualified symbols; tokencut_edit_symbol for hash-guarded atomic symbol replacements; tokencut_pack to bundle multiple files with AST skeletons; tokencut_clip to clean and compact pasted text/logs; tokencut_distill to condense long conversation transcripts; tokencut_table to compress JSON/CSV tables to TOON. Prefer tokencut_exec for verbose noninteractive project commands, with an explicit absolute cwd. Omit max_tokens/max_lines to preserve diagnostics; setting them permits truncation. Use targeted tokencut_read and recover needed omitted lines with tokencut_retrieve. Do not repeat an already successful command just to compress it. Keep normal approvals. This server does not intercept chat or other tools, and does not change model quotas.",
             },
         }
     if method == "tools/list":
@@ -791,6 +825,7 @@ def _respond(req: Any) -> dict[str, Any] | None:
         "tokencut_pack": handle_tokencut_pack,
         "tokencut_distill": handle_tokencut_distill,
         "tokencut_table": handle_tokencut_table,
+        "tokencut_optimize": handle_tokencut_optimize,
         "tokencut_stats": lambda _: handle_tokencut_stats(),
     }
     name, arguments = params.get("name"), params.get("arguments", {})

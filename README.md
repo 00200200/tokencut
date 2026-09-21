@@ -431,7 +431,7 @@ TokenCut replaces heavyweight LSP daemons with **native, in-process syntax index
 | Metric / Capability | Serena (LSP Daemons) | TokenCut (Native AST + SQLite) | Architectural Advantage |
 | :--- | :--- | :--- | :--- |
 | **Language Server Daemons** | 1–3+ background daemons | **0 daemons** (pure in-process AST) | Zero process management, zero RAM bloat |
-| **MCP Discovery Overhead** | 6,569 tokens (23 tools) | **~2,200 tokens** (14 lean tools) | **-66% context waste per turn** |
+| **MCP Discovery Overhead** | 6,569 tokens (23 tools) | **~2,300 tokens** (15 lean tools) | **-65% context waste per turn** |
 | **Memory Consumption** | 800MB – 2GB+ per language | **< 45MB** (embedded SQLite WAL) | **>95% lighter footprint** |
 | **Warm Query Latency** | 150ms – 400ms RPC roundtrip | **~16ms** local query | **10x–25x faster symbol lookups** |
 | **Syntax Error Resilience** | Fails / hangs on incomplete syntax | Resilient tree-sitter AST matching | Safe during incomplete active edits |
@@ -505,9 +505,43 @@ The desktop pet companion continuously monitors symbol queries and guarded edits
 
 ## In-Chat Token Optimization & Context Packager
 
-TokenCut solves the two most common causes of chat context exhaustion when pairing with LLMs:
-1. **Pasting noisy terminal logs, stack traces, diffs, or JSON** into the prompt.
-2. **Packing entire repository trees or directories** into an LLM context without budgets or AST pruning.
+TokenCut solves the primary causes of chat context exhaustion when pairing with LLMs:
+1. **Unstructured mixed prompts**: prompts containing Markdown code fences (JSON, diffs, logs) embedded alongside human instructions.
+2. **Pasting noisy terminal logs, stack traces, diffs, or raw database JSON** into the prompt.
+3. **Packing entire repository trees or directories** into an LLM context without budgets or AST pruning.
+
+---
+
+### Flagship Autonomous Context Optimizer (`tokencut optimize` / MCP `tokencut_optimize`)
+
+Rather than deciding which compression command or tool to use manually, `tokencut optimize` is an **autonomous self-routing optimizer** that analyzes incoming prompts, files, codebases, or clipboard contents and applies a unified 5-stage pipeline:
+
+1. **Secret Redaction**: Automatically sanitizes API keys (Anthropic, OpenAI, Gemini, AWS, GitHub tokens, DB URLs) before they reach any model.
+2. **Hybrid Intra-Fence Compaction**: Parses Markdown code fences (` ```json `, ` ```diff `, ` ```text ` logs) embedded inside instructions, compacts each block with its domain-specific engine (e.g. converting embedded JSON arrays to TOON tabular notation or folding diffs/tracebacks), and preserves surrounding natural language instructions untouched.
+3. **Semantic Classification & Routing**:
+   - **JSON / CSV / TSV**: Compressed into tabular **TOON** notation.
+   - **Multi-Turn Chat Transcripts**: Distilled into executive goals, architectural decisions, modified files, and active state.
+   - **System Prompts**: Audited and aligned to maximize Anthropic / OpenAI prompt cache prefix hits.
+   - **Terminal Logs & Tracebacks**: Folded, deduplicated, and condensed.
+4. **Hard Budget Ceiling Enforcement**: Enforces a strict token ceiling (`--budget 2000`) with graceful head/tail retention.
+5. **Zero-Loss CCR Guarantee**: Full uncompressed content is safely saved to local SQLite CCR cache with an instant recovery reference (`tokencut retrieve tc_*`).
+
+```bash
+# Optimize whatever is on your macOS clipboard and copy clean result back:
+tokencut optimize --copy --stats
+
+# Optimize a prompt or instructions file:
+tokencut optimize prompt.md --budget 1500 --copy
+
+# Pipe from stdin:
+cat query_results.json | tokencut optimize --budget 800
+
+# Optimize an entire directory (auto-packs and skeletonizes):
+tokencut optimize src/ --budget 3000 --copy
+
+# Output structured metrics as JSON:
+tokencut optimize prompt.md --json
+```
 
 ---
 
@@ -884,6 +918,7 @@ repos:
 
 | Command | Description |
 | :--- | :--- |
+| `tokencut optimize [target] [--budget] [--copy]` | Flagship autonomous context optimizer (intra-fence hybrid, TOON tables, distill, cache align). |
 | `tokencut run -- <cmd>` | Safely filters command output; `--compact` or `--budget` permits truncation. |
 | `tokencut code <root>` | Queries local syntax index (`--mode outline\|symbols\|map\|search\|pattern`; 0 LSP daemons). |
 | `tokencut edit-symbol <path> <sym>` | Performs guarded atomic symbol surgery (`--replacement-file`, `--expected-hash`, `--apply`). |

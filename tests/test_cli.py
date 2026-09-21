@@ -322,3 +322,29 @@ def test_cli_prompt_lint_and_align(tmp_path):
     assert res_align.exit_code == 0
     assert out_file.exists()
     assert "DYNAMIC RUNTIME CONTEXT" in out_file.read_text()
+
+
+def test_cli_optimize_file(tmp_path):
+    f = tmp_path / "prompt.md"
+    f.write_text("""Review this table:
+```json
+[{"id": 1, "status": "active"}, {"id": 2, "status": "idle"}]
+```
+Any observations?
+""")
+    res = runner.invoke(app, ["optimize", str(f), "--stats"])
+    assert res.exit_code == 0
+    assert "Review this table:" in res.output
+    assert "[id | status]" in res.output
+    assert "1 | active" in res.output
+
+
+def test_cli_optimize_json(tmp_path):
+    f = tmp_path / "input.txt"
+    f.write_text("User: Hello\nAssistant: Hi there!")
+    res = runner.invoke(app, ["optimize", str(f), "--json"])
+    assert res.exit_code == 0
+    data = json.loads(res.output)
+    assert "original_tokens" in data
+    assert "optimized_tokens" in data
+    assert "ref_id" in data

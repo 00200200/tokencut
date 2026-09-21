@@ -199,6 +199,7 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
         "tokencut_pack",
         "tokencut_distill",
         "tokencut_table",
+        "tokencut_optimize",
         "tokencut_stats",
     }
     assert responses[2]["id"] == 3
@@ -431,3 +432,32 @@ def test_mcp_table():
     text = res["result"]["content"][0]["text"]
     assert "[id | status]" in text
     assert "1 | ok" in text
+
+
+def test_mcp_optimize():
+    prompt = """
+Please analyze this user data:
+```json
+[
+  {"id": 1, "name": "Alice", "role": "admin"},
+  {"id": 2, "name": "Bob", "role": "user"}
+]
+```
+Let me know if you see any issues.
+"""
+    res = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 104,
+            "method": "tools/call",
+            "params": {
+                "name": "tokencut_optimize",
+                "arguments": {"content": prompt, "budget": 1000},
+            },
+        }
+    )
+    assert not res["result"]["isError"]
+    text = res["result"]["content"][0]["text"]
+    assert "Please analyze this user data:" in text
+    assert "[id | name | role]" in text
+    assert "Alice" in text
