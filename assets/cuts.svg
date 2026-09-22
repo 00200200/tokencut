@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="280" viewBox="0 0 960 280" role="img" aria-labelledby="title desc">
+  <title id="title">Measured TokenCut savings on authored fixtures</title>
+  <desc id="desc">docker 18360 to 107, cargo 3795 to 185, go 3281 to 64, pytest noisy 5111 to 348. Local o200k_base estimates.</desc>
+  <defs>
+    <style>
+      .sans { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    </style>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2ec79b"/>
+      <stop offset="100%" stop-color="#7dffb3"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="280" rx="16" fill="#07141a" stroke="#1e3a34"/>
+  <text x="28" y="40" class="sans" font-size="14" font-weight="700" letter-spacing="2" fill="#6f9588">SEE IT CUT · AUTHORIZED FIXTURES</text>
+
+  <!-- docker -->
+  <g transform="translate(28, 64)">
+    <text class="mono" x="0" y="0" font-size="13" fill="#9bb8ae">docker build</text>
+    <text class="mono" x="900" y="0" text-anchor="end" font-size="13" font-weight="700" fill="#b3f5cd">18,360 ’ 107 · 99.4%</text>
+    <rect y="12" width="904" height="10" rx="5" fill="#122722"/>
+    <rect y="12" width="9" height="10" rx="5" fill="url(#bar)"/>
+  </g>
+  <!-- go -->
+  <g transform="translate(28, 108)">
+    <text class="mono" x="0" y="0" font-size="13" fill="#9bb8ae">go test</text>
+    <text class="mono" x="900" y="0" text-anchor="end" font-size="13" font-weight="700" fill="#b3f5cd">3,281 ’ 64 · 98.0%</text>
+    <rect y="12" width="904" height="10" rx="5" fill="#122722"/>
+    <rect y="12" width="18" height="10" rx="5" fill="url(#bar)"/>
+  </g>
+  <!-- cargo -->
+  <g transform="translate(28, 152)">
+    <text class="mono" x="0" y="0" font-size="13" fill="#9bb8ae">cargo test</text>
+    <text class="mono" x="900" y="0" text-anchor="end" font-size="13" font-weight="700" fill="#b3f5cd">3,795 ’ 185 · 95.1%</text>
+    <rect y="12" width="904" height="10" rx="5" fill="#122722"/>
+    <rect y="12" width="44" height="10" rx="5" fill="url(#bar)"/>
+  </g>
+  <!-- pytest noisy -->
+  <g transform="translate(28, 196)">
+    <text class="mono" x="0" y="0" font-size="13" fill="#9bb8ae">pytest noisy failure</text>
+    <text class="mono" x="900" y="0" text-anchor="end" font-size="13" font-weight="700" fill="#b3f5cd">5,111 ’ 348 · 93.2%</text>
+    <rect y="12" width="904" height="10" rx="5" fill="#122722"/>
+    <rect y="12" width="62" height="10" rx="5" fill="url(#bar)"/>
+  </g>
+
+  <text x="28" y="256" class="mono" font-size="11" fill="#5d7a71">Local o200k_base · failure kept · original recoverable · not billing or quota · tokencut demo --json</text>
+</svg>

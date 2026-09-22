@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
   <title id="title">TokenCut - keep the signal, cut the noise</title>
-  <desc id="desc">Dark hero for TokenCut. Built-in authored pytest fixture: 1,562 tokens cut to 174, failure preserved, original recoverable. Local estimate, no model calls.</desc>
+  <desc id="desc">Dark hero for TokenCut. Authored fixtures: docker 18,360→107, cargo 3,795→185, pytest 1,562→174. Local estimate, no model calls.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#07161a"/>
