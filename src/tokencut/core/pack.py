@@ -56,6 +56,50 @@ class PackResult:
         }
 
 
+def _render_bundle(
+    root: Path,
+    packed_files: list[PackedFile],
+    budget: int,
+    format_type: str = "markdown",
+) -> str:
+    total_packed = sum(f.packed_tokens for f in packed_files)
+    if format_type.lower() == "xml":
+        lines = [
+            f'<documents root="{root.name}" file_count="{len(packed_files)}" estimated_tokens="{total_packed}" budget="{budget}">'
+        ]
+        for idx, pf in enumerate(packed_files, 1):
+            is_skel = ' mode="skeleton"' if pf.is_skeleton else ' mode="full"'
+            lines.append(
+                f'  <document index="{idx}" path="{pf.path}" tokens="{pf.packed_tokens}"{is_skel}>'
+            )
+            lines.append(f"    <source>{pf.path}</source>")
+            lines.append("    <document_content>")
+            lines.append(pf.content.strip())
+            lines.append("    </document_content>")
+            lines.append("  </document>")
+        lines.append("</documents>")
+        return "\n".join(lines)
+
+    header = [
+        f"# TokenCut Context Bundle ({root.name})",
+        f"Files: {len(packed_files)} · Estimated tokens: ~{total_packed} (Budget: {budget})",
+        "",
+        "## File Summary",
+        "```text",
+    ]
+    for pf in packed_files:
+        mode_str = "AST Skeleton" if pf.is_skeleton else "Full Source"
+        header.append(f"{pf.path:<40} {pf.packed_tokens:>6} tok  [{mode_str}]")
+    header.append("```\n")
+
+    sections: list[str] = ["\n".join(header)]
+    for pf in packed_files:
+        lang = Path(pf.path).suffix.lstrip(".") or "text"
+        title_suffix = " (AST Skeleton)" if pf.is_skeleton else ""
+        sections.append(f"## {pf.path}{title_suffix}\n```{lang}\n{pf.content.strip()}\n```\n")
+    return "\n".join(sections)
+
+
 def pack_context(
     paths: list[str | Path] | None = None,
     root: Path | None = None,
@@ -135,9 +179,7 @@ def pack_context(
         )
 
     # Second pass: budget enforcement
-    # If running_packed_tokens exceeds budget, compress lowest-priority files further
     if running_packed_tokens > budget and packed_files:
-        # Keep high-level tree intact, truncate remaining files
         budget_per_file = max(20, (budget - len(packed_files) * 25) // len(packed_files))
         for pf in packed_files:
             if pf.packed_tokens > budget_per_file:
@@ -157,28 +199,7 @@ def pack_context(
                     pf.content = "".join(lines[:keep_count]) + trunc_note
                     pf.packed_tokens = count_tokens(pf.content).openai
 
-    # Construct final bundle text
-    header = [
-        f"# TokenCut Context Bundle ({root.name})",
-        f"Files: {len(packed_files)} · Estimated tokens: ~{sum(f.packed_tokens for f in packed_files)} (Budget: {budget})",
-        "",
-        "## File Summary",
-        "```text",
-    ]
-    for pf in packed_files:
-        mode_str = "AST Skeleton" if pf.is_skeleton else "Full Source"
-        header.append(f"{pf.path:<40} {pf.packed_tokens:>6} tok  [{mode_str}]")
-    header.append("```")
-    header.append("")
-
-    sections: list[str] = ["\n".join(header)]
-
-    for pf in packed_files:
-        lang = Path(pf.path).suffix.lstrip(".") or "text"
-        title_suffix = " (AST Skeleton)" if pf.is_skeleton else ""
-        sections.append(f"## {pf.path}{title_suffix}\n```{lang}\n{pf.content.strip()}\n```\n")
-
-    bundle_text = "\n".join(sections)
+    bundle_text = _render_bundle(root, packed_files, budget, format_type=format_type)
     final_tokens = count_tokens(bundle_text).openai
 
     # Adaptive loop to strictly satisfy budget ceiling
@@ -199,23 +220,7 @@ def pack_context(
         largest.content = "".join(lines[:new_keep]) + trunc_note
         largest.packed_tokens = count_tokens(largest.content).openai
 
-        hdr = [
-            f"# TokenCut Context Bundle ({root.name})",
-            f"Files: {len(packed_files)} · Estimated tokens: ~{sum(f.packed_tokens for f in packed_files)} (Budget: {budget})",
-            "",
-            "## File Summary",
-            "```text",
-        ]
-        for pf in packed_files:
-            mode_str = "AST Skeleton" if pf.is_skeleton else "Full Source"
-            hdr.append(f"{pf.path:<40} {pf.packed_tokens:>6} tok  [{mode_str}]")
-        hdr.append("```\n")
-        sec = ["\n".join(hdr)]
-        for pf in packed_files:
-            lang = Path(pf.path).suffix.lstrip(".") or "text"
-            title_suffix = " (AST Skeleton)" if pf.is_skeleton else ""
-            sec.append(f"## {pf.path}{title_suffix}\n```{lang}\n{pf.content.strip()}\n```\n")
-        bundle_text = "\n".join(sec)
+        bundle_text = _render_bundle(root, packed_files, budget, format_type=format_type)
         final_tokens = count_tokens(bundle_text).openai
 
     saved = max(0, total_original_tokens - final_tokens)

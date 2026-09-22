@@ -550,3 +550,22 @@ Let me know if you see any issues.
     assert "Please analyze this user data:" in text
     assert "[id | name | role]" in text
     assert "Alice" in text
+
+
+def test_mcp_pack_xml(tmp_path):
+    (tmp_path / "main.py").write_text("print('hello')\n")
+    res = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 105,
+            "method": "tools/call",
+            "params": {
+                "name": "tokencut_pack",
+                "arguments": {"root": str(tmp_path), "format": "xml", "budget": 1000},
+            },
+        }
+    )
+    assert not res["result"]["isError"]
+    text = res["result"]["content"][0]["text"]
+    assert "<documents" in text
+    assert "<source>main.py</source>" in text

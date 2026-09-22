@@ -230,6 +230,12 @@ def pack_command(
     output: Annotated[
         Path | None, typer.Option("--output", "-o", help="Write bundle to output file")
     ] = None,
+    format_type: Annotated[
+        str,
+        typer.Option(
+            "--format", "-f", help="Bundle format: markdown | xml (Anthropic prompt format)"
+        ),
+    ] = "markdown",
     json_output: Annotated[bool, typer.Option("--json", help="Emit pack summary as JSON")] = False,
 ):
     """Pack repository files into an AI-optimized context bundle with AST skeletons and secret scrubbing."""
@@ -243,6 +249,7 @@ def pack_command(
         root=project_root,
         budget=budget,
         force_skeleton=skeleton,
+        format_type=format_type,
     )
 
     if json_output:

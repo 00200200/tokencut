@@ -321,6 +321,15 @@ def test_cli_pack_output(tmp_path):
     assert "hello world" in out.read_text()
 
 
+def test_cli_pack_format_xml(tmp_path):
+    (tmp_path / "index.js").write_text("console.log('hi');")
+    res = runner.invoke(app, ["pack", "--root", str(tmp_path), "--format", "xml"])
+    assert res.exit_code == 0
+    assert "<documents" in res.output
+    assert "<source>index.js</source>" in res.output
+    assert "</documents>" in res.output
+
+
 def test_cli_distill(tmp_path):
     f = tmp_path / "chat.txt"
     f.write_text("User: Build feature in src/app.py\n\nAssistant: We decided to use SQLite.\n")

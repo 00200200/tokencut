@@ -99,3 +99,19 @@ def test_pack_context_to_dict(tmp_path: Path):
     assert "bundle_text" in d
     assert len(d["files"]) == 1
     assert d["files"][0]["path"] == "hello.py"
+
+
+def test_pack_context_xml_format(tmp_path: Path):
+    f1 = tmp_path / "app.py"
+    f1.write_text("def run():\n    return 42\n")
+    f2 = tmp_path / "notes.txt"
+    f2.write_text("some notes")
+
+    res = pack_context(root=tmp_path, budget=2000, format_type="xml")
+    assert "<documents" in res.bundle_text
+    assert '<document index="1"' in res.bundle_text
+    assert "<source>app.py</source>" in res.bundle_text
+    assert "<document_content>" in res.bundle_text
+    assert "def run():" in res.bundle_text
+    assert "</document>" in res.bundle_text
+    assert "</documents>" in res.bundle_text

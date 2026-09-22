@@ -326,6 +326,12 @@ TOOLS_DEFINITIONS = [
                     "description": "If true, force AST structural skeletons for all code files.",
                     "default": False,
                 },
+                "format": {
+                    "type": "string",
+                    "enum": ["markdown", "xml"],
+                    "description": "Bundle format: markdown (default) or xml (Anthropic prompt format).",
+                    "default": "markdown",
+                },
             },
             "required": ["root"],
         },
@@ -801,12 +807,14 @@ def handle_tokencut_pack(arguments: dict[str, Any]) -> str:
     if type(budget) is not int or not 100 <= budget <= 64000:
         raise ValueError("budget must be an integer between 100 and 64000")
     force_skeleton = bool(arguments.get("skeleton", False))
+    format_type = str(arguments.get("format", "markdown"))
 
     res = pack_context(
         paths=paths,
         root=root,
         budget=budget,
         force_skeleton=force_skeleton,
+        format_type=format_type,
     )
     return _record("", res.bundle_text, operation="pack", project=root)
 
