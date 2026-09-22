@@ -42,7 +42,10 @@ from tokencut.core.pr_analyzer import analyze_pr_tokens
 from tokencut.core.rules_linter import lint_rule_content, minify_rules
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
-from tokencut.core.specialized import auto_specialize_command_output
+from tokencut.core.specialized import (
+    auto_specialize_command_output,
+    filter_gh_command_output,
+)
 from tokencut.core.spill import spill_large_output
 from tokencut.core.telemetry import TelemetryStore, record_text, recovery_engine
 from tokencut.core.tree_scanner import render_tree, scan_directory
@@ -701,31 +704,40 @@ def run(
     if dedup is not None:
         compacted = dedup
     else:
-        # Large-output spill (Copilot-style): file path + preview + recovery ref.
-        spilled = spill_large_output(raw_output, source=f"run:{family}") if raw_output else None
-        if spilled is not None and selected != "none":
-            compacted = spilled.preview
+        # Prefer structured gh JSON slim+spill over crude head/tail spill.
+        gh_compact = (
+            filter_gh_command_output(full_cmd, raw_output)
+            if raw_output and selected != "none"
+            else None
+        )
+        if gh_compact is not None:
+            compacted = gh_compact
         else:
-            # Step 1: Check specialized command handler
-            specialized = None if safe else auto_specialize_command_output(full_cmd, raw_output)
-            base_text = specialized if specialized is not None else raw_output
-
-            # Step 2: Apply adaptive budget or standard compaction
-            if selected == "none":
-                compacted = raw_output
-            elif budget is not None:
-                compacted = compress_to_budget(
-                    base_text, max_tokens=budget, source="run", original_text=raw_output
-                )
-            elif safe:
-                compacted = safe_compact_output(
-                    raw_output, command=full_cmd, exit_code=proc.returncode
-                )
-            elif len(base_text) > 500 and base_text.lstrip().startswith(("{", "[")):
-                compacted = slim_json(base_text, max_array_items=3)
+            # Large-output spill (Copilot-style): file path + preview + recovery ref.
+            spilled = spill_large_output(raw_output, source=f"run:{family}") if raw_output else None
+            if spilled is not None and selected != "none":
+                compacted = spilled.preview
             else:
-                opts = CleanerOptions(max_lines=max_lines)
-                compacted = compact_terminal_output(base_text, opts)
+                # Step 1: Check specialized command handler
+                specialized = None if safe else auto_specialize_command_output(full_cmd, raw_output)
+                base_text = specialized if specialized is not None else raw_output
+
+                # Step 2: Apply adaptive budget or standard compaction
+                if selected == "none":
+                    compacted = raw_output
+                elif budget is not None:
+                    compacted = compress_to_budget(
+                        base_text, max_tokens=budget, source="run", original_text=raw_output
+                    )
+                elif safe:
+                    compacted = safe_compact_output(
+                        raw_output, command=full_cmd, exit_code=proc.returncode
+                    )
+                elif len(base_text) > 500 and base_text.lstrip().startswith(("{", "[")):
+                    compacted = slim_json(base_text, max_array_items=3)
+                else:
+                    opts = CleanerOptions(max_lines=max_lines)
+                    compacted = compact_terminal_output(base_text, opts)
 
     if compacted:
         # Rich markup/wrapping can alter diagnostic text and hide recovery refs.

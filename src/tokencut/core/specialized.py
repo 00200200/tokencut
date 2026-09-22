@@ -5,8 +5,10 @@ import re
 import shlex
 from pathlib import PurePath
 
+from tokencut.core.cache import ContextCache
 from tokencut.core.diff_slimmer import slim_git_diff
-from tokencut.core.json_slimmer import slim_json
+from tokencut.core.json_slimmer import slim_json, slim_json_data
+from tokencut.core.spill import spill_large_output
 
 # `git log` indents commit messages by exactly four spaces. Patch bodies (-p) and
 # --stat blocks sit at other indents, so they must be detected explicitly instead
@@ -779,12 +781,235 @@ def filter_eslint(raw_output: str) -> str:
     return "\n".join(result) if result else raw_output
 
 
+_GH_BODY_KEYS = frozenset({"body", "bodyText", "messageBody", "text"})
+_GH_ARRAY_CAPS = {
+    "commits": 5,
+    "files": 8,
+    "reviews": 3,
+    "comments": 3,
+    "labels": 8,
+    "assignees": 5,
+    "reviewRequests": 5,
+    "statusCheckRollup": 5,
+}
+_GH_TEXT_BODY_KEEP = 600
+
+
+def _gh_argv(command: str) -> list[str] | None:
+    if not command or "\n" in command:
+        return None
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return None
+    return words or None
+
+
+def _is_gh_command(command: str) -> bool:
+    words = _gh_argv(command)
+    return bool(words) and PurePath(words[0]).name == "gh"
+
+
+def _is_gh_json_command(command: str) -> bool:
+    """Recognize ``gh api`` and any ``gh … --json`` invocation."""
+    words = _gh_argv(command)
+    if not words or PurePath(words[0]).name != "gh":
+        return False
+    if len(words) >= 2 and words[1] == "api":
+        return True
+    return any(word == "--json" or word.startswith("--json=") for word in words[1:])
+
+
+def _is_gh_text_view_command(command: str) -> bool:
+    words = _gh_argv(command)
+    if not words or PurePath(words[0]).name != "gh" or len(words) < 3:
+        return False
+    if any(word == "--json" or word.startswith("--json=") for word in words[1:]):
+        return False
+    return words[1] in {"pr", "issue"} and words[2] == "view"
+
+
+def _truncate_gh_string(value: str, limit: int = 400) -> str:
+    if len(value) <= limit:
+        return value
+    omitted = len(value) - limit
+    return value[:limit] + f"... [{omitted} chars omitted]"
+
+
+def _slim_gh_payload(data: object) -> object:
+    """Prefer PR/issue signal fields; cap noisy arrays and long markdown bodies."""
+    if isinstance(data, list):
+        cap = 5
+        kept = [_slim_gh_payload(item) for item in data[:cap]]
+        if len(data) > cap:
+            kept.append(f"... {len(data) - cap} array items omitted by tokencut ...")
+        return kept
+
+    if not isinstance(data, dict):
+        if isinstance(data, str):
+            return _truncate_gh_string(data, 120)
+        return data
+
+    result: dict[str, object] = {}
+    for key, value in data.items():
+        if key in {"author", "user", "editor", "mergedBy"} and isinstance(value, dict):
+            login = value.get("login")
+            result[key] = {"login": login} if isinstance(login, str) else _slim_gh_payload(value)
+            continue
+        if key in _GH_BODY_KEYS and isinstance(value, str):
+            result[key] = _truncate_gh_string(value, 400)
+            continue
+        if key == "commits" and isinstance(value, list):
+            cap = _GH_ARRAY_CAPS["commits"]
+            commits = []
+            for item in value[:cap]:
+                if isinstance(item, dict):
+                    commits.append(
+                        {
+                            "oid": item.get("oid") or item.get("sha"),
+                            "messageHeadline": item.get("messageHeadline")
+                            or item.get("message_headline")
+                            or item.get("message"),
+                        }
+                    )
+                else:
+                    commits.append(_slim_gh_payload(item))
+            if len(value) > cap:
+                commits.append(f"... {len(value) - cap} array items omitted by tokencut ...")
+            result[key] = commits
+            continue
+        if key == "files" and isinstance(value, list):
+            cap = _GH_ARRAY_CAPS["files"]
+            files = []
+            for item in value[:cap]:
+                if isinstance(item, dict):
+                    files.append(
+                        {
+                            "path": item.get("path") or item.get("filename"),
+                            "additions": item.get("additions"),
+                            "deletions": item.get("deletions"),
+                        }
+                    )
+                else:
+                    files.append(_slim_gh_payload(item))
+            if len(value) > cap:
+                files.append(f"... {len(value) - cap} array items omitted by tokencut ...")
+            result[key] = files
+            continue
+        if key == "labels" and isinstance(value, list):
+            names: list[object] = []
+            for item in value[: _GH_ARRAY_CAPS["labels"]]:
+                if isinstance(item, dict) and isinstance(item.get("name"), str):
+                    names.append(item["name"])
+                elif isinstance(item, str):
+                    names.append(item)
+                else:
+                    names.append(_slim_gh_payload(item))
+            if len(value) > _GH_ARRAY_CAPS["labels"]:
+                names.append(f"... {len(value) - _GH_ARRAY_CAPS['labels']} labels omitted ...")
+            result[key] = names
+            continue
+        if key in _GH_ARRAY_CAPS and isinstance(value, list):
+            cap = _GH_ARRAY_CAPS[key]
+            kept = [_slim_gh_payload(item) for item in value[:cap]]
+            if len(value) > cap:
+                kept.append(f"... {len(value) - cap} array items omitted by tokencut ...")
+            result[key] = kept
+            continue
+        result[key] = _slim_gh_payload(value)
+    return result
+
+
+def filter_gh_text_view(raw_output: str) -> str | None:
+    """Fold long markdown bodies from ``gh pr view`` / ``gh issue view`` text mode."""
+    if not raw_output.strip():
+        return None
+    lines = raw_output.splitlines()
+    meta: list[str] = []
+    body_start = 0
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            body_start = index + 1
+            break
+        # gh prints ``key:\tvalue`` metadata before the blank-line-separated body.
+        if ":\t" in line or (":" in line and index < 12):
+            meta.append(line)
+            body_start = index + 1
+            continue
+        body_start = index
+        break
+    else:
+        return None
+
+    body = "\n".join(lines[body_start:])
+    if len(body) < _GH_TEXT_BODY_KEEP + 200:
+        return None
+
+    kept = body[:_GH_TEXT_BODY_KEEP].rstrip()
+    omitted = len(body) - len(kept)
+    parts = meta + [
+        "",
+        kept,
+        f"[TokenCut: {omitted} body chars omitted; full output recoverable via spill/CCR]",
+    ]
+    return "\n".join(parts)
+
+
+def filter_gh_command_output(command: str, raw_output: str) -> str | None:
+    """Specialize ``gh pr view`` / ``gh api`` (and related) with JSON spill + slim.
+
+    Large JSON payloads are written to the spill directory and CCR, then replaced
+    with a structured slim that keeps PR/issue signal fields. Text-mode
+    ``gh pr|issue view`` folds oversized markdown bodies.
+    """
+    if not raw_output or not _is_gh_command(command):
+        return None
+
+    stripped = raw_output.strip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            parsed = None
+        if parsed is not None:
+            slimmed_data = _slim_gh_payload(parsed)
+            # Fall back to generic depth/string limits for residual nesting.
+            slimmed_data = slim_json_data(
+                slimmed_data, max_array_items=3, max_string_len=120, max_depth=6
+            )
+            slimmed = json.dumps(slimmed_data, indent=2)
+            explicit = _is_gh_json_command(command)
+            if not explicit and len(slimmed) > len(raw_output) * 0.85:
+                return None
+
+            spilled = spill_large_output(raw_output, source="gh-json")
+            if spilled is not None:
+                header = (
+                    f"[TokenCut spill: {spilled.bytes_written:,} bytes → {spilled.path}]\n"
+                    f"// [tokencut: raw JSON ({len(raw_output):,} bytes) compacted. "
+                    f"Ref: {spilled.ref_id}]\n"
+                )
+            else:
+                ref_id = ContextCache().store(raw_output, source="gh-json")
+                header = (
+                    f"// [tokencut: raw JSON ({len(raw_output):,} bytes) compacted. "
+                    f"Ref: {ref_id}]\n"
+                )
+            return header + slimmed
+
+    if _is_gh_text_view_command(command):
+        return filter_gh_text_view(raw_output)
+    return None
+
+
 def filter_json_output(raw_output: str, command: str = "") -> str | None:
     """Automatically slim large or verbose JSON output from commands.
 
-    Targeted for commands like `gh api`, `docker inspect`, `curl`, `kubectl -o json`,
-    or any command output that is valid JSON with substantial array or nested structures.
-    Full uncompressed payload is cached in SQLite CCR with a recovery reference.
+    Targeted for commands like `gh api`, `gh pr view --json`, `docker inspect`,
+    `curl`, `kubectl -o json`, or any command output that is valid JSON with
+    substantial array or nested structures. Full uncompressed payload is cached
+    in SQLite CCR with a recovery reference.
     """
     stripped = raw_output.strip()
     if not (stripped.startswith("{") or stripped.startswith("[")):
@@ -795,6 +1020,9 @@ def filter_json_output(raw_output: str, command: str = "") -> str | None:
         kw in cmd_lower
         for kw in (
             "gh api",
+            "gh pr",
+            "gh issue",
+            "--json",
             "docker inspect",
             "podman inspect",
             "-o json",
@@ -984,6 +1212,9 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
     """Detect if command has a specialized ultra-dense filter."""
     cmd_lower = command.lower().strip()
     cargo_sub = _cargo_subcommand(command.strip())
+    gh_compact = filter_gh_command_output(command, raw_output)
+    if gh_compact is not None:
+        return gh_compact
     if cmd_lower.startswith("git log"):
         return filter_git_log(raw_output)
     elif cmd_lower.startswith("git status"):
