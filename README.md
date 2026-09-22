@@ -46,34 +46,40 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 
 ## See it cut
 
-`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, and unknown output stays unchanged.
+`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, and Ruff frames compact.
 
 ```
                  TokenCut: verify your installation
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃ Authored pytest fixture                            ┃ Result       ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ Estimated output tokens (includes recovery notice) │ 1,562 -> 174 │
-│ Estimated text reduction                           │ 88.9%        │
-│ complete failure tail preserved                    │ PASS         │
-│ original recovered exactly                         │ PASS         │
-│ unknown output unchanged                           │ PASS         │
-│ smaller including recovery notice                  │ PASS         │
-└────────────────────────────────────────────────────┴──────────────┘
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ Authored fixture                         ┃ Result             ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ pytest (incl. recovery notice)           │ 1,562 -> 174 (88.9%) │
+│ git diff (lockfile + code hunk)          │ 855 -> 111 (87.0%) │
+│ ruff check (full frames)                 │ 146 -> 82 (43.8%)  │
+│ complete failure tail preserved          │ PASS               │
+│ original recovered exactly               │ PASS               │
+│ unknown output unchanged                 │ PASS               │
+│ git diff folds lockfile keeps code       │ PASS               │
+│ ruff keeps codes drops frames            │ PASS               │
+│ smaller including recovery notice        │ PASS               │
+└──────────────────────────────────────────┴────────────────────┘
 ```
 
-| Built-in pytest fixture | Tokens |
+| Authored fixture | Tokens |
 | --- | ---: |
-| Original output | 1,562 |
-| TokenCut output (incl. recovery notice) | **174** |
+| pytest original → TokenCut (incl. recovery) | 1,562 → **174** |
+| `git diff` with lockfile noise | 855 → **111** |
+| `ruff check` full frames | 146 → **82** |
 
-**88.9% less tool text on this authored fixture.** Reproduce with `tokencut demo --json`.
+**88.9% less tool text on the pytest fixture; 87% on a lockfile-heavy diff.** Reproduce with `tokencut demo --json`.
 Local `o200k_base` estimate — not a billing, quality, or subscription-limit claim.
 
 Try it on a real command:
 
 ```sh
 tokencut run -- pytest -v
+tokencut run -- git diff
+tokencut run -- ruff check .
 ```
 
 ## What you get
