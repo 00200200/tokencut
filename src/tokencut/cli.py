@@ -1541,6 +1541,64 @@ def demo(
         "✖ 3 problems (3 errors, 0 warnings)\n"
     )
 
+    noisy_mypy = """src/auth/session.py:12: error: Name "os" is not defined  [name-defined]
+    |
+  10 | import sys
+  11 | import json
+  12 | print(os.getcwd())
+    |           ^
+  13 | return True
+    |
+src/auth/session.py:44: error: Incompatible return value type (got "None", expected "str")  [return-value]
+    |
+  42 | def refresh() -> str:
+  43 |     client = Client()
+  44 |     return None
+    |            ^
+    |
+src/models/user.py:18: error: Missing named argument "email" for "User"  [call-arg]
+    |
+  17 | def build():
+  18 |     return User(id=1, name="Alice")
+    |            ^
+    |
+src/models/user.py:31: error: Incompatible types in assignment (expression has type "str", variable has type "int")  [assignment]
+    |
+  30 | age: int
+  31 | age = "thirty"
+    |       ^
+  32 | return age
+    |
+src/api/handlers.py:7: error: Argument 1 to "loads" has incompatible type "bytes"; expected "str"  [arg-type]
+    |
+   5 | import json
+   6 | def parse(raw: bytes):
+   7 |     return json.loads(raw)
+    |                         ^
+    |
+src/api/handlers.py:22: error: Item "None" of "str | None" has no attribute "strip"  [union-attr]
+    |
+  21 | def clean(value: str | None) -> str:
+  22 |     return value.strip()
+    |            ^
+    |
+src/db/pool.py:55: error: Need type annotation for "cache"  [var-annotated]
+    |
+  53 | class Pool:
+  54 |     def __init__(self):
+  55 |         self.cache = {}
+    |              ^
+    |
+src/db/pool.py:88: error: Returning Any from function declared to return "Connection"  [no-any-return]
+    |
+  87 | def connect(self):
+  88 |     return self._factory()
+    |            ^
+    |
+src/auth/session.py:44: note: Error code "return-value" not covered by "type: ignore" comment
+Found 8 errors in 4 files (checked 24 source files)
+"""
+
     # A disposable cache makes the demo independent of the user's project and
     # existing history. Always restore an explicit caller-provided cache path.
     previous_cache = os.environ.get("TOKENCUT_CACHE_DIR")
@@ -1562,6 +1620,7 @@ def demo(
                 auto_specialize_command_output("npx eslint . --format codeframe", noisy_eslint)
                 or ""
             )
+            mypy_compact = auto_specialize_command_output("mypy src", noisy_mypy) or ""
             checks = {
                 "complete_failure_tail_preserved": failure_tail in compacted,
                 "original_recovered_exactly": recovered == noisy_pytest,
@@ -1596,6 +1655,12 @@ def demo(
                     and "at Module._compile" not in eslint_compact
                     and eslint_compact.count("src/auth/session.ts:12:8 error") == 1
                 ),
+                "mypy_keeps_codes_drops_frames": (
+                    "[name-defined]" in mypy_compact
+                    and "[return-value]" in mypy_compact
+                    and "Found 8 errors in 4 files" in mypy_compact
+                    and "print(os.getcwd())" not in mypy_compact
+                ),
             }
         finally:
             if previous_cache is None:
@@ -1616,6 +1681,8 @@ def demo(
     tsc_output_tokens = count_tokens(tsc_compact).openai
     eslint_raw_tokens = count_tokens(noisy_eslint).openai
     eslint_output_tokens = count_tokens(eslint_compact).openai
+    mypy_raw_tokens = count_tokens(noisy_mypy).openai
+    mypy_output_tokens = count_tokens(mypy_compact).openai
     passed = all(checks.values())
     result = {
         "measurement": "local tokenizer estimate on authored fixtures; not model billing or quota",
@@ -1657,6 +1724,13 @@ def demo(
                 "output_tokens": eslint_output_tokens,
                 "reduction_pct": round(
                     100 * (eslint_raw_tokens - eslint_output_tokens) / eslint_raw_tokens, 1
+                ),
+            },
+            "mypy": {
+                "raw_tokens": mypy_raw_tokens,
+                "output_tokens": mypy_output_tokens,
+                "reduction_pct": round(
+                    100 * (mypy_raw_tokens - mypy_output_tokens) / mypy_raw_tokens, 1
                 ),
             },
         },
@@ -1706,6 +1780,13 @@ def demo(
             (
                 f"{eslint_raw_tokens:,} -> {eslint_output_tokens:,} "
                 f"({result['specialized']['eslint']['reduction_pct']}%)"
+            ),
+        )
+        table.add_row(
+            "mypy --pretty (frames)",
+            (
+                f"{mypy_raw_tokens:,} -> {mypy_output_tokens:,} "
+                f"({result['specialized']['mypy']['reduction_pct']}%)"
             ),
         )
         for name, ok in checks.items():

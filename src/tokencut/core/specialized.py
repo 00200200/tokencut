@@ -629,6 +629,37 @@ def _eslint_relpath(path: str) -> str:
     return normalized.rsplit("/", 1)[-1]
 
 
+# mypy --pretty repeats source/caret frames under each diagnostic.
+# Keep error/note headers (with codes); drop the pretty frame body.
+_MYPY_DIAG_RE = re.compile(r"^(\S+:\d+:(?:\d+:)?\s+(?:error|warning|note|unreachable):\s+.+)$")
+
+
+def filter_mypy(raw_output: str) -> str:
+    """Compact mypy ``--pretty`` frames into dense diagnostics with codes kept."""
+    lines = raw_output.splitlines()
+    if not any(
+        ": error:" in line or ": warning:" in line or ": note:" in line or ": unreachable:" in line
+        for line in lines
+    ):
+        return raw_output
+
+    result: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _MYPY_DIAG_RE.match(stripped):
+            result.append(stripped)
+            continue
+        if stripped.startswith(("Found ", "Success:")):
+            result.append(stripped)
+            continue
+        # Drop pretty source context and caret underlines.
+        continue
+
+    return "\n".join(result)
+
+
 def filter_eslint(raw_output: str) -> str:
     """Compact verbose ESLint stylish/codeframe output into dense unique diagnostics."""
     lines = raw_output.splitlines()
@@ -958,6 +989,8 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         )
     ):
         return filter_tsc(raw_output)
+    elif _is_mypy_command(cmd_lower):
+        return filter_mypy(raw_output)
     elif _is_eslint_command(cmd_lower):
         return filter_eslint(raw_output)
     elif _is_ruff_command(cmd_lower):
@@ -1036,6 +1069,25 @@ def _is_go_test_command(command: str) -> bool:
     if len(words) < 2:
         return False
     return PurePath(words[0]).name.lower() in {"go", "go.exe"} and words[1] == "test"
+
+
+def _is_mypy_command(cmd_lower: str) -> bool:
+    """Recognize direct and common launcher forms for mypy."""
+    prefixes = (
+        "mypy",
+        "uv run mypy",
+        "uvx mypy",
+        "python -m mypy",
+        "python3 -m mypy",
+        "poetry run mypy",
+        "pipenv run mypy",
+    )
+    return any(
+        cmd_lower == prefix
+        or cmd_lower.startswith(prefix + " ")
+        or cmd_lower.startswith(prefix + "\t")
+        for prefix in prefixes
+    )
 
 
 def _is_eslint_command(cmd_lower: str) -> bool:

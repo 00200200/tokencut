@@ -16,6 +16,7 @@ from tokencut.core.specialized import (
     filter_go_test,
     filter_jest_vitest,
     filter_json_output,
+    filter_mypy,
     filter_npm_install,
     filter_pip_install,
     filter_pyright,
@@ -478,6 +479,64 @@ def _sample_docker_build_fail() -> str:
     )
     return "\n".join(lines)
 
+
+SAMPLE_MYPY_PRETTY = """src/auth/session.py:12: error: Name "os" is not defined  [name-defined]
+    |
+  10 | import sys
+  11 | import json
+  12 | print(os.getcwd())
+    |           ^
+  13 | return True
+    |
+src/auth/session.py:44: error: Incompatible return value type (got "None", expected "str")  [return-value]
+    |
+  42 | def refresh() -> str:
+  43 |     client = Client()
+  44 |     return None
+    |            ^
+    |
+src/models/user.py:18: error: Missing named argument "email" for "User"  [call-arg]
+    |
+  17 | def build():
+  18 |     return User(id=1, name="Alice")
+    |            ^
+    |
+src/models/user.py:31: error: Incompatible types in assignment (expression has type "str", variable has type "int")  [assignment]
+    |
+  30 | age: int
+  31 | age = "thirty"
+    |       ^
+  32 | return age
+    |
+src/api/handlers.py:7: error: Argument 1 to "loads" has incompatible type "bytes"; expected "str"  [arg-type]
+    |
+   5 | import json
+   6 | def parse(raw: bytes):
+   7 |     return json.loads(raw)
+    |                         ^
+    |
+src/api/handlers.py:22: error: Item "None" of "str | None" has no attribute "strip"  [union-attr]
+    |
+  21 | def clean(value: str | None) -> str:
+  22 |     return value.strip()
+    |            ^
+    |
+src/db/pool.py:55: error: Need type annotation for "cache"  [var-annotated]
+    |
+  53 | class Pool:
+  54 |     def __init__(self):
+  55 |         self.cache = {}
+    |              ^
+    |
+src/db/pool.py:88: error: Returning Any from function declared to return "Connection"  [no-any-return]
+    |
+  87 | def connect(self):
+  88 |     return self._factory()
+    |            ^
+    |
+src/auth/session.py:44: note: Error code "return-value" not covered by "type: ignore" comment
+Found 8 errors in 4 files (checked 24 source files)
+"""
 
 SAMPLE_DOCKER_BUILD_FAIL = _sample_docker_build_fail()
 

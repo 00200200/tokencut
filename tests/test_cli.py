@@ -51,6 +51,11 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
     assert (
         data["specialized"]["eslint"]["output_tokens"] < data["specialized"]["eslint"]["raw_tokens"]
     )
+    assert data["specialized"]["mypy"]["output_tokens"] < data["specialized"]["mypy"]["raw_tokens"]
+    assert (
+        data["specialized"]["mypy"]["raw_tokens"] - data["specialized"]["mypy"]["output_tokens"]
+        >= data["specialized"]["mypy"]["raw_tokens"] * 0.45
+    )
     assert os.environ["TOKENCUT_CACHE_DIR"] == cache_path
     assert cache.get_stats()["count"] == before
     assert cache.retrieve(ref) == "existing user output"
