@@ -1060,6 +1060,43 @@ def test_auto_specialize_routes_ruff():
     assert "F841" in compact_direct
 
 
+def test_filter_mypy_compacts_pretty_frames_and_keeps_codes():
+    compact = filter_mypy(SAMPLE_MYPY_PRETTY)
+
+    assert 'src/auth/session.py:12: error: Name "os" is not defined  [name-defined]' in compact
+    assert (
+        "src/auth/session.py:44: error: Incompatible return value type "
+        '(got "None", expected "str")  [return-value]'
+    ) in compact
+    assert "[union-attr]" in compact
+    assert "[var-annotated]" in compact
+    assert "Found 8 errors in 4 files (checked 24 source files)" in compact
+    assert 'note: Error code "return-value" not covered by "type: ignore" comment' in compact
+    assert "print(os.getcwd())" not in compact
+    assert "json.loads(raw)" not in compact
+    assert "self.cache = {}" not in compact
+    before = count_tokens(SAMPLE_MYPY_PRETTY).openai
+    after = count_tokens(compact).openai
+    assert after < before
+    assert (before - after) / before >= 0.45
+
+
+def test_filter_mypy_leaves_clean_output_unchanged():
+    clean = "Success: no issues found in 12 source files\n"
+    assert filter_mypy(clean) == clean
+
+
+def test_auto_specialize_routes_mypy():
+    compact = auto_specialize_command_output("uv run mypy src", SAMPLE_MYPY_PRETTY)
+    assert compact is not None
+    assert "[name-defined]" in compact
+    assert "print(os.getcwd())" not in compact
+
+    compact_module = auto_specialize_command_output("python -m mypy .", SAMPLE_MYPY_PRETTY)
+    assert compact_module is not None
+    assert "[return-value]" in compact_module
+
+
 def test_filter_docker_build_collapses_progress_and_keeps_failure():
     compact = filter_docker_build(SAMPLE_DOCKER_BUILD_FAIL)
 
