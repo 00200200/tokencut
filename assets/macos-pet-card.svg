@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="240" viewBox="0 0 520 240">
+  <defs>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#142f2c"/>
+      <stop offset="100%" stop-color="#0b1a1c"/>
+    </linearGradient>
+    <style>
+      .sans { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    </style>
+  </defs>
+  <rect width="520" height="240" rx="24" fill="url(#card)" stroke="#2a4a44" stroke-width="1.5"/>
+  <text x="32" y="46" class="sans" font-size="24" font-weight="700" fill="#eaf7f3">TokenCut</text>
+  <circle cx="468" cy="36" r="9" fill="none" stroke="#6f9588" stroke-width="1.6"/>
+  <path d="M463.5 36h9M468 31.5v9" stroke="#6f9588" stroke-width="1.5" stroke-linecap="round"/>
+
+  <g transform="translate(32, 74)">
+    <circle cx="9" cy="11" r="6" fill="#2ec79b"/>
+    <text x="28" y="16" class="sans" font-size="17" fill="#cfe7dd">Codex</text>
+    <text x="300" y="16" class="sans" font-size="17" font-weight="700" fill="#7dffb3">68% left - 5h</text>
+    <rect x="0" y="32" width="456" height="10" rx="5" fill="#1a3330"/>
+    <rect x="0" y="32" width="310" height="10" rx="5" fill="#2ec79b"/>
+  </g>
+
+  <g transform="translate(32, 136)">
+    <circle cx="9" cy="11" r="6" fill="#f0a35a"/>
+    <text x="28" y="16" class="sans" font-size="17" fill="#cfe7dd">Claude</text>
+    <text x="300" y="16" class="sans" font-size="17" font-weight="700" fill="#f0c08a">42% left - 5h</text>
+    <rect x="0" y="32" width="456" height="10" rx="5" fill="#1a3330"/>
+    <rect x="0" y="32" width="191" height="10" rx="5" fill="#f0a35a"/>
+  </g>
+
+  <text x="32" y="214" class="mono" font-size="13" fill="#6f9588">Remaining allowance (not TokenCut savings)</text>
+</svg>
