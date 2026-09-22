@@ -1,22 +1,35 @@
-<div align="center">
+<p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="assets/readme-hero.png">
-    <img src="assets/readme-hero.gif" width="1040" alt="TokenCut and its mint robot companion. Keep the signal, cut the noise. Built-in pytest fixture: 1,562 to 174 tokens, with the failure preserved and original recoverable.">
+    <img src="assets/readme-hero.gif" width="100%" alt="TokenCut: keep the signal, cut the noise. Authored pytest fixture goes from 1,562 to 174 tokens; failure preserved, original recoverable.">
   </picture>
+</p>
 
-  <p><strong>Smaller tool outputs. Precise code context. Details back when you need them.</strong></p>
-  <p>A local CLI and MCP server for AI coding agents, with an optional macOS desktop pet.</p>
+<p align="center">
+  <strong>Smaller tool outputs. Precise code context. Details back when you need them.</strong><br>
+  Local CLI + MCP server for Claude Code, Codex, Cursor, and friends — optional macOS desktop pet.
+</p>
 
+<p align="center">
   <a href="https://github.com/00200200/tokencut/actions/workflows/ci.yml"><img src="https://github.com/00200200/tokencut/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/00200200/tokencut/releases"><img src="https://img.shields.io/github/v/release/00200200/tokencut?color=b3f5cd&label=release" alt="Release"></a>
+  <a href="https://github.com/00200200/tokencut/releases"><img src="https://img.shields.io/github/v/release/00200200/tokencut?color=b3f5cd&amp;label=release" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-b3f5cd" alt="MIT license"></a>
-  <a href="https://github.com/00200200/tokencut/stargazers"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=flat&color=b3f5cd" alt="GitHub stars"></a>
-  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-compatible-9cf" alt="MCP Compatible"></a>
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-compatible-2ec79b" alt="MCP Compatible"></a>
+  <img src="https://img.shields.io/badge/runs%20in-Claude%20Code%20·%20Codex%20·%20Cursor-1a3330" alt="Runs in Claude Code, Codex, Cursor">
+  <a href="https://github.com/00200200/tokencut/stargazers"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=social" alt="GitHub stars"></a>
+</p>
 
-  <p><a href="#try-it-in-a-minute">Try it</a> · <a href="#connect-your-agent">Connect your agent</a> · <a href="#meet-your-desktop-companion">Meet the pet</a> · <a href="docs/guide.md">Guide</a></p>
-</div>
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#see-it-cut">Demo</a> ·
+  <a href="#connect-your-agent">Connect</a> ·
+  <a href="#desktop-companion">Pet</a> ·
+  <a href="docs/guide.md">Guide</a>
+</p>
 
-## Try it in a minute
+---
+
+## Install
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
@@ -25,41 +38,63 @@ uv tool install 'git+https://github.com/00200200/tokencut.git'
 tokencut demo
 ```
 
-**Install from this GitHub repository:** the PyPI package named `tokencut` is a different project.
+> **Install from this GitHub repo.** The PyPI package named `tokencut` is a different project.
 
-The demo runs anywhere, makes **no model calls**, and checks that the complete failure
-is preserved, the original can be recovered, and unknown output stays unchanged.
+```
+verbose tool text  →  keep the failure  →  recover the rest by reference
+```
 
-| Built-in pytest fixture | Tokens |
+## See it cut
+
+`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, and Ruff frames compact.
+
+```
+                 TokenCut: verify your installation
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ Authored fixture                         ┃ Result             ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ pytest (incl. recovery notice)           │ 1,562 -> 174 (88.9%) │
+│ git diff (lockfile + code hunk)          │ 855 -> 111 (87.0%) │
+│ ruff check (full frames)                 │ 146 -> 82 (43.8%)  │
+│ complete failure tail preserved          │ PASS               │
+│ original recovered exactly               │ PASS               │
+│ unknown output unchanged                 │ PASS               │
+│ git diff folds lockfile keeps code       │ PASS               │
+│ ruff keeps codes drops frames            │ PASS               │
+│ smaller including recovery notice        │ PASS               │
+└──────────────────────────────────────────┴────────────────────┘
+```
+
+| Authored fixture | Tokens |
 | --- | ---: |
-| Original output | 1,562 |
-| TokenCut output, including recovery notice | **174** |
+| pytest original → TokenCut (incl. recovery) | 1,562 → **174** |
+| `git diff` with lockfile noise | 855 → **111** |
+| `ruff check` full frames | 146 → **82** |
 
-**88.9% less tool text on this authored fixture.** Reproduce it with `tokencut demo --json`.
-This is a local tokenizer estimate, not a claim about billing, task quality, or subscription limits.
+**88.9% less tool text on the pytest fixture; 87% on a lockfile-heavy diff.** Reproduce with `tokencut demo --json`.
+Local `o200k_base` estimate — not a billing, quality, or subscription-limit claim.
 
 Try it on a real command:
 
 ```sh
 tokencut run -- pytest -v
+tokencut run -- git diff
+tokencut run -- ruff check .
 ```
 
 ## What you get
 
-- **Useful output, recoverable detail.** Fold recognized noise, keep diagnostics, and retrieve omitted text by reference.
-- **Code without whole-file dumps.** Search symbols, read exact methods, inspect outlines, and preview edits guarded by a file hash. Syntax indexing runs locally, without language-server daemons.
-- **Context you choose.** Package selected files, compact pasted logs or tables, optimize mixed prompts autonomously, and save short task checkpoints. Transcript distillation is explicit and lossy; it does not intercept chat.
-- **Visible measurements.** Inspect before/after text counts and recovery overhead. Available account-limit readings stay separate from estimated text savings.
+- **Useful output, recoverable detail.** Fold recognized noise, keep diagnostics, retrieve omitted text by reference.
+- **Code without whole-file dumps.** Search symbols, read exact methods, inspect outlines, preview edits guarded by a file hash. Syntax indexing is local — no language-server daemons.
+- **Context you choose.** Package selected files, compact pasted logs or tables, optimize mixed prompts, save short task checkpoints. Transcript distillation is explicit and lossy; it does not intercept chat.
+- **Visible measurements.** Before/after text counts and recovery overhead. Account-limit readings stay separate from estimated text savings.
 
-Default command filtering preserves unfamiliar output. Stronger truncation is opt-in.
+Default filtering preserves unfamiliar output. Stronger truncation is opt-in.
 Reference resolution uses syntax, not full LSP semantics. [Details and tradeoffs →](docs/guide.md)
 
 ### Before you send a message
 
-Open **Prepare for chat** from the macOS pet or dashboard. Paste a log or a supplied
-transcript, compare both versions, and copy the preview into **Codex, Claude Desktop
-or a CLI chat**. No model calls. Conservative filtering is the default; conversation
-summaries are an explicit, lossy option. The same flow works in the terminal:
+**Prepare for chat** (macOS pet / dashboard, or CLI) pastes a log or transcript, compares both versions, and copies a preview into Codex, Claude Desktop, or a CLI chat. No model calls. Conservative filtering by default; conversation summaries are an explicit, lossy option.
 
 ```sh
 tokencut prepare --file draft.txt
@@ -67,9 +102,7 @@ tokencut prepare --file draft.txt
 
 ## Connect your agent
 
-Use the **coding profile** for everyday development: 8 core tools instead of 15,
-with **about 37% smaller tool schemas** in the current local `o200k_base` measurement
-(2,881 → 1,816 tokens). Tool loading varies by client; this is not a per-turn usage guarantee.
+**Coding profile** for everyday use: 8 core tools instead of 15, with **about 37% smaller tool schemas** in the current local `o200k_base` measurement (2,881 → 1,816 tokens). Tool loading varies by client — not a per-turn usage guarantee.
 
 ```sh
 # Claude Code
@@ -79,8 +112,7 @@ claude mcp add --scope user tokencut -- tokencut mcp --profile coding
 codex mcp add tokencut -- tokencut mcp --profile coding
 ```
 
-Already registered? Update the existing server's arguments, then reconnect.
-For Claude Desktop, Cursor, Windsurf and other MCP clients, merge this server entry:
+Already registered? Update the server args, then reconnect. For Claude Desktop, Cursor, Windsurf, and other MCP clients:
 
 ```json
 {
@@ -93,52 +125,39 @@ For Claude Desktop, Cursor, Windsurf and other MCP clients, merge this server en
 }
 ```
 
-Get the binary path with `command -v tokencut`. Use `--profile full` for all MCP tools;
-all CLI commands remain available in either profile. In Codex, use `tokencut run`
-inside its native terminal for commands that need its sandbox and approval flow.
+Path: `command -v tokencut`. Use `--profile full` for every MCP tool; CLI commands stay available either way. In Codex, run `tokencut run` inside its native terminal when you need its sandbox and approvals.
 
-[Client setup, optional hooks and task memory →](docs/guide.md#connect-clients)
+[Client setup, hooks, task memory →](docs/guide.md#connect-clients)
 
-## Meet your desktop companion
+## Desktop companion
 
-Our mint robot lives in a draggable macOS pet, or hides in the menu bar when you
-want a quiet desktop. Open it for tool-output measurements, recovery costs, task
-memory and available account-limit readings. English UI. Local storage. No extra AI calls.
+Mint robot on your Mac — draggable pet or quiet menu-bar mode. Tool-output measurements, recovery costs, task memory, and live account-limit readings when connected. English UI. Local storage. No extra AI calls.
 
-![The actual native macOS Prepare for chat window, comparing an authored conversation with a locally prepared summary.](assets/macos-conversation.png)
+<p align="center">
+  <img src="assets/macos-pet.png" width="640" alt="TokenCut macOS pet with example five-hour balances: Codex 68% left, Claude 42% left.">
+</p>
 
-*Actual macOS app with an authored transcript fixture. Compare before copying;
-preview counts are not recorded savings. [Log preparation screenshot →](assets/macos-prepare.png)*
+*Example balances (**Codex 68% left · Claude 42% left**) are remaining allowance in their five-hour windows — not savings caused by TokenCut.*
 
-<p align="center"><img src="assets/macos-pet.png" width="310" alt="Native macOS TokenCut pet with example five-hour balances: Codex 68% left and Claude 42% left."></p>
+![Native macOS Prepare for chat window comparing an authored conversation with a locally prepared summary.](assets/macos-conversation.png)
 
-*Example balances: **Codex 68% left · Claude 42% left** in their five-hour windows.
-The pet shows live account readings when connected. These percentages are
-remaining allowance, not savings caused by TokenCut.*
+*Actual app UI with an authored transcript fixture. Preview counts are not recorded savings. [Log preparation →](assets/macos-prepare.png)*
 
-The animation above features the app's bundled artwork. The app uses subtle hover
-motion, not a continuously running 3D renderer. The CLI and MCP do not require the pet.
-
-**macOS 13+ · local preview · ad-hoc signed, not notarized.**
+**macOS 13+ · local preview · ad-hoc signed, not notarized.** CLI and MCP do not need the pet.
 [Build the companion →](docs/guide.md#macos-companion)
 
 ## Make it better with us
 
-**If TokenCut earns a place in your workflow, [give it a star](https://github.com/00200200/tokencut/stargazers).**
-It helps other developers discover the project. Found lost context or a missed
-optimization? [Open an issue](https://github.com/00200200/tokencut/issues/new) with
-a small, redacted example and the output you expected.
-
-### Star History
+If TokenCut earns a place in your workflow, **[give it a star](https://github.com/00200200/tokencut/stargazers)** — it helps other developers find it. Lost context or a missed optimization? [Open an issue](https://github.com/00200200/tokencut/issues/new) with a small redacted example.
 
 <p align="center">
-  <a href="https://star-history.com/#00200200/tokencut&Date">
+  <a href="https://star-history.com/#00200200/tokencut&amp;Date">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=00200200/tokencut&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=00200200/tokencut&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=00200200/tokencut&type=Date" width="600" />
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=00200200/tokencut&amp;type=Date&amp;theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=00200200/tokencut&amp;type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=00200200/tokencut&amp;type=Date" width="600" />
     </picture>
   </a>
 </p>
 
-[Guide](docs/guide.md) · [Reproducible benchmarks](docs/guide.md#measurements-and-development) · [MIT license](LICENSE)
+[Guide](docs/guide.md) · [Reproducible benchmarks](docs/guide.md#measurements-and-development) · [MIT](LICENSE)

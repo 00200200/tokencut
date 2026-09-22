@@ -142,6 +142,17 @@ def filter_git_status(raw_status: str) -> str:
     return "\n".join(cleaned_lines)
 
 
+def filter_git_diff(raw_output: str, max_context_lines: int = 2) -> str:
+    """Compact ``git diff`` / ``git show`` payloads via the shared diff slimmer.
+
+    Lockfiles and generated artifacts collapse to a one-line notice; added and
+    removed lines in source hunks are preserved. Non-diff output is untouched.
+    """
+    if not raw_output.strip() or "diff --git" not in raw_output:
+        return raw_output
+    return slim_git_diff(raw_output, max_context_lines=max_context_lines)
+
+
 # Cargo prints one line per test. Only unambiguous passes are collapsed, and the
 # diagnostic vocabulary mirrors safe_filter so failures are never reinterpreted.
 _CARGO_OK = re.compile(r"^test \S+ \.\.\. ok$")
@@ -385,6 +396,53 @@ def filter_tsc(raw_output: str) -> str:
     return "\n".join(result)
 
 
+# Ruff's default ``full`` format repeats source frames and caret underlines for
+# every diagnostic. Keep the actionable header + optional help; drop the frame.
+_RUFF_HEADER_RE = re.compile(r"^(\S+:\d+:\d+:\s+[A-Z]\d+\b.*)$")
+_RUFF_HELP_RE = re.compile(r"^=\s*help:\s*(.+)$")
+_RUFF_FRAME_LINE_RE = re.compile(r"^(?:\||\d+\s+\||[\^~]+)$|^(?:\||\d+\s+\|)")
+
+
+def filter_ruff(raw_output: str) -> str:
+    """Compact verbose Ruff ``full`` frames into dense single-line diagnostics."""
+    lines = raw_output.splitlines()
+    if not any(_RUFF_HEADER_RE.match(line.strip()) for line in lines):
+        return raw_output
+
+    result: list[str] = []
+    current: str | None = None
+
+    def flush():
+        nonlocal current
+        if current is not None:
+            result.append(current)
+            current = None
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        help_match = _RUFF_HELP_RE.match(stripped)
+        if help_match and current is not None:
+            current = f"{current} | help: {help_match.group(1).strip()}"
+            continue
+
+        if _RUFF_HEADER_RE.match(stripped):
+            flush()
+            current = stripped
+            continue
+
+        if current is not None and _RUFF_FRAME_LINE_RE.match(stripped):
+            continue
+
+        flush()
+        result.append(stripped)
+
+    flush()
+    return "\n".join(result)
+
+
 def filter_json_output(raw_output: str, command: str = "") -> str | None:
     """Automatically slim large or verbose JSON output from commands.
 
@@ -593,6 +651,8 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return filter_git_log(raw_output)
     elif cmd_lower.startswith("git status"):
         return filter_git_status(raw_output)
+    elif cmd_lower.startswith(("git diff", "git show")):
+        return filter_git_diff(raw_output)
     elif cmd_lower.startswith("cargo test"):
         return filter_cargo_test(raw_output)
     elif any(
@@ -660,6 +720,8 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         )
     ):
         return filter_tsc(raw_output)
+    elif _is_ruff_command(cmd_lower):
+        return filter_ruff(raw_output)
 
     # Check for large or verbose JSON output
     json_result = filter_json_output(raw_output, command=command)
@@ -667,3 +729,18 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return json_result
 
     return None
+
+
+def _is_ruff_command(cmd_lower: str) -> bool:
+    """Recognize direct and common launcher forms for Ruff."""
+    prefixes = (
+        "ruff ",
+        "ruff\t",
+        "uv run ruff",
+        "uvx ruff",
+        "python -m ruff",
+        "python3 -m ruff",
+    )
+    if cmd_lower == "ruff" or any(cmd_lower.startswith(prefix) for prefix in prefixes):
+        return True
+    return False

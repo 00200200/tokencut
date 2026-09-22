@@ -1383,6 +1383,51 @@ def demo(
         + "FAILED tests/test_payment.py::test_payment - AssertionError: assert 'GATEWAY_TIMEOUT' == 'SUCCESS'\n"
         + "========================= 1 failed, 84 passed in 3.42s =========================\n"
     )
+    noisy_git_diff = (
+        "diff --git a/src/main.py b/src/main.py\n"
+        "index 1234567..89abcdef 100644\n"
+        "--- a/src/main.py\n"
+        "+++ b/src/main.py\n"
+        "@@ -10,6 +10,7 @@ def process():\n"
+        "     context_line_1\n"
+        "     context_line_2\n"
+        "     context_line_3\n"
+        "+    new_important_logic()\n"
+        "     context_line_4\n"
+        "     context_line_5\n"
+        "diff --git a/uv.lock b/uv.lock\n"
+        "index aaaaaaa..bbbbbbb 100644\n"
+        "--- a/uv.lock\n"
+        "+++ b/uv.lock\n"
+        "@@ -1,500 +1,500 @@\n"
+        '-old_package_version = "1.0.0"\n'
+        '+new_package_version = "1.0.1"\n'
+        + "\n".join(f"+ extra_lock_line_{i}" for i in range(100))
+        + "\n"
+    )
+    noisy_ruff = (
+        "src/auth/session.py:12:8: F401 [*] `os` imported but unused\n"
+        "  |\n"
+        "10 | import sys\n"
+        "11 | import json\n"
+        "12 | import os\n"
+        "   |        ^^\n"
+        "  |\n"
+        "  = help: Remove unused import: `os`\n"
+        "\n"
+        "src/auth/session.py:44:5: F841 Local variable `token` is assigned to but never used\n"
+        "  |\n"
+        "42 | def refresh():\n"
+        "43 |     client = Client()\n"
+        "44 |     token = client.issue()\n"
+        "   |     ^^^^^\n"
+        "45 |     return client\n"
+        "  |\n"
+        "  = help: Remove assignment to unused variable `token`\n"
+        "\n"
+        "Found 2 errors.\n"
+        "[*] 1 fixable with the `--fix` option.\n"
+    )
 
     # A disposable cache makes the demo independent of the user's project and
     # existing history. Always restore an explicit caller-provided cache path.
@@ -1395,10 +1440,23 @@ def demo(
             recovered = ContextCache().retrieve(ref[0]) if ref else None
             failure_tail = noisy_pytest[noisy_pytest.index("=== FAILURES") :]
             unknown = "".join(f"unique custom record {i}\n" for i in range(150))
+            git_diff_compact = auto_specialize_command_output("git diff", noisy_git_diff) or ""
+            ruff_compact = auto_specialize_command_output("ruff check .", noisy_ruff) or ""
             checks = {
                 "complete_failure_tail_preserved": failure_tail in compacted,
                 "original_recovered_exactly": recovered == noisy_pytest,
                 "unknown_output_unchanged": safe_compact_output(unknown) == unknown,
+                "git_diff_folds_lockfile_keeps_code": (
+                    "omitted by tokencut" in git_diff_compact
+                    and "+    new_important_logic()" in git_diff_compact
+                    and "+ extra_lock_line_50" not in git_diff_compact
+                ),
+                "ruff_keeps_codes_drops_frames": (
+                    "F401" in ruff_compact
+                    and "F841" in ruff_compact
+                    and "Found 2 errors." in ruff_compact
+                    and "import os" not in ruff_compact
+                ),
             }
         finally:
             if previous_cache is None:
@@ -1409,13 +1467,33 @@ def demo(
     raw_tokens = count_tokens(noisy_pytest).openai
     output_tokens = count_tokens(compacted).openai
     checks["smaller_including_recovery_notice"] = output_tokens < raw_tokens
+    git_raw_tokens = count_tokens(noisy_git_diff).openai
+    git_output_tokens = count_tokens(git_diff_compact).openai
+    ruff_raw_tokens = count_tokens(noisy_ruff).openai
+    ruff_output_tokens = count_tokens(ruff_compact).openai
     passed = all(checks.values())
     result = {
-        "measurement": "local tokenizer estimate on an authored fixture; not model billing or quota",
+        "measurement": "local tokenizer estimate on authored fixtures; not model billing or quota",
         "model_calls": 0,
         "raw_tokens": raw_tokens,
         "output_tokens": output_tokens,
         "reduction_pct": round(100 * (raw_tokens - output_tokens) / raw_tokens, 1),
+        "specialized": {
+            "git_diff": {
+                "raw_tokens": git_raw_tokens,
+                "output_tokens": git_output_tokens,
+                "reduction_pct": round(
+                    100 * (git_raw_tokens - git_output_tokens) / git_raw_tokens, 1
+                ),
+            },
+            "ruff": {
+                "raw_tokens": ruff_raw_tokens,
+                "output_tokens": ruff_output_tokens,
+                "reduction_pct": round(
+                    100 * (ruff_raw_tokens - ruff_output_tokens) / ruff_raw_tokens, 1
+                ),
+            },
+        },
         "checks": checks,
         "passed": passed,
     }
@@ -1423,13 +1501,26 @@ def demo(
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
     else:
         table = Table(title="TokenCut: verify your installation")
-        table.add_column("Authored pytest fixture", style="cyan")
+        table.add_column("Authored fixture", style="cyan")
         table.add_column("Result")
         table.add_row(
-            "Estimated output tokens (includes recovery notice)",
-            f"{raw_tokens:,} -> {output_tokens:,}",
+            "pytest (incl. recovery notice)",
+            f"{raw_tokens:,} -> {output_tokens:,} ({result['reduction_pct']}%)",
         )
-        table.add_row("Estimated text reduction", f"{result['reduction_pct']}%")
+        table.add_row(
+            "git diff (lockfile + code hunk)",
+            (
+                f"{git_raw_tokens:,} -> {git_output_tokens:,} "
+                f"({result['specialized']['git_diff']['reduction_pct']}%)"
+            ),
+        )
+        table.add_row(
+            "ruff check (full frames)",
+            (
+                f"{ruff_raw_tokens:,} -> {ruff_output_tokens:,} "
+                f"({result['specialized']['ruff']['reduction_pct']}%)"
+            ),
+        )
         for name, ok in checks.items():
             table.add_row(name.replace("_", " "), "PASS" if ok else "FAIL")
         console.print(table)
