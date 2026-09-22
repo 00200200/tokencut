@@ -762,6 +762,11 @@ def handle_tokencut_read(arguments: dict[str, Any]) -> str:
         current_hash = hashlib.sha256(source_bytes).hexdigest()
         extracted = f"# [sha256: {current_hash[:16]}]\n" + extracted
 
+    if not paused():
+        viewed = ContextCache().session_view(extracted, source="read")
+        if viewed != extracted:
+            return _record(extracted, viewed, operation="read", project=path)
+
     output = _compress(extracted, budget, source="read")
     # Compare with the requested view, not an unrequested full-file read.
     return _record(extracted, output, operation="read", project=path)

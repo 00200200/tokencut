@@ -153,6 +153,10 @@ diagnostics. `--engine auto` and `--engine tokencut` use TokenCut's own filter;
 or `--compact` permits stronger, potentially lossy reduction. Follow recovery
 references before relying on omitted information.
 
+Identical `run` payloads and identical `cat` / MCP `tokencut_read` views within
+about 15 minutes collapse to a short cache ref (session dedup). Small reads stay
+inline. Use `tokencut retrieve` when the full text is needed again.
+
 Recovered text is additional context, included as a cost in the net counter.
 References recover the redacted cached original, not secrets removed before
 storage. Secret-pattern matching is best effort, not a complete secret scanner.

@@ -852,8 +852,12 @@ def cat(
         output = f"# [sha256: {current_hash[:16]}]\n" + output
 
     requested = output
-    if budget and not paused():
-        output = compress_to_budget(output, max_tokens=budget, source=str(file_path))
+    if not paused():
+        viewed = ContextCache().session_view(output, source="read")
+        if viewed != output:
+            output = viewed
+        elif budget:
+            output = compress_to_budget(output, max_tokens=budget, source=str(file_path))
     record_text(
         requested,
         _emit(output),
