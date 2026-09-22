@@ -16,7 +16,6 @@ from tokencut.core.specialized import (
     filter_go_test,
     filter_jest_vitest,
     filter_json_output,
-    filter_mypy,
     filter_npm_install,
     filter_pip_install,
     filter_pyright,
