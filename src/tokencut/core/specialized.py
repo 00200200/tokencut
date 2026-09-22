@@ -1163,6 +1163,123 @@ def filter_pip_install(raw_output: str) -> str:
     return "\n".join(result)
 
 
+# uv sync / uv add print one ``+ pkg==ver`` line per change. Verbose mode also dumps
+# thousands of ``DEBUG`` cache lines. Keep the summary and failures; fold the rest.
+_UV_PROJECT_SUBCOMMANDS = frozenset(
+    {
+        "sync",
+        "add",
+        "remove",
+        "lock",
+        "upgrade",
+        "tree",
+        "export",
+    }
+)
+
+
+def _uv_argv(command: str) -> list[str] | None:
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return None
+    if not words or PurePath(words[0]).name.lower() not in {"uv", "uv.exe"}:
+        return None
+    return words
+
+
+def _is_uv_project_command(command: str) -> bool:
+    """Recognize ``uv sync`` / ``uv add`` / … but not ``uv pip install`` (pip filter)."""
+    words = _uv_argv(command)
+    if not words or len(words) < 2:
+        return False
+    index = 1
+    while index < len(words) and words[index].startswith("-"):
+        # Global flags may take values (``uv -n sync`` / ``uv --directory x sync``).
+        flag = words[index]
+        if flag in {
+            "--directory",
+            "--cache-dir",
+            "--python",
+            "--config-file",
+            "-p",
+        } and index + 1 < len(words):
+            index += 2
+            continue
+        if flag.startswith("--") and "=" in flag:
+            index += 1
+            continue
+        index += 1
+    if index >= len(words):
+        return False
+    sub = words[index].lower()
+    if sub == "pip":
+        # ``uv pip install|uninstall|freeze|list`` keep the pip specializer / passthrough.
+        rest = [w.lower() for w in words[index + 1 :] if not w.startswith("-")]
+        return bool(rest) and rest[0] in {"sync", "compile"}
+    return sub in _UV_PROJECT_SUBCOMMANDS
+
+
+def filter_uv_project(raw_output: str) -> str:
+    """Compact ``uv sync`` / ``uv add`` / ``uv remove`` / ``uv lock`` style output.
+
+    Drops ``DEBUG`` noise and download/build progress, keeps resolution summaries and
+    warnings/errors, and collapses per-package ``+``/``-``/``~`` change lists.
+    """
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    changes: list[tuple[str, str]] = []
+
+    def flush_changes() -> None:
+        nonlocal changes
+        if not changes:
+            return
+        if len(changes) <= 3:
+            result.extend(line for _, line in changes)
+        else:
+            added = sum(1 for marker, _ in changes if marker == "+")
+            removed = sum(1 for marker, _ in changes if marker == "-")
+            updated = sum(1 for marker, _ in changes if marker == "~")
+            parts: list[str] = []
+            if added:
+                parts.append(f"+{added}")
+            if removed:
+                parts.append(f"−{removed}")
+            if updated:
+                parts.append(f"~{updated}")
+            result.append(f"[TokenCut: {' '.join(parts)} package changes collapsed]")
+        changes = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("DEBUG ", "TRACE ")):
+            continue
+        # Per-package change lines: `` + pkg==1.0.0`` / `` - pkg==1.0.0`` / `` ~ pkg==1.0.0``.
+        if len(stripped) > 2 and stripped[0] in "+-~" and stripped[1] == " ":
+            marker = stripped[0]
+            # Prefer the original leading-space form when present.
+            changes.append((marker, line if line[:1] == " " else f" {stripped}"))
+            continue
+        # Download/build chatter (not the ``Downloaded N packages`` summary style).
+        if re.match(
+            r"^(?:Downloading|Downloaded|Building|Built)\b",
+            stripped,
+            re.IGNORECASE,
+        ) and not re.match(r"^(?:Downloaded|Built)\s+\d+\s+", stripped, re.IGNORECASE):
+            continue
+
+        flush_changes()
+        result.append(line)
+
+    flush_changes()
+    return "\n".join(result)
+
+
 _NPM_WARN_DEPRECATED = re.compile(r"^\s*npm\s+warn\s+deprecated\s+(.*)")
 
 
@@ -1510,6 +1627,8 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return filter_cargo_build(raw_output)
     elif _is_go_test_command(command.strip()):
         return filter_go_test(raw_output)
+    elif _is_uv_project_command(command.strip()):
+        return filter_uv_project(raw_output)
     elif any(
         cmd_lower.startswith(prefix)
         for prefix in (

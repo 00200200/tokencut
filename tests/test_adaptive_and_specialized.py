@@ -27,6 +27,7 @@ from tokencut.core.specialized import (
     filter_ruff,
     filter_terraform,
     filter_tsc,
+    filter_uv_project,
 )
 from tokencut.metrics.tokenizer import count_tokens
 
@@ -1024,6 +1025,54 @@ def test_filter_pip_install_collapses_progress_and_downloads():
     assert "[TokenCut: resolved/downloaded 2 packages]" in res
     assert "Successfully installed requests-2.31.0 urllib3-2.2.1" in res
     assert "━━━━━━━━━━━━━━━━" not in res
+
+
+def test_filter_uv_project_collapses_package_list_and_debug():
+    pkg_lines = "\n".join(f" + pkg{i}==1.0.{i}" for i in range(12))
+    raw = (
+        "DEBUG Registry requirement already cached: rich==15.0.0\n"
+        "DEBUG Sending fresh GET request for: https://example.com/black.whl\n"
+        "Using CPython 3.12.11\n"
+        "Resolved 16 packages in 1.00s\n"
+        "Downloading black (1.7MiB)\n"
+        " Downloaded black\n"
+        "Prepared 1 package in 11.32s\n"
+        "Installed 15 packages in 77ms\n"
+        f"{pkg_lines}\n"
+        "warning: The package `legacy` is deprecated\n"
+    )
+    res = filter_uv_project(raw)
+    assert "DEBUG " not in res
+    assert "Downloading black" not in res
+    assert "Downloaded black" not in res
+    assert "Resolved 16 packages in 1.00s" in res
+    assert "Installed 15 packages in 77ms" in res
+    assert "[TokenCut: +12 package changes collapsed]" in res
+    assert " + pkg0==1.0.0" not in res
+    assert "warning: The package `legacy` is deprecated" in res
+
+    tiny = "Resolved 2 packages in 12ms\nInstalled 1 package in 2ms\n + click==8.5.0\n"
+    tiny_res = filter_uv_project(tiny)
+    assert " + click==8.5.0" in tiny_res
+    assert "collapsed" not in tiny_res
+
+
+def test_auto_specialize_routes_uv_project_not_uv_pip_install():
+    noisy = "Resolved 10 packages in 1s\n" + "\n".join(f" + p{i}==1.0" for i in range(8))
+    sync = auto_specialize_command_output("uv sync --all-extras", noisy)
+    assert sync is not None
+    assert "[TokenCut: +8 package changes collapsed]" in sync
+
+    add = auto_specialize_command_output("uv add httpx", noisy)
+    assert add is not None
+    assert "collapsed" in add
+
+    # ``uv pip install`` stays on the pip specializer path.
+    pip_raw = "Collecting foo\nSuccessfully installed foo-1.0.0\n"
+    pip_res = auto_specialize_command_output("uv pip install foo", pip_raw)
+    assert pip_res is not None
+    assert "Successfully installed foo-1.0.0" in pip_res
+    assert "collapsed" not in pip_res
 
 
 def test_filter_npm_install_collapses_deprecations():
