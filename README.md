@@ -105,7 +105,7 @@ tokencut prepare --file draft.txt
 
 ## Connect your agent
 
-**Desktop & Coding profiles:** 9–11 essential tools instead of 16 — about **36% smaller tool schemas** in local `o200k_base` measurements. Not a per-turn usage guarantee.
+**Desktop & Coding profiles:** 9–11 essential tools instead of 16 — about **36–38% smaller tool schemas** in local `o200k_base` measurements (3,414 → 2,183 / 2,102). Not a per-turn usage guarantee.
 
 ```sh
 # One-command installer for Codex & Claude Desktop
