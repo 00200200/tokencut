@@ -46,7 +46,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 
 ## See it cut
 
-`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, and Ruff frames compact.
+`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, Ruff frames compact, and Docker BuildKit progress collapses.
 
 ```
                  TokenCut: verify your installation
@@ -56,11 +56,13 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 │ pytest (incl. recovery notice)           │ 1,562 -> 174 (88.9%) │
 │ git diff (lockfile + code hunk)          │ 855 -> 111 (87.0%) │
 │ ruff check (full frames)                 │ 146 -> 82 (43.8%)  │
+│ docker build (BuildKit progress)         │ 18,360 -> 107 (99.4%) │
 │ complete failure tail preserved          │ PASS               │
 │ original recovered exactly               │ PASS               │
 │ unknown output unchanged                 │ PASS               │
 │ git diff folds lockfile keeps code       │ PASS               │
 │ ruff keeps codes drops frames            │ PASS               │
+│ docker keeps failure drops layer progress│ PASS               │
 │ smaller including recovery notice        │ PASS               │
 └──────────────────────────────────────────┴────────────────────┘
 ```
@@ -70,8 +72,9 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 | pytest original → TokenCut (incl. recovery) | 1,562 → **174** |
 | `git diff` with lockfile noise | 855 → **111** |
 | `ruff check` full frames | 146 → **82** |
+| `docker build` BuildKit progress | 18,360 → **107** |
 
-**88.9% less tool text on the pytest fixture; 87% on a lockfile-heavy diff.** Reproduce with `tokencut demo --json`.
+**88.9% less tool text on the pytest fixture; 99.4% on a BuildKit docker build log.** Reproduce with `tokencut demo --json`.
 Local `o200k_base` estimate — not a billing, quality, or subscription-limit claim.
 
 Try it on a real command:
@@ -80,6 +83,7 @@ Try it on a real command:
 tokencut run -- pytest -v
 tokencut run -- git diff
 tokencut run -- ruff check .
+tokencut run -- docker build -t app .
 ```
 
 ## What you get

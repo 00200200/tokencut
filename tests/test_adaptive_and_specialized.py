@@ -8,6 +8,7 @@ from tokencut.core.specialized import (
     auto_specialize_command_output,
     filter_cargo_build,
     filter_cargo_test,
+    filter_docker_build,
     filter_git_diff,
     filter_git_log,
     filter_git_status,
@@ -16,6 +17,7 @@ from tokencut.core.specialized import (
     filter_json_output,
     filter_npm_install,
     filter_pip_install,
+    filter_pyright,
     filter_ruff,
     filter_tsc,
 )
@@ -232,6 +234,92 @@ src/auth/session.py:44:5: F841 Local variable `token` is assigned to but never u
 Found 2 errors.
 [*] 1 fixable with the `--fix` option.
 """
+
+
+def _sample_docker_build_fail() -> str:
+    """Authored BuildKit-style log: lots of layer progress, failure preserved at the end."""
+    lines: list[str] = []
+    for step in range(1, 25):
+        lines.extend(
+            [
+                f"#{step} [internal] load build context",
+                f"#{step} transferring context: {120 + step}B done",
+                f"#{step} DONE 0.{step % 9}s",
+                (
+                    f"#{step} [stage-0 {step}/24] RUN echo layer_{step} "
+                    f"&& pip install pkg{step}==1.0.{step}"
+                ),
+            ]
+        )
+        for j in range(8):
+            lines.extend(
+                [
+                    f"#{step} {j}.1 Collecting pkg{step}-dep{j}==2.0.{j}",
+                    (
+                        f"#{step} {j}.2   Downloading "
+                        f"pkg{step}_dep{j}-2.0.{j}-py3-none-any.whl ({40 + j} kB)"
+                    ),
+                    f"#{step} {j}.3 Installing collected packages: pkg{step}-dep{j}",
+                    f"#{step} {j}.4 Successfully installed pkg{step}-dep{j}-2.0.{j}",
+                ]
+            )
+        lines.append(f"#{step} DONE {1 + step % 5}.{step % 9}s")
+    lines.extend(
+        [
+            (
+                'ERROR: failed to solve: process "/bin/sh -c pip install broken==9.9.9" '
+                "did not complete successfully: exit code: 1"
+            ),
+            "------",
+            " > [stage-0 24/24] RUN pip install broken==9.9.9:",
+            "1.2 ERROR: Could not find a version that satisfies the requirement broken==9.9.9",
+            "1.2 ERROR: No matching distribution found for broken==9.9.9",
+            "------",
+        ]
+    )
+    return "\n".join(lines)
+
+
+SAMPLE_DOCKER_BUILD_FAIL = _sample_docker_build_fail()
+
+SAMPLE_DOCKER_BUILD_OK = "\n".join(
+    [f"#{i} [stage-0 {i}/6] RUN echo ok_{i}" for i in range(1, 7)]
+    + [
+        "#6 DONE 0.2s",
+        "#7 exporting to image",
+        "#7 writing image sha256:abcdef0123456789",
+        "#7 naming to docker.io/library/app:latest done",
+        "#7 DONE 0.1s",
+        "Successfully tagged app:latest",
+    ]
+)
+
+# Pyright prints dense headers, then indented path + source + caret frames.
+SAMPLE_PYRIGHT = "\n".join(
+    [
+        line
+        for i in range(1, 30)
+        for line in (
+            (
+                f"/Users/me/proj/src/mod_{i}.py:{12 + i}:5 - error: Type "
+                f'"str | None" is not assignable to declared type "str" '
+                f"(reportGeneralTypeIssues)"
+            ),
+            f"    /Users/me/proj/src/mod_{i}.py:{12 + i}:5",
+            f"        {12 + i}     token_{i}: str = maybe_token_{i}",
+            "               ~~~~~",
+            (
+                f"/Users/me/proj/src/mod_{i}.py:{28 + i}:16 - error: Argument of type "
+                f'"int" cannot be assigned to parameter "user_id" of type "str" '
+                f"(reportArgumentType)"
+            ),
+            f"    /Users/me/proj/src/mod_{i}.py:{28 + i}:16",
+            f"        {28 + i}     lookup_user_{i}({i})",
+            "                       ~~",
+        )
+    ]
+    + ["58 errors, 0 warnings, 0 informations"]
+)
 
 
 def test_filter_git_log():
@@ -642,6 +730,76 @@ def test_auto_specialize_routes_ruff():
     compact_direct = auto_specialize_command_output("ruff check src", SAMPLE_RUFF_FULL)
     assert compact_direct is not None
     assert "F841" in compact_direct
+
+
+def test_filter_docker_build_collapses_progress_and_keeps_failure():
+    compact = filter_docker_build(SAMPLE_DOCKER_BUILD_FAIL)
+
+    assert "failed to solve" in compact
+    assert "No matching distribution found for broken==9.9.9" in compact
+    assert " > [stage-0 24/24] RUN pip install broken==9.9.9:" in compact
+    assert "docker build progress lines" in compact
+    # Layer chatter is the noise.
+    assert "Collecting pkg1-dep0" not in compact
+    assert "transferring context:" not in compact
+    raw_tokens = count_tokens(SAMPLE_DOCKER_BUILD_FAIL).claude
+    compact_tokens = count_tokens(compact).claude
+    assert compact_tokens < raw_tokens * 0.05
+    assert raw_tokens - compact_tokens > 10_000
+
+
+def test_filter_docker_build_keeps_success_tags():
+    compact = filter_docker_build(SAMPLE_DOCKER_BUILD_OK)
+
+    assert "Successfully tagged app:latest" in compact
+    assert "writing image sha256:abcdef0123456789" in compact
+    assert "naming to docker.io/library/app:latest done" in compact
+    assert "RUN echo ok_3" not in compact
+    assert "docker build progress lines" in compact
+
+
+def test_auto_specialize_routes_docker_build():
+    compact = auto_specialize_command_output("docker build -t app .", SAMPLE_DOCKER_BUILD_FAIL)
+    assert compact is not None
+    assert "failed to solve" in compact
+    assert "Collecting pkg1-dep0" not in compact
+
+    compact_buildx = auto_specialize_command_output(
+        "docker buildx build --load .", SAMPLE_DOCKER_BUILD_FAIL
+    )
+    assert compact_buildx is not None
+    assert "No matching distribution found" in compact_buildx
+
+
+def test_filter_pyright_compacts_source_frames_and_keeps_diagnostics():
+    compact = filter_pyright(SAMPLE_PYRIGHT)
+
+    assert "reportGeneralTypeIssues" in compact
+    assert "reportArgumentType" in compact
+    assert "58 errors, 0 warnings, 0 informations" in compact
+    assert "token_1: str = maybe_token_1" not in compact
+    assert "lookup_user_1(1)" not in compact
+    assert "~~~~~" not in compact
+    raw_tokens = count_tokens(SAMPLE_PYRIGHT).claude
+    compact_tokens = count_tokens(compact).claude
+    assert compact_tokens < raw_tokens * 0.6
+    assert raw_tokens - compact_tokens > 1_500
+
+
+def test_filter_pyright_leaves_clean_output_unchanged():
+    clean = "0 errors, 0 warnings, 0 informations\n"
+    assert filter_pyright(clean) == clean
+
+
+def test_auto_specialize_routes_pyright_and_basedpyright():
+    compact = auto_specialize_command_output("npx pyright", SAMPLE_PYRIGHT)
+    assert compact is not None
+    assert "reportGeneralTypeIssues" in compact
+    assert "token_1: str = maybe_token_1" not in compact
+
+    compact_based = auto_specialize_command_output("basedpyright src", SAMPLE_PYRIGHT)
+    assert compact_based is not None
+    assert "58 errors, 0 warnings" in compact_based
 
 
 def test_compress_to_budget():

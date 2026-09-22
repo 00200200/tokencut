@@ -1428,6 +1428,46 @@ def demo(
         "Found 2 errors.\n"
         "[*] 1 fixable with the `--fix` option.\n"
     )
+    docker_lines: list[str] = []
+    for step in range(1, 25):
+        docker_lines.extend(
+            [
+                f"#{step} [internal] load build context",
+                f"#{step} transferring context: {120 + step}B done",
+                f"#{step} DONE 0.{step % 9}s",
+                (
+                    f"#{step} [stage-0 {step}/24] RUN echo layer_{step} "
+                    f"&& pip install pkg{step}==1.0.{step}"
+                ),
+            ]
+        )
+        for j in range(8):
+            docker_lines.extend(
+                [
+                    f"#{step} {j}.1 Collecting pkg{step}-dep{j}==2.0.{j}",
+                    (
+                        f"#{step} {j}.2   Downloading "
+                        f"pkg{step}_dep{j}-2.0.{j}-py3-none-any.whl ({40 + j} kB)"
+                    ),
+                    f"#{step} {j}.3 Installing collected packages: pkg{step}-dep{j}",
+                    f"#{step} {j}.4 Successfully installed pkg{step}-dep{j}-2.0.{j}",
+                ]
+            )
+        docker_lines.append(f"#{step} DONE {1 + step % 5}.{step % 9}s")
+    docker_lines.extend(
+        [
+            (
+                'ERROR: failed to solve: process "/bin/sh -c pip install broken==9.9.9" '
+                "did not complete successfully: exit code: 1"
+            ),
+            "------",
+            " > [stage-0 24/24] RUN pip install broken==9.9.9:",
+            "1.2 ERROR: Could not find a version that satisfies the requirement broken==9.9.9",
+            "1.2 ERROR: No matching distribution found for broken==9.9.9",
+            "------",
+        ]
+    )
+    noisy_docker = "\n".join(docker_lines)
 
     # A disposable cache makes the demo independent of the user's project and
     # existing history. Always restore an explicit caller-provided cache path.
@@ -1442,6 +1482,9 @@ def demo(
             unknown = "".join(f"unique custom record {i}\n" for i in range(150))
             git_diff_compact = auto_specialize_command_output("git diff", noisy_git_diff) or ""
             ruff_compact = auto_specialize_command_output("ruff check .", noisy_ruff) or ""
+            docker_compact = (
+                auto_specialize_command_output("docker build -t app .", noisy_docker) or ""
+            )
             checks = {
                 "complete_failure_tail_preserved": failure_tail in compacted,
                 "original_recovered_exactly": recovered == noisy_pytest,
@@ -1457,6 +1500,12 @@ def demo(
                     and "Found 2 errors." in ruff_compact
                     and "import os" not in ruff_compact
                 ),
+                "docker_keeps_failure_drops_layer_progress": (
+                    "failed to solve" in docker_compact
+                    and "No matching distribution found for broken==9.9.9" in docker_compact
+                    and "Collecting pkg1-dep0" not in docker_compact
+                    and "docker build progress lines" in docker_compact
+                ),
             }
         finally:
             if previous_cache is None:
@@ -1471,6 +1520,8 @@ def demo(
     git_output_tokens = count_tokens(git_diff_compact).openai
     ruff_raw_tokens = count_tokens(noisy_ruff).openai
     ruff_output_tokens = count_tokens(ruff_compact).openai
+    docker_raw_tokens = count_tokens(noisy_docker).openai
+    docker_output_tokens = count_tokens(docker_compact).openai
     passed = all(checks.values())
     result = {
         "measurement": "local tokenizer estimate on authored fixtures; not model billing or quota",
@@ -1491,6 +1542,13 @@ def demo(
                 "output_tokens": ruff_output_tokens,
                 "reduction_pct": round(
                     100 * (ruff_raw_tokens - ruff_output_tokens) / ruff_raw_tokens, 1
+                ),
+            },
+            "docker_build": {
+                "raw_tokens": docker_raw_tokens,
+                "output_tokens": docker_output_tokens,
+                "reduction_pct": round(
+                    100 * (docker_raw_tokens - docker_output_tokens) / docker_raw_tokens, 1
                 ),
             },
         },
@@ -1519,6 +1577,13 @@ def demo(
             (
                 f"{ruff_raw_tokens:,} -> {ruff_output_tokens:,} "
                 f"({result['specialized']['ruff']['reduction_pct']}%)"
+            ),
+        )
+        table.add_row(
+            "docker build (BuildKit progress)",
+            (
+                f"{docker_raw_tokens:,} -> {docker_output_tokens:,} "
+                f"({result['specialized']['docker_build']['reduction_pct']}%)"
             ),
         )
         for name, ok in checks.items():
