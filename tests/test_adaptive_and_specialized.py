@@ -9,6 +9,7 @@ from tokencut.core.specialized import (
     filter_cargo_build,
     filter_cargo_test,
     filter_docker_build,
+    filter_eslint,
     filter_git_diff,
     filter_git_log,
     filter_git_status,
@@ -244,19 +245,75 @@ Snapshots:   0 total
 Time:        0.85 s
 """
 
-SAMPLE_TSC_ERRORS = """src/auth/jwt.ts:45:12 - error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+SAMPLE_TSC_ERRORS = """
+src/auth/jwt.ts:45:12 - error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
   Type 'undefined' is not assignable to type 'string'.
 
-45   verifyToken(headerToken);
-                 ~~~~~~~~~~~
+  43 |   const headerToken = headers.get("authorization") ?? undefined;
+  44 |   // verify the bearer token before continuing the chain
+> 45 |   verifyToken(headerToken);
+     |               ~~~~~~~~~~~
+  46 |   return next();
+  47 | }
 
-src/models/user.ts:18:7 - error TS2741: Property 'email' is missing in type '{ id: number; name: string; }'.
+src/auth/jwt.ts:45:12 - error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
 
-18 const u: User = { id: 1, name: "Alice" };
-         ~
+  43 |   const headerToken = headers.get("authorization") ?? undefined;
+  44 |   // verify the bearer token before continuing the chain
+> 45 |   verifyToken(headerToken);
+     |               ~~~~~~~~~~~
+  46 |   return next();
+  47 | }
 
-Found 2 errors in 2 files.
-"""
+src/models/user.ts:18:7 - error TS2741: Property 'email' is missing in type '{ id: number; name: string; }' but required in type 'User'.
+
+  16 | export function buildUser(id: number, name: string): User {
+  17 |   // TODO: pull email from the directory service
+> 18 |   const u: User = { id: 1, name: "Alice" };
+     |         ~
+  19 |   return u;
+  20 | }
+
+src/models/user.ts:18:7 - error TS2741: Property 'email' is missing in type '{ id: number; name: string; }' but required in type 'User'.
+
+  16 | export function buildUser(id: number, name: string): User {
+  17 |   // TODO: pull email from the directory service
+> 18 |   const u: User = { id: 1, name: "Alice" };
+     |         ~
+  19 |   return u;
+  20 | }
+
+src/api/billing.ts:88:3 - error TS2322: Type 'Promise<Payment | null>' is not assignable to type 'Promise<Payment>'.
+  Type 'Payment | null' is not assignable to type 'Payment'.
+    Type 'null' is not assignable to type 'Payment'.
+
+  86 | async function charge(orderId: string): Promise<Payment> {
+  87 |   const client = await getClient();
+> 88 |   return client.charge(orderId);
+     |   ~~~~~~
+  89 | }
+  90 |
+
+src/api/billing.ts:88:3 - error TS2322: Type 'Promise<Payment | null>' is not assignable to type 'Promise<Payment>'.
+  Type 'Payment | null' is not assignable to type 'Payment'.
+    Type 'null' is not assignable to type 'Payment'.
+
+  86 | async function charge(orderId: string): Promise<Payment> {
+  87 |   const client = await getClient();
+> 88 |   return client.charge(orderId);
+     |   ~~~~~~
+  89 | }
+  90 |
+
+Found 6 errors in 3 files.
+
+Errors  Files
+     2  src/auth/jwt.ts:45
+     2  src/models/user.ts:18
+     2  src/api/billing.ts:88
+""".lstrip()
+
 
 SAMPLE_GIT_DIFF = """diff --git a/src/main.py b/src/main.py
 index 1234567..89abcdef 100644
@@ -300,6 +357,82 @@ src/auth/session.py:44:5: F841 Local variable `token` is assigned to but never u
 Found 2 errors.
 [*] 1 fixable with the `--fix` option.
 """
+
+# ESLint stylish repeats absolute path headers; duplicates simulate noisy CI dumps.
+SAMPLE_ESLINT_STYLISH = """
+/Users/dev/acme/src/auth/session.ts
+  12:8   error    'os' is defined but never used                 @typescript-eslint/no-unused-vars
+  44:5   warning  Unexpected any. Specify a different type       @typescript-eslint/no-explicit-any
+
+/Users/dev/acme/src/auth/session.ts
+  12:8   error    'os' is defined but never used                 @typescript-eslint/no-unused-vars
+  44:5   warning  Unexpected any. Specify a different type       @typescript-eslint/no-explicit-any
+
+/Users/dev/acme/src/utils/helpers.ts
+   3:1   error    Prefer named exports                           import/prefer-default-export
+  18:10  error    'token' is assigned a value but never used     @typescript-eslint/no-unused-vars
+
+/Users/dev/acme/src/utils/helpers.ts
+   3:1   error    Prefer named exports                           import/prefer-default-export
+  18:10  error    'token' is assigned a value but never used     @typescript-eslint/no-unused-vars
+
+/Users/dev/acme/src/api/billing.ts
+  22:14  error    'req' is defined but never used                @typescript-eslint/no-unused-vars
+  55:3   error    Expected '!==' and instead saw '!='            eqeqeq
+  71:9   warning  Unexpected console statement                   no-console
+
+✖ 11 problems (8 errors, 3 warnings)
+  2 errors and 0 warnings potentially fixable with the `--fix` option.
+""".lstrip()
+
+# Codeframe embeds source, carets, and stack noise per diagnostic.
+SAMPLE_ESLINT_CODEFRAME = """
+error: 'os' is defined but never used (@typescript-eslint/no-unused-vars) at src/auth/session.ts:12:8:
+  10 | import sys from "sys";
+  11 | import json from "json";
+> 12 | import os from "os";
+     |        ^
+  13 |
+  at Object.<anonymous> (src/auth/session.ts:12:8)
+  at Module._compile (node:internal/modules/cjs/loader:1521:14)
+
+error: 'os' is defined but never used (@typescript-eslint/no-unused-vars) at src/auth/session.ts:12:8:
+  10 | import sys from "sys";
+  11 | import json from "json";
+> 12 | import os from "os";
+     |        ^
+  13 |
+  at Object.<anonymous> (src/auth/session.ts:12:8)
+  at Module._compile (node:internal/modules/cjs/loader:1521:14)
+
+error: Unexpected any. Specify a different type (@typescript-eslint/no-explicit-any) at src/auth/session.ts:44:5:
+  42 | function refresh() {
+  43 |   const client = new Client();
+> 44 |   const token: any = client.issue();
+     |     ^^^
+  45 |   return client;
+  46 | }
+  at refresh (src/auth/session.ts:44:5)
+  at processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+error: Prefer named exports (import/prefer-default-export) at src/utils/helpers.ts:3:1:
+   1 | import lodash from "lodash";
+   2 |
+>  3 | export default function helpers() {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   4 |   return lodash;
+   5 | }
+
+error: 'token' is assigned a value but never used (@typescript-eslint/no-unused-vars) at src/utils/helpers.ts:18:10:
+  16 | export function mint() {
+  17 |   const client = new Client();
+> 18 |   const token = client.issue();
+     |          ^^^^^
+  19 |   return client;
+  20 | }
+
+✖ 5 problems (5 errors, 0 warnings)
+""".lstrip()
 
 
 def _sample_docker_build_fail() -> str:
@@ -635,12 +768,22 @@ def test_auto_specialize_routes_jest_and_vitest():
 def test_filter_tsc_compacts_errors_and_strips_squiggles():
     compact = filter_tsc(SAMPLE_TSC_ERRORS)
 
-    assert "~~~~~" not in compact
-    assert "src/auth/jwt.ts:45:12 - error TS2345" in compact
+    # Dense: file, line, rule id, message — no pretty frames or duplicate dumps.
+    assert "src/auth/jwt.ts:45:12 TS2345" in compact
+    assert "Argument of type 'string | undefined'" in compact
     assert "TS2741" in compact
-    assert "Found 2 errors in 2 files." in compact
-    assert "verifyToken(headerToken);" in compact
-    assert count_tokens(compact).claude < count_tokens(SAMPLE_TSC_ERRORS).claude
+    assert "TS2322" in compact
+    assert "Found 6 errors in 3 files." in compact
+    assert "~~~~~" not in compact
+    assert "verifyToken(headerToken);" not in compact
+    assert "const u: User" not in compact
+    assert "Errors  Files" not in compact
+    # Duplicate pretty blocks collapse to one row per unique diagnostic.
+    assert compact.count("src/auth/jwt.ts:45:12 TS2345") == 1
+    assert compact.count("src/api/billing.ts:88:3 TS2322") == 1
+    before = count_tokens(SAMPLE_TSC_ERRORS).claude
+    after = count_tokens(compact).claude
+    assert after < before * 0.4, f"expected large drop, got {before} -> {after}"
 
 
 def test_filter_tsc_clean_output_untouched():
@@ -652,7 +795,8 @@ def test_auto_specialize_routes_tsc():
     compact = auto_specialize_command_output("npx tsc --noEmit", SAMPLE_TSC_ERRORS)
     assert compact is not None
     assert "~~~~~" not in compact
-    assert "error TS2345" in compact
+    assert "TS2345" in compact
+    assert "verifyToken(headerToken);" not in compact
 
 
 def test_filter_json_output_large_array():
@@ -925,6 +1069,79 @@ def test_auto_specialize_routes_pyright_and_basedpyright():
     compact_based = auto_specialize_command_output("basedpyright src", SAMPLE_PYRIGHT)
     assert compact_based is not None
     assert "58 errors, 0 warnings" in compact_based
+
+
+def test_filter_eslint_compacts_stylish_into_dense_lines():
+    compact = filter_eslint(SAMPLE_ESLINT_STYLISH)
+
+    assert (
+        "src/auth/session.ts:12:8 error 'os' is defined but never used "
+        "@typescript-eslint/no-unused-vars" in compact
+    )
+    assert (
+        "src/auth/session.ts:44:5 warning Unexpected any. Specify a different type "
+        "@typescript-eslint/no-explicit-any" in compact
+    )
+    assert (
+        "src/utils/helpers.ts:3:1 error Prefer named exports import/prefer-default-export"
+        in compact
+    )
+    assert "src/api/billing.ts:55:3 error Expected '!==' and instead saw '!=' eqeqeq" in compact
+    assert "@typescript-eslint/no-unused-vars" in compact
+    assert "✖ 11 problems (8 errors, 3 warnings)" in compact
+    # Absolute path headers, padding, fixable footer, and duplicate blocks are noise.
+    assert "/Users/dev/acme/" not in compact
+    assert "potentially fixable" not in compact
+    assert re.search(r"^\s+\d+:\d+\s+error", compact, re.MULTILINE) is None
+    assert compact.count("src/auth/session.ts:12:8 error") == 1
+    before = count_tokens(SAMPLE_ESLINT_STYLISH).claude
+    after = count_tokens(compact).claude
+    assert after < before * 0.55, f"expected large drop, got {before} -> {after}"
+
+
+def test_filter_eslint_compacts_codeframe_and_strips_source():
+    compact = filter_eslint(SAMPLE_ESLINT_CODEFRAME)
+
+    assert (
+        "src/auth/session.ts:12:8 error 'os' is defined but never used "
+        "(@typescript-eslint/no-unused-vars)" in compact
+    )
+    assert "@typescript-eslint/no-explicit-any" in compact
+    assert "import/prefer-default-export" in compact
+    assert "✖ 5 problems (5 errors, 0 warnings)" in compact
+    assert "import os from" not in compact
+    assert "const token: any" not in compact
+    assert "at Module._compile" not in compact
+    assert "at processTicksAndRejections" not in compact
+    assert compact.count("src/auth/session.ts:12:8 error") == 1
+    assert re.search(r"^\s*[|^\s]+$", compact, re.MULTILINE) is None
+    before = count_tokens(SAMPLE_ESLINT_CODEFRAME).claude
+    after = count_tokens(compact).claude
+    assert after < before * 0.35, f"expected large drop, got {before} -> {after}"
+
+
+def test_filter_eslint_leaves_clean_output_unchanged():
+    clean = "✨  Done in 1.12s\n"
+    assert filter_eslint(clean) == clean
+
+
+def test_auto_specialize_routes_eslint():
+    compact = auto_specialize_command_output("npx eslint src --ext .ts", SAMPLE_ESLINT_STYLISH)
+    assert compact is not None
+    assert "src/auth/session.ts:12:8 error" in compact
+    assert "/Users/dev/acme/" not in compact
+
+    compact_direct = auto_specialize_command_output("eslint .", SAMPLE_ESLINT_CODEFRAME)
+    assert compact_direct is not None
+    assert "src/auth/session.ts:12:8 error" in compact_direct
+    assert "import os from" not in compact_direct
+    assert "at Module._compile" not in compact_direct
+
+    compact_pnpm = auto_specialize_command_output(
+        "pnpm eslint . --format codeframe", SAMPLE_ESLINT_CODEFRAME
+    )
+    assert compact_pnpm is not None
+    assert "@typescript-eslint/no-unused-vars" in compact_pnpm
 
 
 def test_compress_to_budget():

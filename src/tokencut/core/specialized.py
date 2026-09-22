@@ -410,67 +410,60 @@ def filter_jest_vitest(raw_output: str) -> str:
     return "\n".join(result)
 
 
-# TypeScript compiler outputs multi-line error frames with ASCII squiggles (~~~).
-# Compact them into dense single-line error descriptions with exact file, line, col, code, and source snippet.
+# TypeScript compiler pretty mode repeats source frames, squiggles, and nested
+# type notes. Keep one dense row per unique diagnostic: file, line, rule, message.
 _TSC_HEADER_RE = re.compile(
-    r"^(\S+?)(?::(\d+):(\d+)\s+-\s+error\s+(TS\d+):\s*(.*)|\((\d+),(\d+)\):\s*error\s+(TS\d+):\s*(.*))$"
+    r"^(\S+?):(\d+):(\d+)\s+-\s+error\s+(TS\d+):\s*(.*)$|"
+    r"^(\S+?)\((\d+),(\d+)\):\s*error\s+(TS\d+):\s*(.*)$"
 )
 _SQUIGGLE_RE = re.compile(r"^\s*[~^]+\s*$")
-_LINE_NUM_CODE_RE = re.compile(r"^\s*\d+\s+(.*)$")
+_TSC_FRAME_LINE_RE = re.compile(r"^(?:>\s*)?\d+\s+\||^[|\s~^]+$")
+_TSC_SUMMARY_RE = re.compile(r"^Found \d+ errors?\b")
+_TSC_FILE_TABLE_RE = re.compile(r"^(Errors\s+Files|\s+\d+\s+\S+:\d+\s*)$")
 
 
 def filter_tsc(raw_output: str) -> str:
-    """Compact verbose TypeScript compiler (tsc) output by stripping squiggle underlines and padding."""
+    """Compact verbose tsc pretty output into dense unique diagnostics."""
     lines = raw_output.splitlines()
     if not any("error TS" in line for line in lines):
         return raw_output
 
     result: list[str] = []
-    current_error = ""
-    current_continuations: list[str] = []
-    current_source = ""
-
-    def flush_error():
-        nonlocal current_error, current_continuations, current_source
-        if current_error:
-            entry = current_error
-            if current_continuations:
-                entry += " " + " ".join(current_continuations)
-            if current_source:
-                entry += f" | `{current_source}`"
-            result.append(entry)
-        current_error = ""
-        current_continuations = []
-        current_source = ""
+    seen: set[str] = set()
+    summary: str | None = None
 
     for line in lines:
         stripped = line.strip()
         if not stripped:
             continue
-        if _SQUIGGLE_RE.match(stripped):
+        if _SQUIGGLE_RE.match(stripped) or _TSC_FRAME_LINE_RE.match(stripped):
+            continue
+        if _TSC_FILE_TABLE_RE.match(stripped):
             continue
 
-        if _TSC_HEADER_RE.match(stripped):
-            flush_error()
-            current_error = stripped
-            continue
-
-        if current_error:
-            if stripped.startswith("Found ") or stripped.startswith("==="):
-                flush_error()
-                result.append(stripped)
-            elif _LINE_NUM_CODE_RE.match(stripped):
-                current_source = _LINE_NUM_CODE_RE.match(stripped).group(1).strip()
-            elif not current_source and not stripped.startswith("error TS"):
-                current_continuations.append(stripped)
+        header = _TSC_HEADER_RE.match(stripped)
+        if header:
+            if header.group(1) is not None:
+                path, lineno, col, code, message = header.group(1, 2, 3, 4, 5)
             else:
-                flush_error()
-                result.append(line)
-        else:
-            result.append(line)
+                path, lineno, col, code, message = header.group(6, 7, 8, 9, 10)
+            entry = f"{path}:{lineno}:{col} {code} {message.strip()}"
+            if entry not in seen:
+                seen.add(entry)
+                result.append(entry)
+            continue
 
-    flush_error()
-    return "\n".join(result)
+        if _TSC_SUMMARY_RE.match(stripped):
+            summary = stripped
+            continue
+
+        # Drop nested type-continuation notes and leftover pretty padding.
+        if stripped.startswith("Type ") or stripped.startswith("Type '"):
+            continue
+
+    if summary:
+        result.append(summary)
+    return "\n".join(result) if result else raw_output
 
 
 # Ruff's default ``full`` format repeats source frames and caret underlines for
@@ -607,6 +600,90 @@ def filter_pyright(raw_output: str) -> str:
     if not changed:
         return raw_output
     return "\n".join(result)
+
+
+# ESLint stylish (default) prints an absolute path header then padded columns.
+# Codeframe embeds source lines and caret underlines. Collapse both to dense
+# ``file:line:col severity message rule`` rows while keeping the summary.
+_ESLINT_STYLISH_DIAG_RE = re.compile(r"^(\d+):(\d+)\s+(error|warning|info)\s+(.+?)\s{2,}(\S+)\s*$")
+_ESLINT_CODEFRAME_RE = re.compile(
+    r"^(error|warning|info):\s+(.+?)\s+\(([^)]+)\)\s+at\s+(\S+):(\d+):(\d+):?\s*$"
+)
+_ESLINT_SUMMARY_RE = re.compile(r"^[✖×]\s+\d+\s+problems?\b")
+_ESLINT_FIXABLE_RE = re.compile(r"potentially fixable with the `--fix` option")
+_ESLINT_FRAME_LINE_RE = re.compile(r"^(?:>\s*)?\d+\s+\||^[|\s^~]+$")
+_ESLINT_PATH_RE = re.compile(r"^(?:[A-Za-z]:)?[\\/].+\.[A-Za-z0-9]+$|^[^:\s].+\.[A-Za-z0-9]+$")
+
+
+def _eslint_relpath(path: str) -> str:
+    """Prefer a repo-relative looking suffix when stylish prints absolute paths."""
+    normalized = path.replace("\\", "/")
+    # Already relative — keep the full project path for actionable locations.
+    if not normalized.startswith("/") and not re.match(r"^[A-Za-z]:/", normalized):
+        return path
+    markers = ("/src/", "/lib/", "/app/", "/apps/", "/packages/", "/test/", "/tests/")
+    for marker in markers:
+        idx = normalized.find(marker)
+        if idx != -1:
+            return normalized[idx + 1 :]
+    return normalized.rsplit("/", 1)[-1]
+
+
+def filter_eslint(raw_output: str) -> str:
+    """Compact verbose ESLint stylish/codeframe output into dense unique diagnostics."""
+    lines = raw_output.splitlines()
+    has_stylish = any(_ESLINT_STYLISH_DIAG_RE.match(line.strip()) for line in lines)
+    has_codeframe = any(_ESLINT_CODEFRAME_RE.match(line.strip()) for line in lines)
+    if not has_stylish and not has_codeframe:
+        return raw_output
+
+    result: list[str] = []
+    seen: set[str] = set()
+    current_file: str | None = None
+    summary: str | None = None
+
+    def add(entry: str) -> None:
+        if entry not in seen:
+            seen.add(entry)
+            result.append(entry)
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        # Stack frames and codeframe source rows are pure noise for agents.
+        if stripped.startswith("at ") or _ESLINT_FRAME_LINE_RE.match(stripped):
+            continue
+        if _ESLINT_FIXABLE_RE.search(stripped):
+            continue
+
+        codeframe = _ESLINT_CODEFRAME_RE.match(stripped)
+        if codeframe:
+            severity, message, rule, path, lineno, col = codeframe.groups()
+            add(f"{_eslint_relpath(path)}:{lineno}:{col} {severity} {message} ({rule})")
+            current_file = None
+            continue
+
+        stylish = _ESLINT_STYLISH_DIAG_RE.match(stripped)
+        if stylish and current_file is not None:
+            lineno, col, severity, message, rule = stylish.groups()
+            add(f"{current_file}:{lineno}:{col} {severity} {message.strip()} {rule}")
+            continue
+
+        if _ESLINT_SUMMARY_RE.match(stripped):
+            summary = stripped
+            current_file = None
+            continue
+
+        # Stylish file headers: a bare path line before indented diagnostics.
+        if has_stylish and _ESLINT_PATH_RE.match(stripped) and not re.search(r":\d+:\d+", stripped):
+            current_file = _eslint_relpath(stripped)
+            continue
+
+    if summary:
+        result.append(summary)
+    return "\n".join(result) if result else raw_output
 
 
 def filter_json_output(raw_output: str, command: str = "") -> str | None:
@@ -881,6 +958,8 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         )
     ):
         return filter_tsc(raw_output)
+    elif _is_eslint_command(cmd_lower):
+        return filter_eslint(raw_output)
     elif _is_ruff_command(cmd_lower):
         return filter_ruff(raw_output)
     elif _is_docker_build_command(cmd_lower):
@@ -957,6 +1036,23 @@ def _is_go_test_command(command: str) -> bool:
     if len(words) < 2:
         return False
     return PurePath(words[0]).name.lower() in {"go", "go.exe"} and words[1] == "test"
+
+
+def _is_eslint_command(cmd_lower: str) -> bool:
+    """Recognize direct and common launcher forms for ESLint."""
+    prefixes = (
+        "eslint ",
+        "eslint\t",
+        "npx eslint",
+        "pnpm eslint",
+        "yarn eslint",
+        "bunx eslint",
+        "bun x eslint",
+        "npm exec eslint",
+    )
+    if cmd_lower == "eslint" or any(cmd_lower.startswith(prefix) for prefix in prefixes):
+        return True
+    return False
 
 
 def _is_ruff_command(cmd_lower: str) -> bool:

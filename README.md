@@ -46,7 +46,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 
 ## See it cut
 
-`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, Ruff frames compact, and Docker BuildKit progress collapses.
+`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, and Ruff / Docker / tsc / ESLint frames compact.
 
 ```
                  TokenCut: verify your installation
@@ -57,12 +57,16 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 │ git diff (lockfile + code hunk)          │ 855 -> 111 (87.0%) │
 │ ruff check (full frames)                 │ 146 -> 82 (43.8%)  │
 │ docker build (BuildKit progress)         │ 18,360 -> 107 (99.4%) │
+│ tsc (pretty frames)                      │ 369 -> 77 (79.1%)  │
+│ eslint (codeframe + stacks)              │ 293 -> 61 (79.2%)  │
 │ complete failure tail preserved          │ PASS               │
 │ original recovered exactly               │ PASS               │
 │ unknown output unchanged                 │ PASS               │
 │ git diff folds lockfile keeps code       │ PASS               │
 │ ruff keeps codes drops frames            │ PASS               │
 │ docker keeps failure drops layer progress│ PASS               │
+│ tsc keeps codes drops frames             │ PASS               │
+│ eslint keeps rules drops frames          │ PASS               │
 │ smaller including recovery notice        │ PASS               │
 └──────────────────────────────────────────┴────────────────────┘
 ```
@@ -73,8 +77,10 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 | `git diff` with lockfile noise | 855 → **111** |
 | `ruff check` full frames | 146 → **82** |
 | `docker build` BuildKit progress | 18,360 → **107** |
+| `tsc` pretty frames | 369 → **77** |
+| `eslint` codeframe + stacks | 293 → **61** |
 
-**88.9% less tool text on the pytest fixture; 99.4% on a BuildKit docker build log.** Reproduce with `tokencut demo --json`.
+**88.9% less tool text on the pytest fixture; ~79.1% / 79.2% on noisy tsc / ESLint dumps.** Reproduce with `tokencut demo --json`.
 Local `o200k_base` estimate — not a billing, quality, or subscription-limit claim.
 
 Try it on a real command:
@@ -84,6 +90,8 @@ tokencut run -- pytest -v
 tokencut run -- git diff
 tokencut run -- ruff check .
 tokencut run -- docker build -t app .
+tokencut run -- npx tsc --noEmit
+tokencut run -- npx eslint . --format codeframe
 ```
 
 ## What you get

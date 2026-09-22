@@ -1469,6 +1469,78 @@ def demo(
     )
     noisy_docker = "\n".join(docker_lines)
 
+    noisy_tsc = (
+        "src/auth/jwt.ts:45:12 - error TS2345: Argument of type 'string | undefined' "
+        "is not assignable to parameter of type 'string'.\n"
+        "  Type 'undefined' is not assignable to type 'string'.\n"
+        "\n"
+        '  43 |   const headerToken = headers.get("authorization") ?? undefined;\n'
+        "  44 |   // verify the bearer token before continuing the chain\n"
+        "> 45 |   verifyToken(headerToken);\n"
+        "     |               ~~~~~~~~~~~\n"
+        "  46 |   return next();\n"
+        "  47 | }\n"
+        "\n"
+        "src/auth/jwt.ts:45:12 - error TS2345: Argument of type 'string | undefined' "
+        "is not assignable to parameter of type 'string'.\n"
+        "  Type 'undefined' is not assignable to type 'string'.\n"
+        "\n"
+        '  43 |   const headerToken = headers.get("authorization") ?? undefined;\n'
+        "  44 |   // verify the bearer token before continuing the chain\n"
+        "> 45 |   verifyToken(headerToken);\n"
+        "     |               ~~~~~~~~~~~\n"
+        "  46 |   return next();\n"
+        "  47 | }\n"
+        "\n"
+        "src/models/user.ts:18:7 - error TS2741: Property 'email' is missing in type "
+        "'{ id: number; name: string; }' but required in type 'User'.\n"
+        "\n"
+        "  16 | export function buildUser(id: number, name: string): User {\n"
+        "  17 |   // TODO: pull email from the directory service\n"
+        '> 18 |   const u: User = { id: 1, name: "Alice" };\n'
+        "     |         ~\n"
+        "  19 |   return u;\n"
+        "  20 | }\n"
+        "\n"
+        "Found 3 errors in 2 files.\n"
+        "\n"
+        "Errors  Files\n"
+        "     2  src/auth/jwt.ts:45\n"
+        "     1  src/models/user.ts:18\n"
+    )
+    noisy_eslint = (
+        "error: 'os' is defined but never used (@typescript-eslint/no-unused-vars) "
+        "at src/auth/session.ts:12:8:\n"
+        '  10 | import sys from "sys";\n'
+        '  11 | import json from "json";\n'
+        '> 12 | import os from "os";\n'
+        "     |        ^\n"
+        "  13 |\n"
+        "  at Object.<anonymous> (src/auth/session.ts:12:8)\n"
+        "  at Module._compile (node:internal/modules/cjs/loader:1521:14)\n"
+        "\n"
+        "error: 'os' is defined but never used (@typescript-eslint/no-unused-vars) "
+        "at src/auth/session.ts:12:8:\n"
+        '  10 | import sys from "sys";\n'
+        '  11 | import json from "json";\n'
+        '> 12 | import os from "os";\n'
+        "     |        ^\n"
+        "  13 |\n"
+        "  at Object.<anonymous> (src/auth/session.ts:12:8)\n"
+        "  at Module._compile (node:internal/modules/cjs/loader:1521:14)\n"
+        "\n"
+        "error: Unexpected any. Specify a different type (@typescript-eslint/no-explicit-any) "
+        "at src/auth/session.ts:44:5:\n"
+        "  42 | function refresh() {\n"
+        "  43 |   const client = new Client();\n"
+        "> 44 |   const token: any = client.issue();\n"
+        "     |     ^^^\n"
+        "  45 |   return client;\n"
+        "  46 | }\n"
+        "\n"
+        "✖ 3 problems (3 errors, 0 warnings)\n"
+    )
+
     # A disposable cache makes the demo independent of the user's project and
     # existing history. Always restore an explicit caller-provided cache path.
     previous_cache = os.environ.get("TOKENCUT_CACHE_DIR")
@@ -1484,6 +1556,11 @@ def demo(
             ruff_compact = auto_specialize_command_output("ruff check .", noisy_ruff) or ""
             docker_compact = (
                 auto_specialize_command_output("docker build -t app .", noisy_docker) or ""
+            )
+            tsc_compact = auto_specialize_command_output("npx tsc --noEmit", noisy_tsc) or ""
+            eslint_compact = (
+                auto_specialize_command_output("npx eslint . --format codeframe", noisy_eslint)
+                or ""
             )
             checks = {
                 "complete_failure_tail_preserved": failure_tail in compacted,
@@ -1506,6 +1583,19 @@ def demo(
                     and "Collecting pkg1-dep0" not in docker_compact
                     and "docker build progress lines" in docker_compact
                 ),
+                "tsc_keeps_codes_drops_frames": (
+                    "TS2345" in tsc_compact
+                    and "TS2741" in tsc_compact
+                    and "verifyToken(headerToken);" not in tsc_compact
+                    and tsc_compact.count("src/auth/jwt.ts:45:12 TS2345") == 1
+                ),
+                "eslint_keeps_rules_drops_frames": (
+                    "@typescript-eslint/no-unused-vars" in eslint_compact
+                    and "@typescript-eslint/no-explicit-any" in eslint_compact
+                    and "import os from" not in eslint_compact
+                    and "at Module._compile" not in eslint_compact
+                    and eslint_compact.count("src/auth/session.ts:12:8 error") == 1
+                ),
             }
         finally:
             if previous_cache is None:
@@ -1522,6 +1612,10 @@ def demo(
     ruff_output_tokens = count_tokens(ruff_compact).openai
     docker_raw_tokens = count_tokens(noisy_docker).openai
     docker_output_tokens = count_tokens(docker_compact).openai
+    tsc_raw_tokens = count_tokens(noisy_tsc).openai
+    tsc_output_tokens = count_tokens(tsc_compact).openai
+    eslint_raw_tokens = count_tokens(noisy_eslint).openai
+    eslint_output_tokens = count_tokens(eslint_compact).openai
     passed = all(checks.values())
     result = {
         "measurement": "local tokenizer estimate on authored fixtures; not model billing or quota",
@@ -1549,6 +1643,20 @@ def demo(
                 "output_tokens": docker_output_tokens,
                 "reduction_pct": round(
                     100 * (docker_raw_tokens - docker_output_tokens) / docker_raw_tokens, 1
+                ),
+            },
+            "tsc": {
+                "raw_tokens": tsc_raw_tokens,
+                "output_tokens": tsc_output_tokens,
+                "reduction_pct": round(
+                    100 * (tsc_raw_tokens - tsc_output_tokens) / tsc_raw_tokens, 1
+                ),
+            },
+            "eslint": {
+                "raw_tokens": eslint_raw_tokens,
+                "output_tokens": eslint_output_tokens,
+                "reduction_pct": round(
+                    100 * (eslint_raw_tokens - eslint_output_tokens) / eslint_raw_tokens, 1
                 ),
             },
         },
@@ -1584,6 +1692,20 @@ def demo(
             (
                 f"{docker_raw_tokens:,} -> {docker_output_tokens:,} "
                 f"({result['specialized']['docker_build']['reduction_pct']}%)"
+            ),
+        )
+        table.add_row(
+            "tsc (pretty frames)",
+            (
+                f"{tsc_raw_tokens:,} -> {tsc_output_tokens:,} "
+                f"({result['specialized']['tsc']['reduction_pct']}%)"
+            ),
+        )
+        table.add_row(
+            "eslint (codeframe + stacks)",
+            (
+                f"{eslint_raw_tokens:,} -> {eslint_output_tokens:,} "
+                f"({result['specialized']['eslint']['reduction_pct']}%)"
             ),
         )
         for name, ok in checks.items():
