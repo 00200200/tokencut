@@ -54,6 +54,8 @@ def test_profile_stdio_and_environment_selection(monkeypatch):
         ([], {}, len(server.TOOLS_DEFINITIONS)),
         (["--profile", "coding"], {}, 8),
         ([], {"TOKENCUT_MCP_PROFILE": "coding"}, 8),
+        (["--profile", "desktop"], {}, 10),
+        ([], {"TOKENCUT_MCP_PROFILE": "desktop"}, 10),
         (["--profile", "full"], {"TOKENCUT_MCP_PROFILE": "coding"}, len(server.TOOLS_DEFINITIONS)),
     ):
         result = runner.invoke(app, ["mcp", *args], input=request, env=env)
@@ -70,6 +72,16 @@ def test_coding_profile_reduces_schema_text_and_does_not_advertise_hidden_tools(
     assert coding < full * 0.75
     assert "tokencut_pack" not in server.server_instructions("coding")
     assert "tokencut_pack" in server.server_instructions("full")
+
+
+def test_desktop_profile_reduces_schema_text_and_sets_instructions():
+    full = count_tokens(json.dumps(server.tool_definitions())).openai
+    desktop = count_tokens(json.dumps(server.tool_definitions("desktop"))).openai
+    assert desktop < full * 0.70
+    assert len(server.tool_definitions("desktop")) == 10
+    instructions = server.server_instructions("desktop")
+    assert "Desktop Profile" in instructions
+    assert "Claude Desktop & Codex Desktop" in instructions
 
 
 def test_handle_tokencut_exec():
@@ -126,6 +138,29 @@ def test_handle_tokencut_read_include_hash_and_strip_comments(tmp_path):
     clean_res = handle_tokencut_read({"path": str(f), "strip_comments": True})
     assert "# verbose commentary" not in clean_res
     assert "val = 42" in clean_res
+
+
+def test_handle_tokencut_read_auto_skeleton(tmp_path):
+    f = tmp_path / "large_module.py"
+    lines = ["import os", "import sys", "class Worker:"]
+    for i in range(15):
+        lines.append(f"    def task_{i}(self, x: int) -> int:")
+        lines.append(f'        """Docstring for task {i}."""')
+        lines.append("        val = x * 2")
+        lines.append("        res = val + 10")
+        lines.append("        return res\n")
+    f.write_text("\n".join(lines), encoding="utf-8")
+
+    # Regular read with low budget
+    raw_res = handle_tokencut_read({"path": str(f), "budget": 80, "auto_skeleton": False})
+    assert "lines omitted" in raw_res  # truncated
+
+    # Auto skeleton read
+    skel_res = handle_tokencut_read({"path": str(f), "budget": 300, "auto_skeleton": True})
+    assert "structural outline" in skel_res
+    assert "class Worker:" in skel_res
+    assert "def task_0" in skel_res
+    assert "def task_14" in skel_res
 
 
 def test_handle_tokencut_retrieve():

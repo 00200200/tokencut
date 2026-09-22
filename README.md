@@ -105,34 +105,44 @@ tokencut prepare --file draft.txt
 
 ## Connect your agent
 
-**Coding profile:** 8 core tools instead of 15 — about **37% smaller tool schemas** in a local `o200k_base` measurement (2,881 → 1,816). Not a per-turn usage guarantee.
+**Desktop & Coding profiles:** 8–10 essential tools instead of 15 — about **37% smaller tool schemas** in local measurements (3,198 → 2,018 tokens).
 
 ```sh
-# Claude Code
-claude mcp add --scope user tokencut -- tokencut mcp --profile coding
-
-# Codex
-codex mcp add tokencut -- tokencut mcp --profile coding
-
-# Claude Desktop
-tokencut install --claude-desktop
-tokencut install --mcpb          # Extension manifest for one-click packaging
+# One-command installer for Codex & Claude Desktop
+tokencut install --codex            # configures ~/.codex/config.toml
+tokencut install --claude-desktop   # configures Claude Desktop MCP
+tokencut install --mcpb             # Extension manifest for one-click packaging
+tokencut install --all              # configures all at once
 ```
 
-Other MCP clients:
+For Claude Code CLI:
+```sh
+claude mcp add --scope user tokencut -- tokencut mcp --profile coding
+```
+
+Manual MCP configuration for Claude Desktop, Cursor, Codex, Windsurf:
 
 ```json
 {
   "mcpServers": {
     "tokencut": {
       "command": "/absolute/path/to/tokencut",
-      "args": ["mcp", "--profile", "coding"]
+      "args": ["mcp", "--profile", "desktop"]
     }
   }
 }
 ```
 
-Path: `command -v tokencut`. Use `--profile full` for every MCP tool. [Client setup →](docs/guide.md#connect-clients)
+Path: `command -v tokencut`. Use `--profile full` for every tool, `--profile coding` for core terminal tools, or `--profile desktop` for chat apps. [Client setup →](docs/guide.md#connect-clients)
+
+```sh
+# Prepare messy logs or stack traces with prompt-cache prefix stabilization:
+tokencut prepare --desktop -f error.log
+
+# Initialize lean instructions (~120 tokens) for Claude or Codex:
+tokencut rules --init --client claude   # writes CLAUDE.md
+tokencut rules --init --client codex    # writes AGENTS.md
+```
 
 ---
 

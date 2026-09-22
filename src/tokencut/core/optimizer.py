@@ -162,6 +162,17 @@ def optimize_context(
             primary_mode = "prompt_cache_align"
             pipeline_stages.append("prompt_cache_alignment")
 
+    # C2. Dev server logs or traceback
+    if primary_mode == "hybrid":
+        from tokencut.core.specialized import filter_dev_server_logs, filter_traceback
+
+        tb_filtered = filter_traceback(working_text)
+        dev_filtered = filter_dev_server_logs(tb_filtered)
+        if count_tokens(dev_filtered).openai < count_tokens(working_text).openai:
+            working_text = dev_filtered
+            primary_mode = "dev_log_traceback"
+            pipeline_stages.append("dev_log_traceback_compaction")
+
     # D. General text / terminal logs / diffs fallback
     if primary_mode == "hybrid" or working_text == redacted:
         clip_res = compact_text(working_text, budget=budget)

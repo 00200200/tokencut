@@ -252,3 +252,29 @@ def minify_prompt(text: str) -> PromptMinifyResult:
         reduction_pct=pct,
         minified_text=minified_text,
     )
+
+
+_VOLATILE_PATH_PATTERN = re.compile(
+    r"(?:/private/var/folders/[^\s:]+|/(?:tmp|var/tmp)/[^\s:]+)",
+    re.IGNORECASE,
+)
+
+
+def stabilize_cache_prefix(text: str) -> str:
+    """Normalize volatile elements in text prefixes to protect prompt cache hits.
+
+    1. Normalizes CRLF \\r\\n to \\n and strips trailing whitespace.
+    2. Isolates volatile prefix variables (timestamps, volatile paths, session UUIDs)
+       to dynamic context sections so that Anthropic (1024-token) and OpenAI (128-token)
+       prompt caching achieves optimal hit rates.
+    """
+    if not text.strip():
+        return text
+
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+
+    aligned = align_prompt(normalized).aligned_text
+    stabilized = _VOLATILE_PATH_PATTERN.sub("<tmpdir>", aligned)
+
+    return stabilized

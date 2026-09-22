@@ -193,6 +193,11 @@ TOOLS_DEFINITIONS = [
                     "description": "If true, prepends the file's SHA-256 hash header for conditional re-reads.",
                     "default": False,
                 },
+                "auto_skeleton": {
+                    "type": "boolean",
+                    "description": "If true and file exceeds budget without symbol/lines, returns structural AST outline.",
+                    "default": False,
+                },
             },
             "required": ["path"],
         },
@@ -459,15 +464,99 @@ CODING_TOOLS = frozenset(
     }
 )
 
+DESKTOP_TOOLS = frozenset(
+    {
+        "tokencut_code",
+        "tokencut_edit_symbol",
+        "tokencut_exec",
+        "tokencut_read",
+        "tokencut_retrieve",
+        "tokencut_context",
+        "tokencut_diff",
+        "tokencut_stats",
+        "tokencut_optimize",
+        "tokencut_clip",
+    }
+)
+
+DESKTOP_TOOL_DESCRIPTIONS = {
+    "tokencut_code": "Search local syntax index (symbols, occurrences, outline, callers, references, patterns) or ranked repo map.",
+    "tokencut_read": "Targeted file read by skeleton outline, symbol, or line range with bounded output.",
+    "tokencut_edit_symbol": "Atomic symbol replacement in source file guarded by file hash.",
+    "tokencut_exec": "Run noninteractive shell command with output compaction. Retains exit codes and diagnostics.",
+    "tokencut_diff": "Compact git diff folding lockfiles and build artifacts.",
+    "tokencut_retrieve": "Recover full original output from SQLite cache by ref_id.",
+    "tokencut_context": "Save/read bounded task milestones across session turns.",
+    "tokencut_stats": "Report session token savings.",
+    "tokencut_optimize": "Autonomous prompt, code block, log, and table context optimizer.",
+    "tokencut_clip": "Compact noisy text, logs, diffs, or stack traces before pasting into chat.",
+}
+
+
+_COMPACT_PROP_DESCRIPTIONS = {
+    "if_modified_since_hash": "Skip read if SHA-256 unchanged (returns 304).",
+    "include_hash": "Prepend file SHA-256 for caching.",
+    "strip_comments": "Strip comments and blank lines.",
+    "skeleton": "Extract AST outline (classes/functions without bodies).",
+    "auto_skeleton": "Progressively fold bodies if file exceeds budget.",
+    "symbol": "Target symbol name (e.g. Class.method).",
+    "expected_revision": "Revision expected before save.",
+    "revision": "Specific revision to read.",
+    "action": "Action: save, read, list, forget.",
+    "task": "Task ID.",
+    "checkpoint": "Checkpoint milestone data.",
+    "mode": "Search mode (map, symbols, outline, callers, references).",
+    "replacement": "Replacement source code.",
+    "expected_hash": "Target file SHA-256 digest before edit.",
+    "selector": "Qualified symbol selector.",
+    "ref_id": "Recovery reference ID.",
+    "max_tokens": "Text budget ceiling.",
+    "budget": "Target token budget ceiling.",
+    "root": "Absolute project root directory.",
+    "path": "Target file or directory path.",
+    "lines": "Target line range (e.g. '10-50').",
+    "query": "Search query or pattern.",
+    "command": "Shell command to execute.",
+}
+
+
+def _make_desktop_tool(base_tool: dict) -> dict:
+    import copy
+
+    tool = copy.deepcopy(base_tool)
+    name = tool["name"]
+    if name in DESKTOP_TOOL_DESCRIPTIONS:
+        tool["description"] = DESKTOP_TOOL_DESCRIPTIONS[name]
+    props = tool.get("inputSchema", {}).get("properties", {})
+    for prop_name, prop_def in props.items():
+        if prop_name in _COMPACT_PROP_DESCRIPTIONS and isinstance(prop_def, dict):
+            prop_def["description"] = _COMPACT_PROP_DESCRIPTIONS[prop_name]
+    return tool
+
 
 def tool_definitions(profile: str = "full") -> list[dict]:
-    """Keep optional transforms out of coding sessions without changing the default API."""
-    if profile not in {"full", "coding"}:
-        raise ValueError("MCP profile must be full or coding")
-    return [tool for tool in TOOLS_DEFINITIONS if profile == "full" or tool["name"] in CODING_TOOLS]
+    """Return tool schemas filtered and formatted for the requested profile."""
+    if profile not in {"full", "coding", "desktop"}:
+        raise ValueError("MCP profile must be full, coding, or desktop")
+    if profile == "full":
+        return [tool for tool in TOOLS_DEFINITIONS]
+    if profile == "desktop":
+        return [
+            _make_desktop_tool(tool) for tool in TOOLS_DEFINITIONS if tool["name"] in DESKTOP_TOOLS
+        ]
+    return [tool for tool in TOOLS_DEFINITIONS if tool["name"] in CODING_TOOLS]
 
 
 def server_instructions(profile: str) -> str:
+    if profile == "desktop":
+        return (
+            "TokenCut Desktop Profile (Claude Desktop & Codex Desktop). "
+            "Use tokencut_code for syntax searches; tokencut_read for exact symbols or ranges; "
+            "tokencut_edit_symbol for hash-guarded edits; tokencut_optimize/tokencut_clip to shrink pasted logs, diffs and prompts; "
+            "tokencut_context for milestone checkpoints; tokencut_exec for verbose commands; "
+            "tokencut_retrieve to recover full omitted output by ref. "
+            "Keep normal approvals. This server does not intercept chat or change account quotas."
+        )
     extra = (
         "Use tokencut_optimize for unified autonomous prompt, code block, table, transcript, and log optimization; "
         "tokencut_pack for file bundles, tokencut_clip for pasted logs, "
@@ -646,6 +735,8 @@ def handle_tokencut_read(arguments: dict[str, Any]) -> str:
             raw = p.read_text(encoding="utf-8", errors="replace")
             return _record(raw, notice, operation="read", project=path)
 
+    auto_skeleton = bool(arguments.get("auto_skeleton", False))
+
     extracted = extract_symbol_or_range(
         path,
         symbol=symbol,
@@ -653,6 +744,19 @@ def handle_tokencut_read(arguments: dict[str, Any]) -> str:
         skeleton=skeleton,
         strip_comments=strip_comments,
     )
+    if auto_skeleton and symbol is None and lines is None and not skeleton:
+        if count_tokens(extracted).avg > budget:
+            skel = extract_symbol_or_range(
+                path,
+                skeleton=True,
+                strip_comments=strip_comments,
+            )
+            if skel and skel != extracted:
+                notice = (
+                    f"# [tokencut: File exceeded {budget} token budget. Displaying structural outline. "
+                    f"Use 'symbol' or 'lines' to read specific implementation.]\n"
+                )
+                extracted = notice + skel
     if include_hash:
         source_bytes = p.read_bytes()
         current_hash = hashlib.sha256(source_bytes).hexdigest()

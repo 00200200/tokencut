@@ -472,3 +472,66 @@ def test_cli_share_badge():
     assert res.output.strip().startswith(
         "[![TokenCut Context](https://img.shields.io/badge/tokencut-"
     )
+
+
+def test_cli_rules_init(tmp_path):
+    target = tmp_path / "CLAUDE.md"
+    res = runner.invoke(app, ["rules", "--init", "--file", str(target), "--client", "claude"])
+    assert res.exit_code == 0
+    assert target.exists()
+    assert "TokenCut Claude Rules" in target.read_text()
+
+
+def test_cli_rules_optimize(tmp_path):
+    target = tmp_path / "CLAUDE.md"
+    target.write_text(
+        "# Guidelines\n\n"
+        "You are an expert AI assistant. Please make sure to always remember to never forget this.\n\n"
+        "Current Date: 2026-09-22\n\n"
+        "- Run pytest before pushing code.\n"
+    )
+    # Test --optimize --stats (dry run)
+    res_dry = runner.invoke(app, ["rules", "--optimize", "--file", str(target), "--stats"])
+    assert res_dry.exit_code == 0
+    assert "TokenCut Rules Optimization:" in res_dry.output
+    assert "Run pytest before pushing code" in res_dry.output
+    assert "You are an expert" not in res_dry.output
+
+    # Test --optimize --write
+    res_write = runner.invoke(app, ["rules", "--optimize", "--file", str(target), "--write"])
+    assert res_write.exit_code == 0
+    assert "Optimized" in res_write.output
+    bak_file = tmp_path / "CLAUDE.md.bak"
+    assert bak_file.exists()
+    assert "You are an expert" in bak_file.read_text()
+    assert "You are an expert" not in target.read_text()
+    assert "Dynamic Runtime Context" in target.read_text()
+
+
+def test_cli_install_codex_and_profile(tmp_path, monkeypatch):
+    import tokencut.core.doctor as doc
+
+    fake_codex_cfg = tmp_path / "config.toml"
+    fake_claude_cfg = tmp_path / "claude_desktop_config.json"
+    monkeypatch.setattr(doc, "get_codex_config_path", lambda: fake_codex_cfg)
+    monkeypatch.setattr(doc, "get_claude_desktop_config_path", lambda: fake_claude_cfg)
+    monkeypatch.setattr(
+        doc,
+        "_local_mcp_command",
+        lambda profile=None: {
+            "command": "/bin/tokencut",
+            "args": ["mcp", "--profile", profile] if profile else ["mcp"],
+        },
+    )
+
+    res_codex = runner.invoke(app, ["install", "--codex", "--profile", "desktop"])
+    assert res_codex.exit_code == 0
+    assert "Codex MCP configured" in res_codex.output
+    assert fake_codex_cfg.exists()
+    assert '"desktop"' in fake_codex_cfg.read_text()
+
+    res_claude = runner.invoke(app, ["install", "--claude-desktop", "--profile", "desktop"])
+    assert res_claude.exit_code == 0
+    assert "Claude Desktop MCP configured" in res_claude.output
+    assert fake_claude_cfg.exists()
+    assert "desktop" in fake_claude_cfg.read_text()

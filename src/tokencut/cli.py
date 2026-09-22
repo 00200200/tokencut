@@ -26,7 +26,10 @@ from tokencut.core.companion_state import already_wrapped, paused
 from tokencut.core.config import load_config
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.doctor import (
+    _codex_available,
+    check_codex_mcp,
     configure_claude_desktop_mcp,
+    configure_codex_mcp,
     configure_cursor_mcp,
     configure_shell_alias,
     configure_windsurf_mcp,
@@ -39,7 +42,12 @@ from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
 from tokencut.core.json_slimmer import slim_json
 from tokencut.core.native_hooks import install_claude_hook, run_hook_filter
 from tokencut.core.pr_analyzer import analyze_pr_tokens
-from tokencut.core.rules_linter import lint_rule_content, minify_rules
+from tokencut.core.rules_linter import (
+    generate_desktop_rules,
+    lint_rule_content,
+    minify_rules,
+    optimize_rules,
+)
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import auto_specialize_command_output
@@ -279,8 +287,13 @@ def pack_command(
 def prepare_command(
     file: Annotated[Path | None, typer.Option("--file", "-f", help="Read a supplied draft")] = None,
     mode: Annotated[
-        str, typer.Option(help="conservative, summary (lossy), or optimize (autonomous)")
+        str,
+        typer.Option(help="conservative, summary (lossy), optimize (autonomous), or desktop"),
     ] = "conservative",
+    desktop: Annotated[
+        bool,
+        typer.Option("--desktop", "-d", help="Prepare for Claude Desktop or Codex Desktop"),
+    ] = False,
     budget: Annotated[
         int, typer.Option(min=128, max=8000, help="Summary or optimize target budget")
     ] = 1500,
@@ -291,6 +304,7 @@ def prepare_command(
     """Preview shorter input before pasting it into any chat; never sends or counts usage."""
     from tokencut.core.prepare import MAX_INPUT_BYTES, prepare_text
 
+    selected_mode = "desktop" if desktop else mode
     try:
         if file is not None:
             with file.open("rb") as stream:
@@ -303,7 +317,7 @@ def prepare_command(
             )
         if len(raw) > MAX_INPUT_BYTES:
             raise ValueError("Draft exceeds 128 KiB; select a smaller relevant excerpt")
-        result = prepare_text(raw.decode("utf-8"), mode=mode, budget=budget)
+        result = prepare_text(raw.decode("utf-8"), mode=selected_mode, budget=budget)
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     if json_output:
@@ -315,13 +329,17 @@ def prepare_command(
             "Review before pasting; not counted as usage savings. "
             "Recognized credentials are redacted; compaction may cache a redacted original."
         )
-        if mode == "summary":
+        if selected_mode == "summary":
             err_console.print(
                 "Summary is heuristic and lossy; verify goals, constraints and decisions."
             )
-        elif mode == "optimize":
+        elif selected_mode == "optimize":
             err_console.print(
                 "Autonomous optimizer applied intra-fence compaction, TOON, or cache alignment."
+            )
+        elif selected_mode == "desktop":
+            err_console.print(
+                "Desktop mode applied traceback compaction, dev server filtering, and cache prefix stabilization."
             )
 
 
@@ -1165,6 +1183,12 @@ def doctor(
             cd_ok, cd_msg = configure_claude_desktop_mcp()
             if cd_ok:
                 console.print(f"[green]✓ Configured Claude Desktop MCP in {cd_msg}[/green]")
+        if _codex_available():
+            codex_diag = check_codex_mcp()
+            if codex_diag.status in {"missing", "warning"}:
+                cx_ok, cx_msg = configure_codex_mcp()
+                if cx_ok:
+                    console.print(f"[green]✓ Configured Codex MCP in {cx_msg}[/green]")
         a_ok, a_msg = configure_shell_alias()
         if a_ok:
             console.print(f"[green]✓ Configured shell alias in {a_msg}[/green]")
@@ -1185,7 +1209,9 @@ def install(
     all_targets: Annotated[
         bool,
         typer.Option(
-            "--all", "-a", help="Install Claude Desktop, Cursor, Windsurf MCP, and shell alias"
+            "--all",
+            "-a",
+            help="Install Claude Desktop, Codex, Cursor, Windsurf MCP, and shell alias",
         ),
     ] = False,
     cursor: Annotated[
@@ -1207,14 +1233,29 @@ def install(
             help="Write Claude Desktop Extension manifest under ~/.tokencut/extensions/",
         ),
     ] = False,
+    codex: Annotated[
+        bool,
+        typer.Option(
+            "--codex",
+            "--codex-desktop",
+            help="Configure Codex Desktop local MCP (~/.codex/config.toml)",
+        ),
+    ] = False,
+    profile: Annotated[
+        str,
+        typer.Option(
+            "--profile",
+            help="MCP profile: desktop (default for Claude & Codex Desktop), coding, or full",
+        ),
+    ] = "desktop",
     alias: Annotated[
         bool, typer.Option("--alias", help="Add 'alias cc=tokencut run --' to shell rc")
     ] = False,
 ):
     """Configure local MCP integrations and optional shell aliases."""
-    if not (all_targets or cursor or windsurf or claude_desktop or mcpb or alias):
+    if not (all_targets or cursor or windsurf or claude_desktop or codex or mcpb or alias):
         console.print(
-            "[yellow]Specify --all, --claude-desktop, --mcpb, --cursor, --windsurf, or --alias.[/yellow]"
+            "[yellow]Specify --all, --claude-desktop, --codex, --mcpb, --cursor, --windsurf, or --alias.[/yellow]"
         )
         raise typer.Exit(code=1)
 
@@ -1233,12 +1274,27 @@ def install(
         console.print(f"[green]✓ Windsurf MCP configured in {msg}![/green]")
 
     if all_targets or claude_desktop:
-        ok, msg = configure_claude_desktop_mcp()
+        try:
+            ok, msg = configure_claude_desktop_mcp(profile=profile)
+        except TypeError:
+            ok, msg = configure_claude_desktop_mcp()
         if not ok:
             err_console.print(msg, markup=False)
             raise typer.Exit(code=1)
         console.print(
             f"Claude Desktop MCP configured in {msg}. Restart/reconnect to activate.", markup=False
+        )
+
+    if all_targets or codex:
+        try:
+            ok, msg = configure_codex_mcp(profile=profile)
+        except TypeError:
+            ok, msg = configure_codex_mcp()
+        if not ok:
+            err_console.print(msg, markup=False)
+            raise typer.Exit(code=1)
+        console.print(
+            f"Codex MCP configured in {msg}. Restart/reconnect to activate.", markup=False
         )
 
     if all_targets or mcpb:
@@ -1455,6 +1511,73 @@ def lint(
         )
 
 
+@app.command("rules")
+def rules_command(
+    init: Annotated[
+        bool,
+        typer.Option("--init", "-i", help="Initialize token-optimized CLAUDE.md or AGENTS.md"),
+    ] = False,
+    optimize: Annotated[
+        bool,
+        typer.Option(
+            "--optimize", "-o", help="Optimize existing rules file (strip filler, align cache)"
+        ),
+    ] = False,
+    write: Annotated[
+        bool,
+        typer.Option(
+            "--write", "-w", help="Write optimized rules back to file (creates .bak backup)"
+        ),
+    ] = False,
+    stats: Annotated[
+        bool,
+        typer.Option("--stats", "-s", help="Print token savings and cache score"),
+    ] = False,
+    client: Annotated[
+        str, typer.Option("--client", "-c", help="Target client: claude or codex")
+    ] = "claude",
+    file_path: Annotated[
+        Path | None, typer.Option("--file", "-f", help="Target rules file path")
+    ] = None,
+):
+    """Generate, initialize, or optimize rules for Claude Desktop and Codex."""
+    target = file_path or Path(
+        "AGENTS.md" if client.lower() in {"codex", "codex-desktop"} else "CLAUDE.md"
+    )
+    if optimize:
+        if not target.exists():
+            err_console.print(f"[bold red]File not found:[/bold red] {target}")
+            raise typer.Exit(code=1)
+        raw_content = target.read_text(encoding="utf-8", errors="replace")
+        res = optimize_rules(raw_content)
+        if write:
+            bak_path = target.with_suffix(target.suffix + ".bak")
+            bak_path.write_text(raw_content, encoding="utf-8")
+            target.write_text(res["optimized_content"], encoding="utf-8")
+            console.print(f"[green]✓ Optimized {target} (backup saved to {bak_path.name})[/green]")
+        else:
+            sys.stdout.write(res["optimized_content"])
+
+        if stats or write:
+            console.print(
+                f"[bold cyan]TokenCut Rules Optimization:[/bold cyan] "
+                f"{res['original_tokens']} -> {res['optimized_tokens']} tokens "
+                f"([green]-{res['savings_pct']}%[/green]) | "
+                f"Cache Friendly: {'[green]YES[/green]' if res['is_cache_friendly'] else '[yellow]NO[/yellow]'}"
+            )
+        return
+
+    rules_text = generate_desktop_rules(client)
+    if init:
+        target.write_text(rules_text, encoding="utf-8")
+        tok_count = count_tokens(rules_text).openai
+        console.print(
+            f"[green]✓ Initialized token-optimized {target} (~{tok_count} tokens)![/green]"
+        )
+    else:
+        sys.stdout.write(rules_text)
+
+
 @app.command()
 def mcp(
     profile: Annotated[
@@ -1462,7 +1585,7 @@ def mcp(
         typer.Option(
             "--profile",
             envvar="TOKENCUT_MCP_PROFILE",
-            help="coding: 8 core tools; full: all tools (default)",
+            help="desktop: 10 tools with optimized schemas for Claude & Codex Desktop; coding: 8 core tools; full: all tools (default)",
         ),
     ] = "full",
 ):
