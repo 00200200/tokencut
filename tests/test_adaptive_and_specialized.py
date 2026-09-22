@@ -5,6 +5,9 @@ import pytest
 from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.specialized import (
+    author_kubectl_describe_fixture,
+    author_kubectl_get_fixture,
+    author_terraform_plan_fixture,
     auto_specialize_command_output,
     filter_cargo_build,
     filter_cargo_test,
@@ -16,14 +19,20 @@ from tokencut.core.specialized import (
     filter_go_test,
     filter_jest_vitest,
     filter_json_output,
+    filter_kubectl,
     filter_mypy,
     filter_npm_install,
     filter_pip_install,
     filter_pyright,
     filter_ruff,
+    filter_terraform,
     filter_tsc,
 )
 from tokencut.metrics.tokenizer import count_tokens
+
+SAMPLE_KUBECTL_DESCRIBE = author_kubectl_describe_fixture()
+SAMPLE_KUBECTL_GET = author_kubectl_get_fixture()
+SAMPLE_TERRAFORM_PLAN = author_terraform_plan_fixture()
 
 SAMPLE_GIT_LOG = """commit a1b2c3d4e5f67890abcdef1234567890abcdef12
 Author: Alice Developer <alice@example.com>
@@ -1322,6 +1331,85 @@ def test_auto_specialize_routes_eslint():
     )
     assert compact_pnpm is not None
     assert "@typescript-eslint/no-unused-vars" in compact_pnpm
+
+
+def test_filter_kubectl_describe_keeps_failure_signal_drops_noise():
+    compact = filter_kubectl(SAMPLE_KUBECTL_DESCRIBE)
+
+    assert "Name:             api-7d8f9c-xk2m9" in compact
+    assert "Namespace:        production" in compact
+    assert "Status:           Running" in compact
+    assert "CrashLoopBackOff" in compact
+    assert "Restart Count:  12" in compact
+    assert "Ready:          False" in compact
+    assert "Back-off restarting failed container" in compact
+    assert "Liveness probe failed" in compact
+    assert "last-applied-configuration" not in compact
+    assert "CFG_VAR_0:" not in compact
+    assert "Successfully assigned production/api-7d8f9c-0000" not in compact
+    assert "annotations" in compact.lower()
+    assert "env" in compact.lower() or "Environment" in compact
+    before = count_tokens(SAMPLE_KUBECTL_DESCRIBE).openai
+    after = count_tokens(compact).openai
+    assert after < before * 0.25
+    assert before - after > 2_000
+
+
+def test_filter_kubectl_get_collapses_healthy_rows():
+    compact = filter_kubectl(SAMPLE_KUBECTL_GET)
+
+    assert "CrashLoopBackOff" in compact
+    assert "Pending" in compact
+    assert "worker-crash-aaaa" in compact
+    assert "worker-pending-bbbb" in compact
+    assert "api-7d8f9c-0000" not in compact
+    assert "Running" in compact  # summary mentions healthy Running count
+    before = count_tokens(SAMPLE_KUBECTL_GET).openai
+    after = count_tokens(compact).openai
+    assert after < before * 0.35
+
+
+def test_auto_specialize_routes_kubectl():
+    compact = auto_specialize_command_output(
+        "kubectl -n production describe pod api-7d8f9c-xk2m9", SAMPLE_KUBECTL_DESCRIBE
+    )
+    assert compact is not None
+    assert "CrashLoopBackOff" in compact
+    assert "last-applied-configuration" not in compact
+
+    compact_get = auto_specialize_command_output("kubectl get pods -o wide", SAMPLE_KUBECTL_GET)
+    assert compact_get is not None
+    assert "CrashLoopBackOff" in compact_get
+    assert "api-7d8f9c-0000" not in compact_get
+
+
+def test_filter_terraform_plan_collapses_refresh_keeps_plan():
+    compact = filter_terraform(SAMPLE_TERRAFORM_PLAN)
+
+    assert "Plan: 1 to add, 1 to change, 0 to destroy." in compact
+    assert 'resource "aws_instance" "api"' in compact
+    assert "t3.small" in compact
+    assert "t3.medium" in compact
+    assert 'resource "aws_lb_listener_rule" "canary"' in compact
+    assert "Refreshing state..." not in compact
+    assert "Reading..." not in compact
+    assert "Read complete after" not in compact
+    assert "refresh" in compact.lower() or "TokenCut" in compact
+    before = count_tokens(SAMPLE_TERRAFORM_PLAN).openai
+    after = count_tokens(compact).openai
+    assert after < before * 0.25
+    assert before - after > 1_500
+
+
+def test_auto_specialize_routes_terraform_and_tofu():
+    compact = auto_specialize_command_output("terraform plan -out=tfplan", SAMPLE_TERRAFORM_PLAN)
+    assert compact is not None
+    assert "Plan: 1 to add, 1 to change, 0 to destroy." in compact
+    assert "Refreshing state..." not in compact
+
+    compact_tofu = auto_specialize_command_output("tofu plan", SAMPLE_TERRAFORM_PLAN)
+    assert compact_tofu is not None
+    assert "aws_instance" in compact_tofu
 
 
 def test_compress_to_budget():

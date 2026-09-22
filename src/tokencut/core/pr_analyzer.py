@@ -131,10 +131,14 @@ def analyze_pr_tokens(base_ref: str = "origin/main") -> PRTokenReport:
         p = Path(file_path)
         cat = _get_category(file_path)
 
-        # Get content before
+        # Get content before (bytes + replace: assets may contain legacy Latin-1)
         before_cmd = f"git show {base_ref}:{file_path}"
-        before_res = subprocess.run(before_cmd, shell=True, capture_output=True, text=True)
-        tokens_before = count_tokens(before_res.stdout).avg if before_res.returncode == 0 else 0
+        before_res = subprocess.run(before_cmd, shell=True, capture_output=True)
+        if before_res.returncode == 0:
+            before_text = before_res.stdout.decode("utf-8", errors="replace")
+            tokens_before = count_tokens(before_text).avg
+        else:
+            tokens_before = 0
 
         # Get content after
         tokens_after = 0
@@ -147,10 +151,11 @@ def analyze_pr_tokens(base_ref: str = "origin/main") -> PRTokenReport:
         else:
             # File might be deleted
             after_res = subprocess.run(
-                f"git show HEAD:{file_path}", shell=True, capture_output=True, text=True
+                f"git show HEAD:{file_path}", shell=True, capture_output=True
             )
             if after_res.returncode == 0:
-                tokens_after = count_tokens(after_res.stdout).avg
+                after_text = after_res.stdout.decode("utf-8", errors="replace")
+                tokens_after = count_tokens(after_text).avg
 
         delta = tokens_after - tokens_before
         item = FileTokenDelta(
