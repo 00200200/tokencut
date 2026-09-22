@@ -1540,6 +1540,47 @@ def demo(
         "\n"
         "✖ 3 problems (3 errors, 0 warnings)\n"
     )
+    npm_chunks: list[str] = ["PASS src/widget.test.js", "  ✓ renders (2 ms)"]
+    for i in range(40):
+        npm_chunks.extend(
+            [
+                "  console.log",
+                f"    debug payload item={i} value={'x' * 48}",
+                "",
+                f"      at Object.<anonymous> (src/widget.test.js:{10 + i}:13)",
+                "",
+            ]
+        )
+    npm_chunks.extend(
+        [
+            "  ✓ saves (3 ms)",
+            "PASS src/other.test.js",
+            "  ✓ ok (1 ms)",
+            "",
+            "stdout | src/other.test.js > ok",
+            "vitest live stdout " + ("y" * 60),
+            "vitest live stdout more " + ("y" * 40),
+            "",
+            "FAIL src/payment.test.js",
+            "  ● charge › times out",
+            "",
+            "    expect(received).toBe(expected)",
+            "",
+            '    Expected: "SUCCESS"',
+            '    Received: "GATEWAY_TIMEOUT"',
+            "",
+            "      42 |   expect(result).toBe('SUCCESS');",
+            "",
+            "  console.error",
+            "    failure side channel must stay",
+            "",
+            "      at Object.<anonymous> (src/payment.test.js:50:13)",
+            "",
+            "Test Suites: 1 failed, 2 passed, 3 total",
+            "Tests:       1 failed, 3 passed, 4 total",
+        ]
+    )
+    noisy_npm_test = "\n".join(npm_chunks)
 
     noisy_mypy = """src/auth/session.py:12: error: Name "os" is not defined  [name-defined]
     |
@@ -1621,6 +1662,7 @@ Found 8 errors in 4 files (checked 24 source files)
                 or ""
             )
             mypy_compact = auto_specialize_command_output("mypy src", noisy_mypy) or ""
+            npm_test_compact = auto_specialize_command_output("npm test", noisy_npm_test) or ""
             checks = {
                 "complete_failure_tail_preserved": failure_tail in compacted,
                 "original_recovered_exactly": recovered == noisy_pytest,
@@ -1661,6 +1703,12 @@ Found 8 errors in 4 files (checked 24 source files)
                     and "Found 8 errors in 4 files" in mypy_compact
                     and "print(os.getcwd())" not in mypy_compact
                 ),
+                "npm_test_keeps_failure_drops_console": (
+                    "GATEWAY_TIMEOUT" in npm_test_compact
+                    and "failure side channel must stay" in npm_test_compact
+                    and "debug payload item=0" not in npm_test_compact
+                    and "console lines omitted" in npm_test_compact
+                ),
             }
         finally:
             if previous_cache is None:
@@ -1683,6 +1731,8 @@ Found 8 errors in 4 files (checked 24 source files)
     eslint_output_tokens = count_tokens(eslint_compact).openai
     mypy_raw_tokens = count_tokens(noisy_mypy).openai
     mypy_output_tokens = count_tokens(mypy_compact).openai
+    npm_raw_tokens = count_tokens(noisy_npm_test).openai
+    npm_output_tokens = count_tokens(npm_test_compact).openai
     passed = all(checks.values())
     result = {
         "measurement": "local tokenizer estimate on authored fixtures; not model billing or quota",
@@ -1731,6 +1781,13 @@ Found 8 errors in 4 files (checked 24 source files)
                 "output_tokens": mypy_output_tokens,
                 "reduction_pct": round(
                     100 * (mypy_raw_tokens - mypy_output_tokens) / mypy_raw_tokens, 1
+                ),
+            },
+            "npm_test": {
+                "raw_tokens": npm_raw_tokens,
+                "output_tokens": npm_output_tokens,
+                "reduction_pct": round(
+                    100 * (npm_raw_tokens - npm_output_tokens) / npm_raw_tokens, 1
                 ),
             },
         },
@@ -1787,6 +1844,13 @@ Found 8 errors in 4 files (checked 24 source files)
             (
                 f"{mypy_raw_tokens:,} -> {mypy_output_tokens:,} "
                 f"({result['specialized']['mypy']['reduction_pct']}%)"
+            ),
+        )
+        table.add_row(
+            "npm test (console dumps)",
+            (
+                f"{npm_raw_tokens:,} -> {npm_output_tokens:,} "
+                f"({result['specialized']['npm_test']['reduction_pct']}%)"
             ),
         )
         for name, ok in checks.items():

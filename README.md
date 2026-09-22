@@ -46,7 +46,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 
 ## See it cut
 
-`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, Ruff/mypy frames compact, Docker BuildKit progress collapses, and ESLint/tsc diagnostics densify.
+`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, Ruff/mypy/tsc/ESLint frames compact, Docker BuildKit progress collapses, and npm test console dumps fold.
 
 ```
                  TokenCut: verify your installation
@@ -60,6 +60,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 │ tsc (pretty frames)                      │ 369 -> 77 (79.1%)  │
 │ eslint (codeframe + stacks)              │ 293 -> 61 (79.2%)  │
 │ mypy --pretty (frames)                   │ 522 -> 259 (50.4%) │
+│ npm test (console dumps)                 │ 1,588 -> 156 (90.2%) │
 │ complete failure tail preserved          │ PASS               │
 │ original recovered exactly               │ PASS               │
 │ unknown output unchanged                 │ PASS               │
@@ -69,6 +70,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 │ tsc keeps codes drops frames             │ PASS               │
 │ eslint keeps rules drops frames          │ PASS               │
 │ mypy keeps codes drops frames            │ PASS               │
+│ npm test keeps failure drops console     │ PASS               │
 │ smaller including recovery notice        │ PASS               │
 └──────────────────────────────────────────┴────────────────────┘
 ```
@@ -82,8 +84,9 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 | `tsc` pretty frames | 369 → **77** |
 | `eslint` codeframe + stacks | 293 → **61** |
 | `mypy` --pretty frames | 522 → **259** |
+| `npm test` console dumps | 1,588 → **156** |
 
-**88.9% less tool text on the pytest fixture; ~79.1% / 79.2% on noisy tsc / ESLint dumps.** Reproduce with `tokencut demo --json`.
+**88.9% less tool text on the pytest fixture; 90.2% on console-heavy npm test logs.** Reproduce with `tokencut demo --json`.
 Local `o200k_base` estimate — not a billing, quality, or subscription-limit claim.
 
 Try it on a real command:
@@ -96,6 +99,7 @@ tokencut run -- docker build -t app .
 tokencut run -- npx tsc --noEmit
 tokencut run -- npx eslint . --format codeframe
 tokencut run -- mypy src
+tokencut run -- npm test
 ```
 
 ## What you get

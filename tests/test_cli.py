@@ -56,6 +56,15 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
         data["specialized"]["mypy"]["raw_tokens"] - data["specialized"]["mypy"]["output_tokens"]
         >= data["specialized"]["mypy"]["raw_tokens"] * 0.45
     )
+    assert (
+        data["specialized"]["npm_test"]["output_tokens"]
+        < data["specialized"]["npm_test"]["raw_tokens"]
+    )
+    assert (
+        data["specialized"]["npm_test"]["raw_tokens"]
+        - data["specialized"]["npm_test"]["output_tokens"]
+        >= data["specialized"]["npm_test"]["raw_tokens"] * 0.85
+    )
     assert os.environ["TOKENCUT_CACHE_DIR"] == cache_path
     assert cache.get_stats()["count"] == before
     assert cache.retrieve(ref) == "existing user output"

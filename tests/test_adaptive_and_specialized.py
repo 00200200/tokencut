@@ -790,6 +790,90 @@ def test_filter_jest_vitest_collapses_passing_runs():
     assert count_tokens(compact).claude < count_tokens(SAMPLE_VITEST_PASS).claude
 
 
+def test_filter_jest_vitest_collapses_console_noise_keeps_failure_console():
+    """Passing-suite console.log / vitest stdout dumps fold; failure tails stay."""
+    chunks: list[str] = ["PASS src/widget.test.js", "  ✓ renders (2 ms)"]
+    for i in range(40):
+        chunks.extend(
+            [
+                "  console.log",
+                f"    debug payload item={i} value={'x' * 48}",
+                "",
+                f"      at Object.<anonymous> (src/widget.test.js:{10 + i}:13)",
+                "",
+            ]
+        )
+    chunks.extend(
+        [
+            "  ✓ saves (3 ms)",
+            "PASS src/other.test.js",
+            "  ✓ ok (1 ms)",
+            "",
+            "stdout | src/other.test.js > ok",
+            "vitest live stdout " + ("y" * 60),
+            "vitest live stdout more " + ("y" * 40),
+            "",
+            "FAIL src/payment.test.js",
+            "  ● charge › times out",
+            "",
+            "    expect(received).toBe(expected)",
+            "",
+            '    Expected: "SUCCESS"',
+            '    Received: "GATEWAY_TIMEOUT"',
+            "",
+            "      42 |   expect(result).toBe('SUCCESS');",
+            "",
+            "  console.error",
+            "    failure side channel must stay",
+            "",
+            "      at Object.<anonymous> (src/payment.test.js:50:13)",
+            "",
+            "Test Suites: 1 failed, 2 passed, 3 total",
+            "Tests:       1 failed, 3 passed, 4 total",
+        ]
+    )
+    raw = "\n".join(chunks)
+    compact = filter_jest_vitest(raw)
+
+    assert "debug payload item=0" not in compact
+    assert "vitest live stdout" not in compact
+    assert "console lines omitted" in compact
+    assert "GATEWAY_TIMEOUT" in compact
+    assert "failure side channel must stay" in compact
+    assert "FAIL src/payment.test.js" in compact
+    raw_tokens = count_tokens(raw).openai
+    out_tokens = count_tokens(compact).openai
+    reduction = 100 * (raw_tokens - out_tokens) / raw_tokens
+    assert reduction >= 85.0, (
+        f"expected >=85% savings on console-heavy npm test, got {reduction:.1f}% "
+        f"({raw_tokens}->{out_tokens})"
+    )
+
+
+def test_filter_jest_vitest_console_error_under_pass_does_not_freeze_filter():
+    """console.error must not trip the diagnostic early-exit (\\bError\\b)."""
+    raw = "\n".join(
+        [
+            "PASS src/a.test.js",
+            "  ✓ one (1 ms)",
+            "  console.error",
+            "    noisy error channel under a passing test " + ("z" * 40),
+            "",
+            "      at Object.<anonymous> (src/a.test.js:4:5)",
+            "",
+            "PASS src/b.test.js",
+            "  ✓ two (1 ms)",
+            "",
+            "Test Suites: 2 passed, 2 total",
+            "Tests:       2 passed, 2 total",
+        ]
+    )
+    compact = filter_jest_vitest(raw)
+    assert "noisy error channel under a passing test" not in compact
+    assert "console lines omitted" in compact
+    assert "Test Suites: 2 passed, 2 total" in compact
+
+
 def test_filter_jest_vitest_keeps_failures_and_diffs_verbatim():
     compact = filter_jest_vitest(SAMPLE_JEST_FAIL)
 
