@@ -46,7 +46,7 @@ def test_recognized_session_without_command():
 
 
 @pytest.mark.parametrize("position", ["beginning", "middle", "end"])
-def test_entire_failure_and_traceback_are_preserved_at_every_position(position):
+def test_failure_signal_survives_at_every_position_while_recursive_frames_fold(position):
     diagnostic = (
         "====================== FAILURES ======================\n"
         "_____________________ test_crash _____________________\n"
@@ -59,7 +59,15 @@ def test_entire_failure_and_traceback_are_preserved_at_every_position(position):
     trailing = "" if position == "end" else _passes()
     original = leading + diagnostic + trailing
     result = safe_compact_output(original, command="pytest -vv", exit_code=1)
-    assert diagnostic + trailing in result
+    assert "FAILURES" in result
+    assert "test_crash" in result
+    assert "AssertionError: missing sentinel at inner cause" in result
+    assert 'File "recursive.py", line 24, in walk' in result
+    # Recursive frames collapse; the embedded pass-looking line after the traceback stays.
+    assert result.count('File "recursive.py", line 24, in walk') < 40
+    assert "tests/test_embedded.py::test_example PASSED [100%]" in result
+    if trailing:
+        assert trailing in result or "passing tests" in result
     if result != original:
         assert _cached(result) == original
 
@@ -126,6 +134,79 @@ def test_pytest_dots_count_and_color_records_compact_but_mixed_failures_remain()
     result = safe_compact_output(original, command="pytest")
     assert "160 passing tests" in result
     assert "tests/test_db.py ...F..s. [100%]" in result
+    assert _cached(result) == original
+
+
+def _noisy_pytest_failure_fixture() -> str:
+    """Authored fixture: xdist preamble + passes + hypothesis/long repr/captured I/O."""
+    xdist_nodes = "\n".join(f"gw{i} I /Users/dev/.venv/bin/python [tox.ini]" for i in range(8))
+    passes = "\n".join(
+        f"[gw{i % 4}] [ {i:2d}%] PASSED tests/test_api.py::test_ok_{i}" for i in range(60)
+    )
+    items = ", ".join(f"{{'k': {i}, 'v': '{'z' * 40}'}}" for i in range(30))
+    rows = ", ".join(f"{{'c': {i}, 's': '{'w' * 50}'}}" for i in range(25))
+    captured_out = (
+        "---------------------------- Captured stdout call -----------------------------\n"
+        + "\n".join(
+            f"INFO worker processed record id={i} payload={{'user': 'u{i}', 'blob': '{'x' * 80}'}}"
+            for i in range(40)
+        )
+    )
+    captured_err = (
+        "---------------------------- Captured stderr call -----------------------------\n"
+        + "\n".join(f"DEBUG retry attempt {i} connection=Conn({'y' * 60})" for i in range(20))
+    )
+    return (
+        "============================= test session starts ==============================\n"
+        "platform linux -- Python 3.12.0, pytest-8.3.0, pluggy-1.5.0\n"
+        "created: 8/8 workers\n"
+        f"{xdist_nodes}\n"
+        "scheduling tests via LoadScheduling\n\n"
+        f"{passes}\n"
+        "=================================== FAILURES ===================================\n"
+        "________________________ test_parse[hypothesis] ________________________\n"
+        "Falsifying example: test_parse(\n"
+        f"    data={{'nested': {{'items': [{items}]}}}},\n"
+        "    flag=True,\n"
+        ")\n"
+        "tests/test_parse.py:88: in test_parse\n"
+        "    assert result == expected\n"
+        f"E   AssertionError: assert {{'id': 1, 'rows': [{rows}]}} == {{'id': 1, 'rows': []}}\n"
+        f"{captured_out}\n"
+        f"{captured_err}\n"
+        "=========================== short test summary info ============================\n"
+        "FAILED tests/test_parse.py::test_parse - AssertionError\n"
+        "========================= 1 failed, 60 passed in 4.2s ==========================\n"
+    )
+
+
+def test_pytest_failure_noise_is_cut_while_keeping_failure_and_recovery():
+    """Substantial cut vs main's pass-only compaction: captured I/O, long reprs, xdist dumps."""
+    original = _noisy_pytest_failure_fixture()
+    raw = count_tokens(original).openai
+    result = safe_compact_output(original, command="pytest -n auto -v", exit_code=1)
+    out = count_tokens(result).openai
+
+    # Failure signal must survive.
+    assert "FAILURES" in result
+    assert "test_parse" in result
+    assert "AssertionError" in result
+    assert "FAILED tests/test_parse.py::test_parse" in result
+    assert "tests/test_parse.py:88" in result
+
+    # Noise classes must shrink.
+    assert "Captured stdout call" in result
+    assert "payload={'user':" not in result
+    assert "DEBUG retry attempt" not in result
+    assert "gw0 I /Users/dev" not in result
+    assert "z" * 40 not in result  # hypothesis blob body
+    assert "[TokenCut: truncated" in result
+    assert "{'c': 20," not in result  # deep long-repr body not retained
+
+    # Must beat pass-only compaction by a wide margin (main left ~4000 tokens here).
+    assert raw > 4000
+    assert out < raw * 0.35
+    assert raw - out >= 2500
     assert _cached(result) == original
 
 

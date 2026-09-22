@@ -12,6 +12,7 @@ from tokencut.metrics.tokenizer import count_tokens
 
 # Avoid cache notices and extra work for already small command results.
 _MIN_TOKENS = 256
+_MAX_DIAG_LINE = 220
 _COLOR = re.compile(r"\x1b\[[0-9;]*m")
 _PYTHON = re.compile(r"python(?:\d+(?:\.\d+)*)?")
 _PASSED = re.compile(
@@ -24,6 +25,19 @@ _DIAGNOSTIC = re.compile(
     r"exception|assertionerror|assert|fatal|panic)\b|^\s*[EF]\s+",
     re.IGNORECASE,
 )
+# xdist worker registration / node announcements (pre-test noise).
+_XDIST_NODE = re.compile(r"^gw\d+\s+[A-Z]\s+\S+")
+_CAPTURED_HEADER = re.compile(
+    r"^-{4,}\s*Captured (stdout|stderr|log)(?:\s+\w+)?\s*-{4,}\s*$",
+    re.IGNORECASE,
+)
+_SECTION_BOUNDARY = re.compile(
+    r"^(?:[=_]{5,}|-{4,}\s*Captured\b|={5,}.*={5,})",
+    re.IGNORECASE,
+)
+_PY_LOCATION = re.compile(r"^\S+\.py:\d+")
+_HYPOTHESIS = re.compile(r"^Falsifying example:")
+_FRAME_LINE = re.compile(r'^\s*File ".+", line \d+, in \S+\s*$')
 
 
 def _pytest_command(command: str) -> bool:
@@ -57,22 +71,116 @@ def _pytest_session(lines: list[str]) -> bool:
     )
 
 
+def _plain(line: str) -> str:
+    return _COLOR.sub("", line.rstrip("\r\n"))
+
+
 def _passed_count(line: str) -> int:
-    line = _COLOR.sub("", line.rstrip("\r\n"))
+    line = _plain(line)
     if _PASSED.fullmatch(line):
         return 1
     match = _DOTS.fullmatch(line)
     return len(match["dots"]) if match else 0
 
 
-def safe_compact_output(text: str, *, command: str = "", exit_code: int | None = None) -> str:
-    """Filter routine records without truncating arbitrary output or diagnostics.
+def _truncate_diag_line(line: str) -> str:
+    """Keep the lead of oversized assertion/hypothesis repr lines."""
+    plain = _plain(line)
+    if len(plain) <= _MAX_DIAG_LINE:
+        return line
+    ending = "\n" if line.endswith("\n") else ("\r\n" if line.endswith("\r\n") else "")
+    kept = plain[:_MAX_DIAG_LINE].rstrip()
+    omitted = len(plain) - len(kept)
+    return f"{kept}… [TokenCut: truncated {omitted} chars]{ending}"
 
-    Only recognized pytest pass records and exact contiguous duplicate lines are
-    compacted. Once a diagnostic begins, the remaining output is kept verbatim.
-    Exit status is never inferred from pass records; callers retain ``exit_code``
-    separately. The redacted original is cached before a shorter result is used.
-    Any cache/tokenizer failure returns the original after best-effort redaction.
+
+def _compact_pytest_diagnostic(lines: list[str]) -> tuple[list[str], bool]:
+    """Fold pytest failure noise while keeping the actionable failure signal.
+
+    Captured stdout/stderr/log bodies, oversized hypothesis examples, recursive
+    traceback frames, and extreme assertion repr lines are collapsed. Headers,
+    locations, exception types, and the short summary stay.
+    """
+    result: list[str] = []
+    changed = False
+    i = 0
+    while i < len(lines):
+        plain = _plain(lines[i])
+        stripped = plain.strip()
+
+        if _CAPTURED_HEADER.match(stripped):
+            result.append(lines[i] if lines[i].endswith(("\n", "\r")) else lines[i] + "\n")
+            i += 1
+            start = i
+            while i < len(lines):
+                nxt = _plain(lines[i]).strip()
+                if _CAPTURED_HEADER.match(nxt) or _SECTION_BOUNDARY.match(nxt):
+                    break
+                i += 1
+            omitted = i - start
+            if omitted:
+                result.append(f"[TokenCut: {omitted} captured lines omitted]\n")
+                changed = True
+            continue
+
+        if _HYPOTHESIS.match(stripped):
+            result.append(_truncate_diag_line(lines[i]))
+            if result[-1] != lines[i]:
+                changed = True
+            i += 1
+            start = i
+            while i < len(lines):
+                nxt = _plain(lines[i]).strip()
+                if (
+                    not nxt
+                    or _PY_LOCATION.match(nxt)
+                    or _SECTION_BOUNDARY.match(nxt)
+                    or _CAPTURED_HEADER.match(nxt)
+                    or nxt.startswith("E ")
+                    or nxt.startswith(">")
+                ):
+                    break
+                i += 1
+            omitted = i - start
+            if omitted:
+                result.append(f"[TokenCut: {omitted} falsifying-example lines omitted]\n")
+                changed = True
+            continue
+
+        if _FRAME_LINE.match(plain):
+            end = i + 1
+            while end < len(lines) and _plain(lines[end]) == plain:
+                end += 1
+            repeats = end - i
+            if repeats > 3:
+                result.append(lines[i] if lines[i].endswith(("\n", "\r")) else lines[i] + "\n")
+                result.append(
+                    f"[TokenCut: identical traceback frame repeated {repeats - 1} more times]\n"
+                )
+                changed = True
+                i = end
+                continue
+
+        trimmed = _truncate_diag_line(lines[i])
+        if trimmed != lines[i]:
+            changed = True
+        result.append(trimmed)
+        i += 1
+
+    return result, changed
+
+
+def safe_compact_output(text: str, *, command: str = "", exit_code: int | None = None) -> str:
+    """Filter routine records without discarding actionable failure signal.
+
+    Recognized pytest pass records, xdist worker announcements, and exact
+    contiguous duplicate lines are compacted. On pytest output, diagnostic
+    sections keep the failure headers, locations, and exception text, but fold
+    captured I/O, oversized hypothesis examples, recursive frames, and extreme
+    repr lines. Non-pytest diagnostics stay verbatim. Exit status is never
+    inferred from pass records; callers retain ``exit_code`` separately. The
+    redacted original is cached before a shorter result is used. Any
+    cache/tokenizer failure returns the original after best-effort redaction.
     Counts are local estimates, not model billing or subscription usage.
     """
     original = redact_secrets(text)
@@ -92,11 +200,27 @@ def safe_compact_output(text: str, *, command: str = "", exit_code: int | None =
     changed = False
     while i < len(lines):
         line = lines[i]
-        # Tracebacks may themselves contain repeated lines or text that resembles
-        # passing test records. Never interpret anything inside/after diagnostics.
-        if _DIAGNOSTIC.search(_COLOR.sub("", line)):
-            result.extend(lines[i:])
+        plain = _plain(line)
+
+        if _DIAGNOSTIC.search(plain):
+            if pytest_output:
+                compacted_tail, tail_changed = _compact_pytest_diagnostic(lines[i:])
+                result.extend(compacted_tail)
+                changed = changed or tail_changed
+            else:
+                # Non-pytest: never reinterpret anything inside/after diagnostics.
+                result.extend(lines[i:])
             break
+
+        if pytest_output and _XDIST_NODE.match(plain.strip()):
+            end = i + 1
+            while end < len(lines) and _XDIST_NODE.match(_plain(lines[end]).strip()):
+                end += 1
+            count = end - i
+            result.append(f"[TokenCut: {count} xdist worker records]\n")
+            changed = True
+            i = end
+            continue
 
         passed = _passed_count(line) if pytest_output else 0
         if passed:
