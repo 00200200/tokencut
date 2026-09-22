@@ -24,41 +24,37 @@ sessions after upgrading. Configuration checks do not prove live-client use.
 
 ### MCP profiles
 
+`tokencut mcp --profile desktop` is optimized for Claude Desktop and Codex Desktop: 10 essential tools with minified schemas (~39% smaller, 3,198 → 1,948 tokens), concise descriptions, traceback internal frame folding, and auto-skeleton large file folding.
 `tokencut mcp --profile coding` exposes code navigation, guarded edits, command
 execution, targeted reads, recovery, diffs, task memory and statistics: 8 tools.
 `tokencut mcp --profile full` exposes all 15 tools, including tree, JSON, clip,
 pack, distill, table and optimize. The default remains `full` for existing configurations.
-`TOKENCUT_MCP_PROFILE=coding` is equivalent; an explicit flag takes precedence.
+`TOKENCUT_MCP_PROFILE=desktop` or `coding` is equivalent; an explicit flag takes precedence.
 Profiles affect discovery and dispatch, not CLI availability or command output.
 
-The coding profile's smaller schema is a local text measurement. Clients may
-defer tool loading or cache descriptions, so schema reduction is not a guarantee
-of the same reduction on every request.
+### Claude Desktop & Codex Desktop
 
-### Claude Code
+Use the automated installer to register the desktop profile:
+
+```sh
+tokencut install --claude-desktop --profile desktop
+tokencut install --codex --profile desktop
+# or configure both at once:
+tokencut install --all
+```
+
+For Claude Code CLI:
 
 ```sh
 claude mcp add --scope user tokencut -- tokencut mcp --profile coding
 ```
 
-For an existing registration, edit its arguments instead of adding a duplicate.
-The Code tab in Claude Desktop runs Claude Code; it is distinct from Desktop chat.
-
-Optionally filter native Bash output through the existing output hook:
-
-```sh
-tokencut hook --install --client claude
-```
-
-The installer preserves hooks and settings with a backup. Reopen the session to
-load the configuration. Commands execute once; wrapped TokenCut commands are not
-filtered a second time. Permissions and command inputs are not changed. Hook
-output reduction is **prepared**, since model delivery is not acknowledged.
-
 ### Codex
 
 ```sh
-codex mcp add tokencut -- tokencut mcp --profile coding
+tokencut install --codex --profile desktop
+# or via CLI:
+codex mcp add tokencut -- tokencut mcp --profile desktop
 ```
 
 Update existing registrations and reconnect after changing profiles. Desktop

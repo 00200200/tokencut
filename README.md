@@ -139,9 +139,10 @@ Path: `command -v tokencut`. Use `--profile full` for every tool, `--profile cod
 # Prepare messy logs or stack traces with prompt-cache prefix stabilization:
 tokencut prepare --desktop -f error.log
 
-# Initialize lean instructions (~120 tokens) for Claude or Codex:
-tokencut rules --init --client claude   # writes CLAUDE.md
-tokencut rules --init --client codex    # writes AGENTS.md
+# Initialize or optimize lean, cache-aligned instructions (CLAUDE.md / AGENTS.md):
+tokencut rules --init --client claude        # writes lean CLAUDE.md (~120 tokens)
+tokencut rules --init --client codex         # writes lean AGENTS.md (~120 tokens)
+tokencut rules --optimize --write -f CLAUDE.md # strips filler, aligns prompt caching
 ```
 
 ---
