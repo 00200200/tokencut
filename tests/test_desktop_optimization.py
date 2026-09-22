@@ -33,6 +33,7 @@ def test_desktop_mcp_profile_tools_and_schema_reduction():
     assert "tokencut_optimize" in tool_names
     assert "tokencut_clip" in tool_names
     assert "tokencut_retrieve" in tool_names
+    assert "tokencut_gain" in tool_names
 
     # Schema descriptions should be minimized for desktop context
     full_tokens = count_tokens(json.dumps(full_tools)).openai
