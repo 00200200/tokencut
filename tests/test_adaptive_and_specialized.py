@@ -8,6 +8,7 @@ from tokencut.core.specialized import (
     auto_specialize_command_output,
     filter_cargo_build,
     filter_cargo_test,
+    filter_git_diff,
     filter_git_log,
     filter_git_status,
     filter_go_test,
@@ -15,6 +16,7 @@ from tokencut.core.specialized import (
     filter_json_output,
     filter_npm_install,
     filter_pip_install,
+    filter_ruff,
     filter_tsc,
 )
 from tokencut.metrics.tokenizer import count_tokens
@@ -186,6 +188,49 @@ src/models/user.ts:18:7 - error TS2741: Property 'email' is missing in type '{ i
          ~
 
 Found 2 errors in 2 files.
+"""
+
+SAMPLE_GIT_DIFF = """diff --git a/src/main.py b/src/main.py
+index 1234567..89abcdef 100644
+--- a/src/main.py
++++ b/src/main.py
+@@ -10,6 +10,7 @@ def process():
+     context_line_1
+     context_line_2
+     context_line_3
++    new_important_logic()
+     context_line_4
+     context_line_5
+diff --git a/uv.lock b/uv.lock
+index aaaaaaa..bbbbbbb 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -1,500 +1,500 @@
+-old_package_version = "1.0.0"
++new_package_version = "1.0.1"
+""" + "\n".join([f"+ extra_lock_line_{i}" for i in range(100)])
+
+SAMPLE_RUFF_FULL = """src/auth/session.py:12:8: F401 [*] `os` imported but unused
+  |
+10 | import sys
+11 | import json
+12 | import os
+   |        ^^
+  |
+  = help: Remove unused import: `os`
+
+src/auth/session.py:44:5: F841 Local variable `token` is assigned to but never used
+  |
+42 | def refresh():
+43 |     client = Client()
+44 |     token = client.issue()
+   |     ^^^^^
+45 |     return client
+  |
+  = help: Remove assignment to unused variable `token`
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
 """
 
 
@@ -504,6 +549,65 @@ def test_auto_specialize_routes_build_and_package_commands():
     res_npm = auto_specialize_command_output("npm install", npm_raw)
     assert res_npm is not None
     assert "[TokenCut: 3 package deprecation warnings collapsed]" in res_npm
+
+
+def test_filter_git_diff_folds_lockfiles_and_keeps_code_hunks():
+    compact = filter_git_diff(SAMPLE_GIT_DIFF)
+
+    assert "diff --git a/src/main.py b/src/main.py" in compact
+    assert "+    new_important_logic()" in compact
+    assert "diff --git a/uv.lock b/uv.lock" in compact
+    assert "lines of lockfile/generated diff omitted by tokencut" in compact
+    assert "+ extra_lock_line_50" not in compact
+    assert count_tokens(compact).claude < count_tokens(SAMPLE_GIT_DIFF).claude
+
+
+def test_filter_git_diff_leaves_non_diff_output_unchanged():
+    raw = "commit abc123\nAuthor: Alice\n\n    just a message\n"
+    assert filter_git_diff(raw) == raw
+
+
+def test_auto_specialize_routes_git_diff_and_show():
+    compact_diff = auto_specialize_command_output("git diff HEAD~1", SAMPLE_GIT_DIFF)
+    assert compact_diff is not None
+    assert "omitted by tokencut" in compact_diff
+
+    compact_show = auto_specialize_command_output("git show abc1234", SAMPLE_GIT_DIFF)
+    assert compact_show is not None
+    assert "+    new_important_logic()" in compact_show
+
+
+def test_filter_ruff_compacts_full_frames_and_keeps_codes():
+    compact = filter_ruff(SAMPLE_RUFF_FULL)
+
+    assert "src/auth/session.py:12:8: F401 [*] `os` imported but unused" in compact
+    assert "help: Remove unused import: `os`" in compact
+    assert (
+        "src/auth/session.py:44:5: F841 Local variable `token` is assigned to but never used"
+        in compact
+    )
+    assert "Found 2 errors." in compact
+    assert "[*] 1 fixable with the `--fix` option." in compact
+    # Source frames and caret underlines are the noise.
+    assert "import os" not in compact
+    assert "^^^^^" not in compact
+    assert count_tokens(compact).claude < count_tokens(SAMPLE_RUFF_FULL).claude
+
+
+def test_filter_ruff_leaves_clean_output_unchanged():
+    clean = "All checks passed!\n"
+    assert filter_ruff(clean) == clean
+
+
+def test_auto_specialize_routes_ruff():
+    compact = auto_specialize_command_output("uv run ruff check .", SAMPLE_RUFF_FULL)
+    assert compact is not None
+    assert "F401" in compact
+    assert "import os" not in compact
+
+    compact_direct = auto_specialize_command_output("ruff check src", SAMPLE_RUFF_FULL)
+    assert compact_direct is not None
+    assert "F841" in compact_direct
 
 
 def test_compress_to_budget():

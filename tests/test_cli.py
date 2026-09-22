@@ -38,6 +38,11 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
     assert data["passed"] and all(data["checks"].values())
     assert data["model_calls"] == 0
     assert 0 < data["output_tokens"] < data["raw_tokens"]
+    assert (
+        data["specialized"]["git_diff"]["output_tokens"]
+        < data["specialized"]["git_diff"]["raw_tokens"]
+    )
+    assert data["specialized"]["ruff"]["output_tokens"] < data["specialized"]["ruff"]["raw_tokens"]
     assert os.environ["TOKENCUT_CACHE_DIR"] == cache_path
     assert cache.get_stats()["count"] == before
     assert cache.retrieve(ref) == "existing user output"
