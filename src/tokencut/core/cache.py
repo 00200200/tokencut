@@ -165,6 +165,19 @@ class ContextCache:
             ).fetchone()
         return row[0] if row else None
 
+    def dedup_notice(self, content: str, *, min_chars: int = 512) -> str | None:
+        """If identical content was just cached, return a short session-dedup notice.
+
+        Inspired by sqz-style session refs: do not re-emit a large blob the model
+        already saw. Small payloads stay inline so agents are not forced to retrieve.
+        """
+        if not content or len(content) < min_chars:
+            return None
+        ref_id = self.check_duplicate(content)
+        if not ref_id:
+            return None
+        return f"[TokenCut: identical output already cached — tokencut retrieve {ref_id}]\n"
+
     def clear(self):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM output_cache")

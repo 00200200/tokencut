@@ -434,6 +434,52 @@ def configure_claude_desktop_mcp(target_file: Path | None = None) -> tuple[bool,
     return _configure_local_mcp(target_file or get_claude_desktop_config_path())
 
 
+def write_claude_desktop_extension(target_dir: Path | None = None) -> tuple[bool, str]:
+    """Write a Claude Desktop Extension (MCPB) manifest next to the install docs.
+
+    Claude Desktop can load local MCP via config today; the ``.mcpb`` package is
+    the one-click Extensions path. We ship the manifest so users (or ``mcpb pack``)
+    can build an installable bundle without inventing a second MCP server.
+    """
+    dest = target_dir or (Path.home() / ".tokencut" / "extensions" / "claude-desktop")
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        packaged = Path(__file__).resolve().parents[3] / "extensions" / "claude-desktop"
+        for name in ("manifest.json", "README.md"):
+            source = packaged / name
+            if source.is_file():
+                shutil.copy2(source, dest / name)
+            elif name == "manifest.json":
+                manifest = {
+                    "manifest_version": "0.2",
+                    "name": "tokencut",
+                    "display_name": "TokenCut",
+                    "version": "0.2.0",
+                    "description": (
+                        "Keep the signal. Cut the noise. Local MCP for Claude Desktop."
+                    ),
+                    "author": {
+                        "name": "00200200",
+                        "url": "https://github.com/00200200/tokencut",
+                    },
+                    "server": {
+                        "type": "binary",
+                        "entry_point": "tokencut",
+                        "mcp_config": {
+                            "command": "tokencut",
+                            "args": ["mcp", "--profile", "coding"],
+                            "env": {"TOKENCUT_CLIENT": "claude-desktop"},
+                        },
+                    },
+                }
+                (dest / "manifest.json").write_text(
+                    json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+                )
+        return True, str(dest)
+    except OSError as exc:
+        return False, f"Could not write Claude Desktop extension: {exc}"
+
+
 def run_all_diagnostics() -> list[DiagnosticItem]:
     return [
         check_python(),

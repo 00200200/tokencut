@@ -1,0 +1,29 @@
+{
+  "manifest_version": "0.2",
+  "name": "tokencut",
+  "display_name": "TokenCut",
+  "version": "0.2.0",
+  "description": "Keep the signal. Cut the noise. Fold verbose tool output and recover originals by reference — local MCP for Claude Desktop.",
+  "long_description": "TokenCut exposes compact code navigation, command runners, and recoverable cache tools so Claude Desktop does not pull raw pytest, docker, or git dumps into context. No cloud relay. Local estimates only — not billing claims.",
+  "author": {
+    "name": "00200200",
+    "url": "https://github.com/00200200/tokencut"
+  },
+  "homepage": "https://github.com/00200200/tokencut",
+  "documentation": "https://github.com/00200200/tokencut/blob/main/docs/guide.md",
+  "support": "https://github.com/00200200/tokencut/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "binary",
+    "entry_point": "tokencut",
+    "mcp_config": {
+      "command": "tokencut",
+      "args": ["mcp", "--profile", "coding"],
+      "env": {
+        "TOKENCUT_CLIENT": "claude-desktop"
+      }
+    }
+  },
+  "tools": [],
+  "keywords": ["tokens", "context", "mcp", "coding", "claude"]
+}

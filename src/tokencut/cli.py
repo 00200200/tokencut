@@ -21,6 +21,7 @@ from rich.table import Table
 from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
+from tokencut.core.command_family import command_family
 from tokencut.core.companion_state import already_wrapped, paused
 from tokencut.core.config import load_config
 from tokencut.core.diff_slimmer import slim_git_diff
@@ -30,8 +31,10 @@ from tokencut.core.doctor import (
     configure_shell_alias,
     configure_windsurf_mcp,
     run_all_diagnostics,
+    write_claude_desktop_extension,
 )
 from tokencut.core.engines import select_engine
+from tokencut.core.gain import build_gain_report
 from tokencut.core.hooks import install_zsh_hook, setup_claude_code_mcp_config
 from tokencut.core.json_slimmer import slim_json
 from tokencut.core.native_hooks import install_claude_hook, run_hook_filter
@@ -40,6 +43,7 @@ from tokencut.core.rules_linter import lint_rule_content, minify_rules
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import auto_specialize_command_output
+from tokencut.core.spill import spill_large_output
 from tokencut.core.telemetry import TelemetryStore, record_text, recovery_engine
 from tokencut.core.tree_scanner import render_tree, scan_directory
 from tokencut.mcp.server import run_mcp_stdio_server
@@ -689,25 +693,39 @@ def run(
     raw_output = proc.stdout
 
     duration = time.perf_counter() - start_time
+    family = command_family(command)
+    operation = f"exec:{family}"
 
-    # Step 1: Check specialized command handler
-    specialized = None if safe else auto_specialize_command_output(full_cmd, raw_output)
-    base_text = specialized if specialized is not None else raw_output
-
-    # Step 2: Apply adaptive budget or standard compaction
-    if selected == "none":
-        compacted = raw_output
-    elif budget is not None:
-        compacted = compress_to_budget(
-            base_text, max_tokens=budget, source="run", original_text=raw_output
-        )
-    elif safe:
-        compacted = safe_compact_output(raw_output, command=full_cmd, exit_code=proc.returncode)
-    elif len(base_text) > 500 and base_text.lstrip().startswith(("{", "[")):
-        compacted = slim_json(base_text, max_array_items=3)
+    # Session dedup (sqz-style): identical blob already cached → short ref only.
+    dedup = ContextCache().dedup_notice(raw_output) if raw_output and selected != "none" else None
+    if dedup is not None:
+        compacted = dedup
     else:
-        opts = CleanerOptions(max_lines=max_lines)
-        compacted = compact_terminal_output(base_text, opts)
+        # Large-output spill (Copilot-style): file path + preview + recovery ref.
+        spilled = spill_large_output(raw_output, source=f"run:{family}") if raw_output else None
+        if spilled is not None and selected != "none":
+            compacted = spilled.preview
+        else:
+            # Step 1: Check specialized command handler
+            specialized = None if safe else auto_specialize_command_output(full_cmd, raw_output)
+            base_text = specialized if specialized is not None else raw_output
+
+            # Step 2: Apply adaptive budget or standard compaction
+            if selected == "none":
+                compacted = raw_output
+            elif budget is not None:
+                compacted = compress_to_budget(
+                    base_text, max_tokens=budget, source="run", original_text=raw_output
+                )
+            elif safe:
+                compacted = safe_compact_output(
+                    raw_output, command=full_cmd, exit_code=proc.returncode
+                )
+            elif len(base_text) > 500 and base_text.lstrip().startswith(("{", "[")):
+                compacted = slim_json(base_text, max_array_items=3)
+            else:
+                opts = CleanerOptions(max_lines=max_lines)
+                compacted = compact_terminal_output(base_text, opts)
 
     if compacted:
         # Rich markup/wrapping can alter diagnostic text and hide recovery refs.
@@ -726,7 +744,11 @@ def run(
     if not wrapped:
         emitted = compacted + ("\n" if compacted and not compacted.endswith("\n") else "")
         record_text(
-            raw_output, emitted, duration_s=time.perf_counter() - start_time, engine=selected
+            raw_output,
+            emitted,
+            duration_s=time.perf_counter() - start_time,
+            engine=selected,
+            operation=operation,
         )
 
     if proc.returncode != 0:
@@ -998,6 +1020,85 @@ def stats(
     console.print(table)
 
 
+@app.command()
+def gain(
+    history: Annotated[
+        bool, typer.Option("--history", "-H", help="Show recent per-event reductions")
+    ] = False,
+    by_op: Annotated[
+        bool,
+        typer.Option("--by-op", help="Break down savings by tool family (exec:pytest, …)"),
+    ] = False,
+    passthrough: Annotated[
+        bool,
+        typer.Option(
+            "--passthrough",
+            help="List operations with almost no cut — candidates for new specializers",
+        ),
+    ] = False,
+    limit: Annotated[int, typer.Option("--limit", "-n", min=1, help="History length")] = 20,
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable report")] = False,
+):
+    """Local savings report (RTK-style gain). Not billing or subscription quota."""
+    report = build_gain_report(history_limit=limit)
+    if as_json:
+        sys.stdout.write(json.dumps(report.to_dict(), indent=2) + "\n")
+        return
+
+    # Default: summary + by-op; flags narrow the view.
+    show_by_op = by_op or not (history or passthrough)
+    show_history = history
+    show_passthrough = passthrough or (not history and not by_op)
+
+    console.print(
+        f"[bold]TokenCut gain[/bold] — {report.total_events:,} events, "
+        f"~{report.saved_openai:,} openai-est tokens cut ({report.reduction_pct}%)"
+    )
+    console.print("[dim]Local output estimates only — not model billing or account limits.[/dim]\n")
+
+    if show_by_op and report.by_operation:
+        table = Table(title="By tool family")
+        table.add_column("Operation")
+        table.add_column("Events", justify="right")
+        table.add_column("Saved", justify="right")
+        table.add_column("Cut %", justify="right")
+        for row in report.by_operation:
+            mark = " · passthrough" if row.passthrough else ""
+            table.add_row(
+                row.operation + mark,
+                str(row.events),
+                f"{row.saved_openai:,}",
+                f"{row.reduction_pct}%",
+            )
+        console.print(table)
+
+    if show_passthrough:
+        if report.passthrough:
+            console.print("\n[bold]Passthrough / near-zero cut[/bold] (add a specializer?)")
+            for row in report.passthrough:
+                console.print(f"  • {row.operation}: {row.events} events, {row.reduction_pct}% cut")
+        elif passthrough:
+            console.print("\nNo passthrough operations recorded.")
+
+    if show_history and report.history:
+        table = Table(title=f"Last {len(report.history)} events")
+        table.add_column("When")
+        table.add_column("Operation")
+        table.add_column("Raw→Compact")
+        table.add_column("Cut %", justify="right")
+        for event in report.history:
+            when = time.strftime("%Y-%m-%d %H:%M", time.localtime(event.timestamp))
+            table.add_row(
+                when,
+                event.operation,
+                f"{event.raw_openai:,}→{event.compact_openai:,}",
+                f"{event.reduction_pct}%",
+            )
+        console.print(table)
+    elif show_history:
+        console.print("No history yet — run `tokencut run -- …` first.")
+
+
 @app.command("share")
 def share_command(
     badge: Annotated[
@@ -1023,7 +1124,7 @@ def share_command(
         "   • X / Twitter: https://twitter.com/intent/tweet?text=Cutting+LLM+coding+context+bloat+by+up+to+90%25+with+TokenCut+%28local+MCP+%2B+CLI%29%3A+https%3A%2F%2Fgithub.com%2F00200200%2Ftokencut"
     )
     console.print(
-        "   • Hacker News: https://news.ycombinator.com/submitlink?u=https://github.com/00200200/tokencut&t=Show%20HN%3A%20TokenCut%20%E2%80%93%20Zero-bloat%20context%20optimizer%20and%20MCP%20companion%20for%20AI%20coding\n"
+        "   • Hacker News: https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fgithub.com%2F00200200%2Ftokencut&t=Show%20HN%3A%20TokenCut%20%E2%80%93%20Zero-bloat%20context%20optimizer%20and%20MCP%20companion%20for%20AI%20coding\n"
     )
 
 
@@ -1099,14 +1200,21 @@ def install(
     claude_desktop: Annotated[
         bool, typer.Option("--claude-desktop", help="Configure Claude Desktop local MCP")
     ] = False,
+    mcpb: Annotated[
+        bool,
+        typer.Option(
+            "--mcpb",
+            help="Write Claude Desktop Extension manifest under ~/.tokencut/extensions/",
+        ),
+    ] = False,
     alias: Annotated[
         bool, typer.Option("--alias", help="Add 'alias cc=tokencut run --' to shell rc")
     ] = False,
 ):
     """Configure local MCP integrations and optional shell aliases."""
-    if not (all_targets or cursor or windsurf or claude_desktop or alias):
+    if not (all_targets or cursor or windsurf or claude_desktop or mcpb or alias):
         console.print(
-            "[yellow]Specify --all, --claude-desktop, --cursor, --windsurf, or --alias.[/yellow]"
+            "[yellow]Specify --all, --claude-desktop, --mcpb, --cursor, --windsurf, or --alias.[/yellow]"
         )
         raise typer.Exit(code=1)
 
@@ -1131,6 +1239,17 @@ def install(
             raise typer.Exit(code=1)
         console.print(
             f"Claude Desktop MCP configured in {msg}. Restart/reconnect to activate.", markup=False
+        )
+
+    if all_targets or mcpb:
+        ok, msg = write_claude_desktop_extension()
+        if not ok:
+            err_console.print(msg, markup=False)
+            raise typer.Exit(code=1)
+        console.print(
+            f"Claude Desktop Extension manifest written to {msg}. "
+            "Pack with `mcpb pack` or open from Claude Desktop Extensions.",
+            markup=False,
         )
 
     if all_targets or alias:
