@@ -332,7 +332,8 @@ def test_auto_specialize_routes_go_test():
 def test_filter_jest_vitest_collapses_passing_runs():
     compact = filter_jest_vitest(SAMPLE_VITEST_PASS)
 
-    assert "[TokenCut: 9 passing tests, 9 progress records]" in compact
+    # Vitest's own summary in this fixture reports 7 tests across 2 files.
+    assert "[TokenCut: 7 passing tests in 2 files, 9 progress records]" in compact
     assert "formats currency correctly" not in compact
     assert "Test Files  2 passed (2)" in compact
     assert "Tests  7 passed (7)" in compact
@@ -359,18 +360,18 @@ def test_filter_jest_vitest_collapses_tests_named_with_diagnostic_words():
         ]
     )
     compact = filter_jest_vitest(raw)
-    assert "[TokenCut: 3 passing tests, 3 progress records]" in compact
+    assert "[TokenCut: 2 passing tests in 1 file, 3 progress records]" in compact
     assert "Tests  2 passed (2)" in compact
 
 
 def test_auto_specialize_routes_jest_and_vitest():
     compact_vitest = auto_specialize_command_output("npx vitest run", SAMPLE_VITEST_PASS)
     assert compact_vitest is not None
-    assert "[TokenCut: 9 passing tests, 9 progress records]" in compact_vitest
+    assert "[TokenCut: 7 passing tests in 2 files, 9 progress records]" in compact_vitest
 
     compact_npm = auto_specialize_command_output("npm test -- --coverage", SAMPLE_VITEST_PASS)
     assert compact_npm is not None
-    assert "[TokenCut: 9 passing tests, 9 progress records]" in compact_npm
+    assert "[TokenCut: 7 passing tests in 2 files, 9 progress records]" in compact_npm
 
 
 def test_filter_tsc_compacts_errors_and_strips_squiggles():
@@ -504,6 +505,39 @@ def test_auto_specialize_routes_build_and_package_commands():
     res_npm = auto_specialize_command_output("npm install", npm_raw)
     assert res_npm is not None
     assert "[TokenCut: 3 package deprecation warnings collapsed]" in res_npm
+
+
+def test_filter_jest_vitest_does_not_inflate_counts_with_file_records():
+    # A per-file record already covers the individual records printed beneath it.
+    raw = "\n".join(
+        [f" ✓ src/mod{i}/unit.test.ts ({10 + i} tests) {12 + i}ms" for i in range(20)]
+        + ["", " Test Files  20 passed (20)", "      Tests  390 passed (390)"]
+    )
+
+    compact = filter_jest_vitest(raw)
+
+    assert "[TokenCut: 390 passing tests in 20 files, 20 progress records]" in compact
+    assert "Tests  390 passed (390)" in compact
+
+
+def test_filter_jest_vitest_reports_files_when_test_counts_are_unstated():
+    # Jest suite headers state no per-file count, so none may be invented.
+    raw = "PASS src/a.test.ts\nPASS src/b.test.ts\nPASS src/c.test.ts\n\nDone\n"
+
+    compact = filter_jest_vitest(raw)
+
+    assert "[TokenCut: 3 passing test files, 3 progress records]" in compact
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["npm run test", "pnpm run test", "yarn run test", "bun run test", "npm run test:unit"],
+)
+def test_auto_specialize_routes_npm_run_test_forms(command):
+    compact = auto_specialize_command_output(command, SAMPLE_VITEST_PASS)
+
+    assert compact is not None
+    assert "passing tests in 2 files" in compact
 
 
 def test_compress_to_budget():
