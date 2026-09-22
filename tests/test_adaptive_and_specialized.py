@@ -583,6 +583,8 @@ def test_auto_specialize_routes_npm_run_test_forms(command):
 
     assert compact is not None
     assert "passing tests in 2 files" in compact
+
+
 def test_filter_git_diff_folds_lockfiles_and_keeps_code_hunks():
     compact = filter_git_diff(SAMPLE_GIT_DIFF)
 
