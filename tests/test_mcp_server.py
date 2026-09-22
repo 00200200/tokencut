@@ -292,7 +292,9 @@ def test_coding_profile_includes_gain_tool():
     assert "tokencut_gain" in names
     assert "tokencut_gain" in server.CODING_TOOLS
     gain_def = next(t for t in listed["result"]["tools"] if t["name"] == "tokencut_gain")
-    assert "billing" in gain_def["description"].lower() or "quota" in gain_def["description"].lower()
+    assert (
+        "billing" in gain_def["description"].lower() or "quota" in gain_def["description"].lower()
+    )
     assert gain_def["annotations"]["readOnlyHint"] is True
 
 
