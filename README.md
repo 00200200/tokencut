@@ -105,12 +105,19 @@ tokencut run -- npm test
 ## What you get
 
 - **Useful output, recoverable detail.** Fold recognized noise, keep diagnostics, retrieve omitted text by reference.
+- **Session dedup + spill.** Identical output within ~15 minutes collapses to a short cache ref; payloads over ~20 KiB become a file path + preview (override with `TOKENCUT_SPILL_BYTES`).
 - **Code without whole-file dumps.** Search symbols, read exact methods, inspect outlines, preview edits guarded by a file hash. Syntax indexing is local — no language-server daemons.
 - **Context you choose.** Package selected files, compact pasted logs or tables, optimize mixed prompts, save short task checkpoints. Transcript distillation is explicit and lossy; it does not intercept chat.
-- **Visible measurements.** Before/after text counts and recovery overhead. Account-limit readings stay separate from estimated text savings.
+- **Visible measurements.** `tokencut gain` shows per-tool-family savings and passthrough candidates (like RTK’s gain/unchopped). Account-limit readings stay separate from estimated text savings.
 
 Default filtering preserves unfamiliar output. Stronger truncation is opt-in.
 Reference resolution uses syntax, not full LSP semantics. [Details and tradeoffs →](docs/guide.md)
+
+```sh
+tokencut gain              # summary + by tool family + passthrough
+tokencut gain --history    # recent events
+tokencut gain --json
+```
 
 ### Before you send a message
 
@@ -130,6 +137,10 @@ claude mcp add --scope user tokencut -- tokencut mcp --profile coding
 
 # Codex
 codex mcp add tokencut -- tokencut mcp --profile coding
+
+# Claude Desktop (config) + optional Extension manifest
+tokencut install --claude-desktop
+tokencut install --mcpb
 ```
 
 Already registered? Update the server args, then reconnect. For Claude Desktop, Cursor, Windsurf, and other MCP clients:

@@ -1,0 +1,116 @@
+"""TDD for gain analytics, session dedup, and large-output spill."""
+
+from __future__ import annotations
+
+from typer.testing import CliRunner
+
+from tokencut.cli import app
+from tokencut.core.cache import ContextCache
+from tokencut.core.command_family import command_family
+from tokencut.core.gain import GainReport, build_gain_report
+from tokencut.core.spill import DEFAULT_SPILL_BYTES, spill_large_output
+from tokencut.core.telemetry import TelemetryStore
+
+
+def test_command_family_normalizes_common_invocations():
+    assert command_family(["pytest", "-q"]) == "pytest"
+    assert command_family(["/usr/bin/git", "diff"]) == "git"
+    assert command_family(["uv", "run", "pytest", "tests"]) == "pytest"
+    assert command_family(["python", "-m", "mypy", "."]) == "mypy"
+    assert command_family(["npx", "eslint", "."]) == "eslint"
+    assert command_family([]) == "unknown"
+
+
+def test_gain_report_groups_by_operation_and_flags_passthrough(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    store = TelemetryStore(db_path=tmp_path / "telemetry.db")
+    store.record(
+        1000,
+        200,
+        1000,
+        200,
+        1000,
+        200,
+        operation="exec:pytest",
+        delivery="returned",
+    )
+    store.record(
+        500,
+        500,
+        500,
+        500,
+        500,
+        500,
+        operation="exec:echo",
+        delivery="returned",
+    )
+    store.record(
+        800,
+        100,
+        800,
+        100,
+        800,
+        100,
+        operation="exec:docker",
+        delivery="returned",
+    )
+
+    report = build_gain_report(store)
+    assert isinstance(report, GainReport)
+    assert report.total_events == 3
+    assert report.saved_openai == (800 + 0 + 700)
+    by_op = {row.operation: row for row in report.by_operation}
+    assert by_op["exec:pytest"].saved_openai == 800
+    assert by_op["exec:echo"].passthrough is True
+    assert by_op["exec:docker"].reduction_pct > 80
+    assert any(row.operation == "exec:echo" for row in report.passthrough)
+
+
+def test_session_dedup_returns_short_ref_for_identical_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    cache = ContextCache(db_path=tmp_path / "cache.db")
+    blob = "error: boom\n" + ("line\n" * 200)
+    first = cache.store(blob, source="run")
+    again = cache.check_duplicate(blob)
+    assert again == first
+    notice = cache.dedup_notice(blob)
+    assert notice is not None
+    assert first in notice
+    assert "identical" in notice.lower() or "cached" in notice.lower()
+    assert len(notice) < len(blob) // 4
+
+
+def test_spill_writes_file_and_preview(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    huge = ("LAYER progress " + ("x" * 80) + "\n") * 400
+    assert len(huge.encode()) > DEFAULT_SPILL_BYTES
+    result = spill_large_output(huge, spill_dir=tmp_path / "spill")
+    assert result is not None
+    assert result.path.is_file()
+    assert result.path.read_text() == huge
+    assert result.ref_id.startswith("tc_")
+    assert "spill" in result.preview.lower() or "retrieve" in result.preview.lower()
+    assert len(result.preview.encode()) < len(huge.encode()) // 5
+    assert result.bytes_written == len(huge.encode())
+
+
+def test_cli_gain_json(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    store = TelemetryStore(db_path=tmp_path / "telemetry.db")
+    store.record(200, 40, 200, 40, 200, 40, operation="exec:ruff")
+    runner = CliRunner()
+    result = runner.invoke(app, ["gain", "--json"])
+    assert result.exit_code == 0
+    assert "exec:ruff" in result.stdout
+    assert "saved_openai" in result.stdout
+
+
+def test_cli_run_records_operation_family(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    runner = CliRunner()
+    result = runner.invoke(app, ["run", "--", "python", "-c", "print('hi')"])
+    assert result.exit_code == 0
+    store = TelemetryStore(db_path=tmp_path / "telemetry.db")
+    with store.connect() as conn:
+        ops = [row[0] for row in conn.execute("SELECT operation FROM events").fetchall()]
+    assert any(op.startswith("exec:") for op in ops)
