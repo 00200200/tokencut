@@ -9,6 +9,8 @@ from tokencut.core.specialized import (
     filter_cargo_test,
     filter_git_log,
     filter_git_status,
+    filter_go_test,
+    filter_jest_vitest,
 )
 from tokencut.metrics.tokenizer import count_tokens
 
@@ -100,6 +102,71 @@ assertion `left == right` failed
 
 test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; \
 finished in 0.08s
+"""
+
+SAMPLE_GO_PASS = "\n".join(
+    [
+        "=== RUN   TestServerStart",
+        "--- PASS: TestServerStart (0.01s)",
+        "=== RUN   TestRouteMatch",
+        "--- PASS: TestRouteMatch (0.00s)",
+        "=== RUN   TestMiddlewareAuth",
+        "--- PASS: TestMiddlewareAuth (0.00s)",
+        "PASS",
+        "ok  \tgithub.com/acme/server\t0.034s",
+    ]
+)
+
+SAMPLE_GO_FAIL = """=== RUN   TestDatabaseQuery
+--- PASS: TestDatabaseQuery (0.01s)
+=== RUN   TestPanicRecovery
+--- FAIL: TestPanicRecovery (0.00s)
+panic: unhandled nil pointer dereference [recovered]
+	panic: runtime error: invalid memory address
+goroutine 16 [running]:
+main.TestPanicRecovery(0x1400011e1e0)
+	/src/server_test.go:42 +0x28
+FAIL
+FAIL	github.com/acme/server	0.018s
+FAIL
+"""
+
+SAMPLE_VITEST_PASS = """ ✓ src/utils/format.test.ts (4 tests) 12ms
+   ✓ formats currency correctly (2ms)
+   ✓ parses date string (1ms)
+   ✓ handles empty input (1ms)
+   ✓ escapes html entities (1ms)
+ ✓ src/components/Button.test.tsx (3 tests) 20ms
+   ✓ renders button label (3ms)
+   ✓ triggers click handler (2ms)
+   ✓ respects disabled state (2ms)
+
+ Test Files  2 passed (2)
+      Tests  7 passed (7)
+   Start at  08:00:00
+   Duration  45ms
+"""
+
+SAMPLE_JEST_FAIL = """PASS src/utils/math.test.js
+  ✓ calculates sum (2 ms)
+
+FAIL src/utils/parser.test.js
+  ● Parser › rejects malformed input
+
+    expect(received).toThrow()
+
+    Expected substring: "invalid token"
+    Received message:   "unexpected EOF"
+
+      18 |   test('rejects malformed input', () => {
+    > 19 |     expect(() => parse(raw)).toThrow('invalid token');
+         |                              ^
+      20 |   });
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        0.85 s
 """
 
 
@@ -215,6 +282,76 @@ def test_filter_cargo_test_collapses_tests_named_like_diagnostics():
     # "error"/"warning" inside a test name must not stop collapsing.
     assert "[TokenCut: 3 passing tests, 3 progress records]" in compact
     assert "test result: ok. 3 passed; 0 failed" in compact
+
+
+def test_filter_go_test_collapses_passing_runs():
+    compact = filter_go_test(SAMPLE_GO_PASS)
+
+    assert "[TokenCut: 3 passing tests, 6 progress records]" in compact
+    assert "=== RUN   TestServerStart" not in compact
+    assert "--- PASS: TestServerStart" not in compact
+    assert "ok  \tgithub.com/acme/server\t0.034s" in compact
+    assert count_tokens(compact).claude < count_tokens(SAMPLE_GO_PASS).claude
+
+
+def test_filter_go_test_keeps_failures_and_panics_verbatim():
+    compact = filter_go_test(SAMPLE_GO_FAIL)
+
+    assert "--- FAIL: TestPanicRecovery" in compact
+    assert "panic: unhandled nil pointer dereference" in compact
+    assert "runtime error: invalid memory address" in compact
+    assert "main.TestPanicRecovery" in compact
+    assert "FAIL\tgithub.com/acme/server" in compact
+
+
+def test_auto_specialize_routes_go_test():
+    compact = auto_specialize_command_output("go test -v ./...", SAMPLE_GO_PASS)
+    assert compact is not None
+    assert "[TokenCut: 3 passing tests, 6 progress records]" in compact
+
+
+def test_filter_jest_vitest_collapses_passing_runs():
+    compact = filter_jest_vitest(SAMPLE_VITEST_PASS)
+
+    assert "[TokenCut: 9 passing tests, 9 progress records]" in compact
+    assert "formats currency correctly" not in compact
+    assert "Test Files  2 passed (2)" in compact
+    assert "Tests  7 passed (7)" in compact
+    assert count_tokens(compact).claude < count_tokens(SAMPLE_VITEST_PASS).claude
+
+
+def test_filter_jest_vitest_keeps_failures_and_diffs_verbatim():
+    compact = filter_jest_vitest(SAMPLE_JEST_FAIL)
+
+    assert "FAIL src/utils/parser.test.js" in compact
+    assert "expect(received).toThrow()" in compact
+    assert "Expected substring:" in compact
+    assert "Test Suites: 1 failed, 1 passed, 2 total" in compact
+
+
+def test_filter_jest_vitest_collapses_tests_named_with_diagnostic_words():
+    raw = "\n".join(
+        [
+            " ✓ src/errors.test.ts (2 tests) 5ms",
+            "   ✓ handles timeout error properly (2ms)",
+            "   ✓ reports warning on failure code (1ms)",
+            "",
+            "Tests  2 passed (2)",
+        ]
+    )
+    compact = filter_jest_vitest(raw)
+    assert "[TokenCut: 3 passing tests, 3 progress records]" in compact
+    assert "Tests  2 passed (2)" in compact
+
+
+def test_auto_specialize_routes_jest_and_vitest():
+    compact_vitest = auto_specialize_command_output("npx vitest run", SAMPLE_VITEST_PASS)
+    assert compact_vitest is not None
+    assert "[TokenCut: 9 passing tests, 9 progress records]" in compact_vitest
+
+    compact_npm = auto_specialize_command_output("npm test -- --coverage", SAMPLE_VITEST_PASS)
+    assert compact_npm is not None
+    assert "[TokenCut: 9 passing tests, 9 progress records]" in compact_npm
 
 
 def test_compress_to_budget():

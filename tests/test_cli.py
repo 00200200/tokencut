@@ -348,3 +348,19 @@ def test_cli_optimize_json(tmp_path):
     assert "original_tokens" in data
     assert "optimized_tokens" in data
     assert "ref_id" in data
+
+
+def test_cli_share():
+    res = runner.invoke(app, ["share"])
+    assert res.exit_code == 0
+    assert "Share TokenCut & Add Badge" in res.output
+    assert "shields.io/badge/tokencut" in res.output
+    assert "github.com/00200200/tokencut" in res.output
+
+
+def test_cli_share_badge():
+    res = runner.invoke(app, ["share", "--badge"])
+    assert res.exit_code == 0
+    assert res.output.strip().startswith(
+        "[![TokenCut Context](https://img.shields.io/badge/tokencut-"
+    )

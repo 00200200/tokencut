@@ -189,6 +189,98 @@ def filter_cargo_test(raw_output: str) -> str:
     return "\n".join(result)
 
 
+# Go test outputs pairs or lines of '=== RUN' and '--- PASS:'.
+# Diagnosing lines contain '--- FAIL:', 'panic:', 'FAIL', etc.
+_GO_TEST_OK = re.compile(r"^\s*(?:=== RUN\s+\S+|--- PASS:\s+\S+\s+\([0-9.]+s\))$")
+_GO_PASS_RECORD = re.compile(r"^\s*--- PASS:\s+\S+\s+\([0-9.]+s\)")
+_GO_DIAGNOSTIC = re.compile(
+    r"\b(?:FAIL|panic|fatal|error|warning|timeout|SIGSEGV)\b|--- FAIL:", re.IGNORECASE
+)
+
+
+def filter_go_test(raw_output: str) -> str:
+    """Collapse runs of passing go test records while keeping diagnostics verbatim."""
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    index = 0
+    collapsed = False
+
+    while index < len(lines):
+        line = lines[index]
+        if not _GO_TEST_OK.match(line.strip()) and _GO_DIAGNOSTIC.search(line):
+            result.extend(lines[index:])
+            break
+
+        if _GO_TEST_OK.match(line.strip()):
+            end = index + 1
+            while end < len(lines):
+                if not _GO_TEST_OK.match(lines[end].strip()):
+                    break
+                end += 1
+            chunk = lines[index:end]
+            passed = sum(1 for ln in chunk if _GO_PASS_RECORD.match(ln.strip()))
+            records = len(chunk)
+            if passed > 0:
+                result.append(f"[TokenCut: {passed} passing tests, {records} progress records]")
+                collapsed = True
+                index = end
+                continue
+            else:
+                result.extend(chunk)
+                index = end
+                continue
+
+        result.append(line)
+        index += 1
+
+    if not collapsed:
+        return raw_output
+    return "\n".join(result)
+
+
+# Jest and Vitest print progress records with checkmarks or PASS prefixes.
+_JS_TEST_OK = re.compile(
+    r"^\s*(?:PASS\s+\S+|[✓√]\s+.*(?:\([0-9.]+\s*m?s\)|\(\d+\s+tests?\)|$))\s*$"
+)
+_JS_DIAGNOSTIC = re.compile(
+    r"\b(?:FAIL|failed|failure|failures|Error|AssertionError|panic|fatal|warning|timeout)\b|[✕×]",
+    re.IGNORECASE,
+)
+
+
+def filter_jest_vitest(raw_output: str) -> str:
+    """Collapse runs of passing Jest/Vitest records while keeping diagnostics verbatim."""
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    index = 0
+    collapsed = False
+
+    while index < len(lines):
+        line = lines[index]
+        if not _JS_TEST_OK.match(line.strip()) and _JS_DIAGNOSTIC.search(line):
+            result.extend(lines[index:])
+            break
+
+        if _JS_TEST_OK.match(line.strip()):
+            end = index + 1
+            while end < len(lines):
+                if not _JS_TEST_OK.match(lines[end].strip()):
+                    break
+                end += 1
+            passed = end - index
+            result.append(f"[TokenCut: {passed} passing tests, {passed} progress records]")
+            collapsed = True
+            index = end
+            continue
+
+        result.append(line)
+        index += 1
+
+    if not collapsed:
+        return raw_output
+    return "\n".join(result)
+
+
 def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
     """Detect if command has a specialized ultra-dense filter."""
     cmd_lower = command.lower().strip()
@@ -198,4 +290,20 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return filter_git_status(raw_output)
     elif cmd_lower.startswith("cargo test"):
         return filter_cargo_test(raw_output)
+    elif cmd_lower.startswith("go test"):
+        return filter_go_test(raw_output)
+    elif any(
+        cmd_lower.startswith(prefix)
+        for prefix in (
+            "npm test",
+            "pnpm test",
+            "yarn test",
+            "bun test",
+            "vitest",
+            "npx vitest",
+            "jest",
+            "npx jest",
+        )
+    ):
+        return filter_jest_vitest(raw_output)
     return None

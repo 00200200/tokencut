@@ -8,8 +8,10 @@
   <p>A local CLI and MCP server for AI coding agents, with an optional macOS desktop pet.</p>
 
   <a href="https://github.com/00200200/tokencut/actions/workflows/ci.yml"><img src="https://github.com/00200200/tokencut/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/00200200/tokencut/releases"><img src="https://img.shields.io/github/v/release/00200200/tokencut?color=b3f5cd&label=release" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-b3f5cd" alt="MIT license"></a>
   <a href="https://github.com/00200200/tokencut/stargazers"><img src="https://img.shields.io/github/stars/00200200/tokencut?style=flat&color=b3f5cd" alt="GitHub stars"></a>
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-compatible-9cf" alt="MCP Compatible"></a>
 
   <p><a href="#try-it-in-a-minute">Try it</a> · <a href="#connect-your-agent">Connect your agent</a> · <a href="#meet-your-desktop-companion">Meet the pet</a> · <a href="docs/guide.md">Guide</a></p>
 </div>
@@ -126,5 +128,17 @@ motion, not a continuously running 3D renderer. The CLI and MCP do not require t
 It helps other developers discover the project. Found lost context or a missed
 optimization? [Open an issue](https://github.com/00200200/tokencut/issues/new) with
 a small, redacted example and the output you expected.
+
+### Star History
+
+<p align="center">
+  <a href="https://star-history.com/#00200200/tokencut&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=00200200/tokencut&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=00200200/tokencut&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=00200200/tokencut&type=Date" width="600" />
+    </picture>
+  </a>
+</p>
 
 [Guide](docs/guide.md) · [Reproducible benchmarks](docs/guide.md#measurements-and-development) · [MIT license](LICENSE)

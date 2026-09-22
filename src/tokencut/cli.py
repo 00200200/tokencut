@@ -907,6 +907,35 @@ def stats(
     console.print(table)
 
 
+@app.command("share")
+def share_command(
+    badge: Annotated[
+        bool, typer.Option("--badge", "-b", help="Output only the Markdown badge code")
+    ] = False,
+):
+    """Generate shareable badges and links for GitHub READMEs, social media, and PRs."""
+    telemetry = TelemetryStore()
+    s = telemetry.get_stats()
+    badge_pct = f"{s.reduction_pct}%25" if s.reduction_pct > 0 else "active"
+    badge_md = f"[![TokenCut Context](https://img.shields.io/badge/tokencut-{badge_pct}%20saved-b3f5cd)](https://github.com/00200200/tokencut)"
+
+    if badge:
+        sys.stdout.write(badge_md + "\n")
+        return
+
+    console.print("\n[bold green]⚡ Share TokenCut & Add Badge to your Repository[/bold green]\n")
+    console.print("[bold]1. README.md Badge (Markdown):[/bold]")
+    console.print(f"   `{badge_md}`\n")
+    console.print("[bold]2. Share on Social Media & Developer Forums:[/bold]")
+    console.print("   • GitHub: https://github.com/00200200/tokencut")
+    console.print(
+        "   • X / Twitter: https://twitter.com/intent/tweet?text=Cutting+LLM+coding+context+bloat+by+up+to+90%25+with+TokenCut+%28local+MCP+%2B+CLI%29%3A+https%3A%2F%2Fgithub.com%2F00200200%2Ftokencut"
+    )
+    console.print(
+        "   • Hacker News: https://news.ycombinator.com/submitlink?u=https://github.com/00200200/tokencut&t=Show%20HN%3A%20TokenCut%20%E2%80%93%20Zero-bloat%20context%20optimizer%20and%20MCP%20companion%20for%20AI%20coding\n"
+    )
+
+
 @app.command()
 def doctor(
     fix: Annotated[
