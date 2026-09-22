@@ -140,6 +140,55 @@ def filter_git_status(raw_status: str) -> str:
     return "\n".join(cleaned_lines)
 
 
+# Cargo prints one line per test. Only unambiguous passes are collapsed, and the
+# diagnostic vocabulary mirrors safe_filter so failures are never reinterpreted.
+_CARGO_OK = re.compile(r"^test \S+ \.\.\. ok$")
+_CARGO_DIAGNOSTIC = re.compile(
+    r"\b(?:FAILED|failures|failed|panicked|error|warning|timeout)\b", re.IGNORECASE
+)
+
+
+def filter_cargo_test(raw_output: str) -> str:
+    """Collapse runs of passing cargo test records while keeping every diagnostic.
+
+    Mirrors the pytest handling in ``safe_filter``: once a diagnostic line appears
+    the remainder of the output is kept verbatim, so failures, panics and
+    backtraces always reach the model intact. The trailing ``test result:`` summary
+    carries the authoritative pass and fail counts and is never rewritten.
+    """
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    index = 0
+    collapsed = False
+
+    while index < len(lines):
+        line = lines[index]
+        # A record matching the anchored pass pattern ends in "... ok" and cannot be
+        # a diagnostic, so test names containing "error" still collapse.
+        if not _CARGO_OK.fullmatch(line.strip()) and _CARGO_DIAGNOSTIC.search(line):
+            result.extend(lines[index:])
+            break
+
+        if _CARGO_OK.fullmatch(line.strip()):
+            end = index + 1
+            while end < len(lines):
+                if not _CARGO_OK.fullmatch(lines[end].strip()):
+                    break
+                end += 1
+            passed = end - index
+            result.append(f"[TokenCut: {passed} passing tests, {passed} progress records]")
+            collapsed = True
+            index = end
+            continue
+
+        result.append(line)
+        index += 1
+
+    if not collapsed:
+        return raw_output
+    return "\n".join(result)
+
+
 def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
     """Detect if command has a specialized ultra-dense filter."""
     cmd_lower = command.lower().strip()
@@ -147,4 +196,6 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return filter_git_log(raw_output)
     elif cmd_lower.startswith("git status"):
         return filter_git_status(raw_output)
+    elif cmd_lower.startswith("cargo test"):
+        return filter_cargo_test(raw_output)
     return None
