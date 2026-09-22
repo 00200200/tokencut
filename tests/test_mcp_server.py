@@ -179,7 +179,6 @@ def test_handle_tokencut_read_session_dedups_identical_content(tmp_path, monkeyp
     assert ContextCache().retrieve(ref) == body
 
 
-
 def test_handle_tokencut_retrieve():
     res = handle_tokencut_retrieve({"ref_id": "tc_nonexistent"})
     assert "not found" in res
