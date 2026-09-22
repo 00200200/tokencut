@@ -1,6 +1,6 @@
 """tokencut — Context compression engine and MCP server for Claude Code, Cursor, and Gemini CLI."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output, strip_ansi

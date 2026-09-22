@@ -842,7 +842,7 @@ def _respond(req: Any, *, profile: str = "full") -> dict[str, Any] | None:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "tokencut", "version": "0.1.0"},
+                "serverInfo": {"name": "tokencut", "version": "0.2.0"},
                 "instructions": server_instructions(profile),
             },
         }

@@ -190,7 +190,7 @@ def fetch_codex() -> list[dict]:
             {
                 "id": 1,
                 "method": "initialize",
-                "params": {"clientInfo": {"name": "tokencut-usage", "version": "0.1.0"}},
+                "params": {"clientInfo": {"name": "tokencut-usage", "version": "0.2.0"}},
             }
         )
         pipe.response(1)
