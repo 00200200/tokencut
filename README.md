@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="assets/readme-hero.png">
-    <img src="assets/readme-hero.gif" width="100%" alt="TokenCut: keep the signal, cut the noise. Authored pytest fixture goes from 1,562 to 174 tokens; failure preserved, original recoverable.">
+    <img src="assets/readme-hero.gif" width="100%" alt="TokenCut: keep the signal, cut the noise. Authored fixtures: docker build 18,360→107; cargo test 3,795→185; pytest noisy failure 5,111→348; pytest recovery demo 1,562→174.">
   </picture>
 </p>
 
@@ -46,47 +46,65 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 
 ## See it cut
 
-`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, Ruff/mypy/tsc/ESLint frames compact, Docker BuildKit progress collapses, and npm test console dumps fold.
+`tokencut demo` runs offline, makes **no model calls**, and checks that failures are preserved, the original recovers exactly, unknown output stays unchanged, and the specialized cutters for pytest / Docker / cargo / go / nextest / vitest / npm test / tsc / ESLint / mypy / pyright compact as measured below.
 
 ```
-                 TokenCut: verify your installation
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
-┃ Authored fixture                         ┃ Result             ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
-│ pytest (incl. recovery notice)           │ 1,562 -> 174 (88.9%) │
-│ git diff (lockfile + code hunk)          │ 855 -> 111 (87.0%) │
-│ ruff check (full frames)                 │ 146 -> 82 (43.8%)  │
-│ docker build (BuildKit progress)         │ 18,360 -> 107 (99.4%) │
-│ tsc (pretty frames)                      │ 369 -> 77 (79.1%)  │
-│ eslint (codeframe + stacks)              │ 293 -> 61 (79.2%)  │
-│ mypy --pretty (frames)                   │ 522 -> 259 (50.4%) │
-│ npm test (console dumps)                 │ 1,588 -> 156 (90.2%) │
-│ complete failure tail preserved          │ PASS               │
-│ original recovered exactly               │ PASS               │
-│ unknown output unchanged                 │ PASS               │
-│ git diff folds lockfile keeps code       │ PASS               │
-│ ruff keeps codes drops frames            │ PASS               │
-│ docker keeps failure drops layer progress│ PASS               │
-│ tsc keeps codes drops frames             │ PASS               │
-│ eslint keeps rules drops frames          │ PASS               │
-│ mypy keeps codes drops frames            │ PASS               │
-│ npm test keeps failure drops console     │ PASS               │
-│ smaller including recovery notice        │ PASS               │
-└──────────────────────────────────────────┴────────────────────┘
+                  TokenCut: verify your installation
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Authored fixture                          ┃ Result                 ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ pytest (incl. recovery notice)            │ 1,562 -> 174 (88.9%)   │
+│ pytest noisy failure (xdist + I/O)        │ 5,111 -> 348 (93.2%)   │
+│ git diff (lockfile + code hunk)           │ 855 -> 111 (87.0%)     │
+│ ruff check (full frames)                  │ 146 -> 82 (43.8%)      │
+│ docker build (BuildKit progress)          │ 18,360 -> 107 (99.4%)  │
+│ cargo test (pass + backtrace)             │ 3,795 -> 185 (95.1%)   │
+│ go test (pass + goroutine dump)           │ 3,281 -> 64 (98.0%)    │
+│ cargo nextest (passing run)               │ 464 -> 46 (90.1%)      │
+│ vitest (390 passing tests)                │ 3,816 -> 44 (98.8%)    │
+│ npm test (console dumps)                  │ 1,588 -> 156 (90.2%)   │
+│ tsc (pretty frames)                       │ 369 -> 77 (79.1%)      │
+│ eslint (codeframe + stacks)               │ 293 -> 61 (79.2%)      │
+│ mypy --pretty (frames)                    │ 522 -> 259 (50.4%)     │
+│ pyright (frames across files)             │ 4,244 -> 2,302 (45.8%) │
+│ complete failure tail preserved           │ PASS                   │
+│ original recovered exactly                │ PASS                   │
+│ unknown output unchanged                  │ PASS                   │
+│ git diff folds lockfile keeps code        │ PASS                   │
+│ ruff keeps codes drops frames             │ PASS                   │
+│ docker keeps failure drops layer progress │ PASS                   │
+│ tsc keeps codes drops frames              │ PASS                   │
+│ eslint keeps rules drops frames           │ PASS                   │
+│ mypy keeps codes drops frames             │ PASS                   │
+│ npm test keeps failure drops console      │ PASS                   │
+│ cargo keeps failure drops passes          │ PASS                   │
+│ go keeps failure drops passes             │ PASS                   │
+│ nextest collapses passes                  │ PASS                   │
+│ pytest noise keeps failure drops io       │ PASS                   │
+│ pyright keeps diagnostics drops frames    │ PASS                   │
+│ vitest collapses passing runs             │ PASS                   │
+│ smaller including recovery notice         │ PASS                   │
+└───────────────────────────────────────────┴────────────────────────┘
 ```
 
 | Authored fixture | Tokens |
 | --- | ---: |
 | pytest original → TokenCut (incl. recovery) | 1,562 → **174** |
+| pytest noisy failure (xdist + captured I/O) | 5,111 → **348** |
 | `git diff` with lockfile noise | 855 → **111** |
 | `ruff check` full frames | 146 → **82** |
 | `docker build` BuildKit progress | 18,360 → **107** |
+| `cargo test` passes + backtrace | 3,795 → **185** |
+| `go test` passes + goroutine dump | 3,281 → **64** |
+| `cargo nextest` passing run | 464 → **46** |
+| `vitest` 390 passing tests | 3,816 → **44** |
+| `npm test` console dumps | 1,588 → **156** |
 | `tsc` pretty frames | 369 → **77** |
 | `eslint` codeframe + stacks | 293 → **61** |
 | `mypy` --pretty frames | 522 → **259** |
-| `npm test` console dumps | 1,588 → **156** |
+| `pyright` frames across files | 4,244 → **2,302** |
 
-**88.9% less tool text on the pytest fixture; 90.2% on console-heavy npm test logs.** Reproduce with `tokencut demo --json`.
+**99.4% on the docker BuildKit fixture; 95.1% / 98.0% on cargo / go test dumps; 93.2% on noisy pytest failures.** Reproduce with `tokencut demo --json`.
 Local `o200k_base` estimate — not a billing, quality, or subscription-limit claim.
 
 Try it on a real command:
@@ -96,10 +114,15 @@ tokencut run -- pytest -v
 tokencut run -- git diff
 tokencut run -- ruff check .
 tokencut run -- docker build -t app .
+tokencut run -- cargo test
+tokencut run -- go test -v ./...
+tokencut run -- cargo nextest run
+tokencut run -- npx vitest run
+tokencut run -- npm test
 tokencut run -- npx tsc --noEmit
 tokencut run -- npx eslint . --format codeframe
 tokencut run -- mypy src
-tokencut run -- npm test
+tokencut run -- npx pyright
 ```
 
 ## What you get
