@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import sqlite3
@@ -320,6 +321,7 @@ def check_codex_mcp(config_file: Path | None = None) -> DiagnosticItem:
                 name="Codex MCP Config",
                 status="missing",
                 message=f"{prefix}; TokenCut is not registered in {cfg}.",
+                remedy="Run `tokencut install --codex` to configure Codex Desktop MCP",
             )
         if not isinstance(server, dict) or not isinstance(server.get("command"), str):
             raise ValueError("tokencut must be a local server table with a command")
@@ -346,11 +348,16 @@ def check_codex_mcp(config_file: Path | None = None) -> DiagnosticItem:
         )
 
 
-def _local_mcp_command() -> dict[str, object]:
+def get_codex_config_path() -> Path:
+    return Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "config.toml"
+
+
+def _local_mcp_command(profile: str | None = None) -> dict[str, object]:
     """Choose an installed runtime, never fetch the colliding PyPI project."""
+    base_args = ["mcp", "--profile", profile] if profile else ["mcp"]
     executable = shutil.which("tokencut")
     if executable:
-        return {"command": str(Path(executable).absolute()), "args": ["mcp"]}
+        return {"command": str(Path(executable).absolute()), "args": base_args}
     # Preserve the venv path: resolving a symlink to the base interpreter can
     # lose the installed package. -I proves this works without cwd/PYTHONPATH.
     interpreter = Path(sys.executable).absolute()
@@ -367,7 +374,7 @@ def _local_mcp_command() -> dict[str, object]:
             check=False,
         )
         if probe.returncode == 0:
-            return {"command": str(interpreter), "args": ["-m", "tokencut.cli", "mcp"]}
+            return {"command": str(interpreter), "args": ["-m", "tokencut.cli", *base_args]}
     except (OSError, subprocess.TimeoutExpired):
         pass
     raise ValueError(
@@ -376,7 +383,7 @@ def _local_mcp_command() -> dict[str, object]:
     )
 
 
-def _configure_local_mcp(cfg_file: Path) -> tuple[bool, str]:
+def _configure_local_mcp(cfg_file: Path, profile: str | None = None) -> tuple[bool, str]:
     """Preserve settings, reject malformed files, and back up each actual change."""
     staged: Path | None = None
     try:
@@ -392,7 +399,10 @@ def _configure_local_mcp(cfg_file: Path) -> tuple[bool, str]:
             raise ValueError(
                 "existing tokencut server uses another transport; update it explicitly"
             )
-        updated = {**previous, **_local_mcp_command()}
+        cmd_info = (
+            _local_mcp_command(profile=profile) if profile is not None else _local_mcp_command()
+        )
+        updated = {**previous, **cmd_info}
         if previous == updated:
             return True, str(cfg_file)
         servers["tokencut"] = updated
@@ -430,8 +440,103 @@ def _configure_local_mcp(cfg_file: Path) -> tuple[bool, str]:
             staged.unlink(missing_ok=True)
 
 
-def configure_claude_desktop_mcp(target_file: Path | None = None) -> tuple[bool, str]:
-    return _configure_local_mcp(target_file or get_claude_desktop_config_path())
+def configure_claude_desktop_mcp(
+    target_file: Path | None = None, profile: str | None = None
+) -> tuple[bool, str]:
+    return _configure_local_mcp(target_file or get_claude_desktop_config_path(), profile=profile)
+
+
+def configure_codex_mcp(
+    target_file: Path | None = None, profile: str | None = None
+) -> tuple[bool, str]:
+    """Configure TokenCut MCP in Codex config.toml safely and atomically."""
+    cfg_file = target_file or get_codex_config_path()
+    staged: Path | None = None
+    try:
+        raw_text = cfg_file.read_text(encoding="utf-8") if cfg_file.exists() else ""
+        data = tomllib.loads(raw_text) if raw_text else {}
+        if not isinstance(data, dict):
+            raise ValueError("configuration must be a TOML table")
+        servers = data.get("mcp_servers", {})
+        if not isinstance(servers, dict):
+            raise ValueError("mcp_servers must be a table")
+
+        cmd_info = (
+            _local_mcp_command(profile=profile) if profile is not None else _local_mcp_command()
+        )
+        cmd_str = json.dumps(cmd_info["command"])
+        args_list = json.dumps(cmd_info["args"])
+
+        previous = servers.get("tokencut")
+        if (
+            isinstance(previous, dict)
+            and previous.get("command") == cmd_info["command"]
+            and previous.get("args") == cmd_info["args"]
+        ):
+            return True, str(cfg_file)
+
+        table_lines = [
+            "[mcp_servers.tokencut]",
+            f"command = {cmd_str}",
+            f"args = {args_list}",
+        ]
+        # Preserve env table if previous server had one
+        if isinstance(previous, dict) and isinstance(previous.get("env"), dict) and previous["env"]:
+            table_lines.append("")
+            table_lines.append("[mcp_servers.tokencut.env]")
+            for k, v in previous["env"].items():
+                table_lines.append(f"{k} = {json.dumps(str(v))}")
+
+        tokencut_block = "\n".join(table_lines) + "\n"
+
+        block_pattern = re.compile(
+            r"(^|\n)\[mcp_servers\.tokencut\]\n(?:(?!\n\[(?!mcp_servers\.tokencut\b)).)*",
+            re.DOTALL,
+        )
+        if block_pattern.search(raw_text):
+            updated_text = block_pattern.sub(r"\1" + tokencut_block, raw_text)
+        else:
+            sep = "" if not raw_text else ("\n" if raw_text.endswith("\n") else "\n\n")
+            updated_text = raw_text + sep + tokencut_block
+
+        # Strictly validate that updated_text parses as valid TOML and tokencut matches
+        parsed = tomllib.loads(updated_text)
+        if parsed.get("mcp_servers", {}).get("tokencut", {}).get("command") != cmd_info["command"]:
+            raise ValueError("failed to verify updated [mcp_servers.tokencut] table")
+
+        cfg_file.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=cfg_file.name + ".tmp-",
+            dir=cfg_file.parent,
+            delete=False,
+        ) as temporary:
+            staged = Path(temporary.name)
+            temporary.write(updated_text)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+
+        if cfg_file.exists():
+            os.chmod(staged, cfg_file.stat().st_mode & 0o777)
+            with tempfile.NamedTemporaryFile(
+                prefix=cfg_file.name + ".pre-tokencut-",
+                dir=cfg_file.parent,
+                delete=False,
+            ) as backup:
+                backup_path = Path(backup.name)
+            shutil.copy2(cfg_file, backup_path)
+
+        staged.replace(cfg_file)
+        return True, str(cfg_file)
+    except (OSError, ValueError, TypeError) as exc:
+        return (
+            False,
+            f"Could not configure {cfg_file}: {exc}. Existing configuration was not overwritten.",
+        )
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
 
 
 def write_claude_desktop_extension(target_dir: Path | None = None) -> tuple[bool, str]:

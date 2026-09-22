@@ -11,12 +11,21 @@ MAX_INPUT_BYTES = 128 * 1024
 def prepare_text(text: str, *, mode: str = "conservative", budget: int = 1500) -> dict:
     if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_INPUT_BYTES:
         raise ValueError("text must be UTF-8 text of at most 128 KiB")
-    if mode not in {"conservative", "summary", "optimize"}:
-        raise ValueError("mode must be conservative, summary, or optimize")
+    if mode not in {"conservative", "summary", "optimize", "desktop"}:
+        raise ValueError("mode must be conservative, summary, optimize, or desktop")
     if type(budget) is not int or not 128 <= budget <= 8000:
         raise ValueError("budget must be an integer from 128 to 8000")
     redacted = redact_secrets(text)
-    if mode == "optimize" and redacted.strip():
+    if mode == "desktop" and redacted.strip():
+        from tokencut.core.optimizer import optimize_context
+        from tokencut.core.prompt_optimizer import stabilize_cache_prefix
+        from tokencut.core.specialized import filter_dev_server_logs, filter_traceback
+
+        tb_filtered = filter_traceback(redacted)
+        dev_filtered = filter_dev_server_logs(tb_filtered)
+        stabilized = stabilize_cache_prefix(dev_filtered)
+        candidate = optimize_context(stabilized, budget=budget).text
+    elif mode == "optimize" and redacted.strip():
         from tokencut.core.optimizer import optimize_context
 
         candidate = optimize_context(redacted, budget=budget).text

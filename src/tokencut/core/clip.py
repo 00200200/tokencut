@@ -141,12 +141,22 @@ def compact_text(text: str, budget: int = 2000) -> ClipResult:
         if count_tokens(test_res).openai < original_tokens:
             compacted = test_res
 
-    # 4. Detect traceback recursion
-    if content_type == "plain" and "Traceback (most recent call last):" in redacted:
+    # 4. Detect traceback recursion and library frame compaction
+    if content_type == "plain" and (
+        "Traceback (most recent call last):" in redacted
+        or (
+            re.search(r"^(?:[A-Za-z]+Error|Error):.*", redacted, re.MULTILINE)
+            and re.search(r"^\s+at\s+", redacted, re.MULTILINE)
+        )
+    ):
         content_type = "traceback"
+        from tokencut.core.specialized import filter_traceback
+
         tb_lines, changed = _compact_traceback(redacted.splitlines(keepends=True))
-        if changed:
-            compacted = "".join(tb_lines)
+        base_tb = "".join(tb_lines) if changed else redacted
+        tb_filtered = filter_traceback(base_tb)
+        if count_tokens(tb_filtered).openai < original_tokens:
+            compacted = tb_filtered
 
     # 5. General stream compaction: fold duplicate consecutive lines
     if content_type == "plain":

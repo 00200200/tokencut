@@ -311,6 +311,45 @@ def test_configure_windsurf_mcp(tmp_path, monkeypatch):
     assert "tokencut" in data["mcpServers"]
 
 
+def test_configure_codex_mcp(tmp_path, monkeypatch):
+    target = tmp_path / "config.toml"
+    monkeypatch.setattr(doctor, "get_codex_config_path", lambda: target)
+    monkeypatch.setattr(
+        doctor,
+        "_local_mcp_command",
+        lambda profile=None: {
+            "command": "/bin/tokencut",
+            "args": ["mcp", "--profile", profile] if profile else ["mcp"],
+        },
+    )
+    ok, path_str = doctor.configure_codex_mcp(target, profile="desktop")
+    assert ok is True
+    assert target.exists()
+    content = target.read_text(encoding="utf-8")
+    assert "[mcp_servers.tokencut]" in content
+    assert 'command = "/bin/tokencut"' in content
+    assert '"--profile"' in content
+    assert '"desktop"' in content
+
+
+def test_configure_claude_desktop_mcp_with_profile(tmp_path, monkeypatch):
+    target = tmp_path / "claude_desktop_config.json"
+    monkeypatch.setattr(doctor, "get_claude_desktop_config_path", lambda: target)
+    monkeypatch.setattr(
+        doctor,
+        "_local_mcp_command",
+        lambda profile=None: {
+            "command": "/bin/tokencut",
+            "args": ["mcp", "--profile", profile] if profile else ["mcp"],
+        },
+    )
+    ok, path_str = doctor.configure_claude_desktop_mcp(target, profile="desktop")
+    assert ok is True
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert "tokencut" in data["mcpServers"]
+    assert data["mcpServers"]["tokencut"]["args"] == ["mcp", "--profile", "desktop"]
+
+
 def test_configure_shell_alias_fish(tmp_path):
     fish_config = tmp_path / "config.fish"
     ok, path_str = configure_shell_alias(fish_config)

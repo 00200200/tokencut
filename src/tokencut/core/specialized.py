@@ -980,6 +980,289 @@ def filter_npm_install(raw_output: str) -> str:
     return "\n".join(result)
 
 
+_PYTHON_TB_HEADER = re.compile(r"^Traceback \(most recent call (?:last|first)\):", re.MULTILINE)
+_PYTHON_FRAME_START = re.compile(r'^  File "([^"]+)", line (\d+)(?:, in (.*))?')
+_NODE_FRAME_START = re.compile(r"^\s+at\s+(?:.*?\s+\()?([^\s\)]+)(?:\))?")
+
+
+def _is_library_path(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    return any(
+        kw in normalized
+        for kw in (
+            "site-packages/",
+            ".venv/",
+            "/lib/python",
+            "<frozen ",
+            "/usr/lib/",
+            "/usr/local/lib/",
+            "node_modules/",
+            "node:internal/",
+            "internal/process/",
+            "internal/modules/",
+        )
+    )
+
+
+def filter_traceback(raw_text: str) -> str:
+    """Compact verbose Python and Node.js tracebacks by folding internal library frames."""
+    if not raw_text.strip():
+        return raw_text
+
+    # Python traceback detection
+    if _PYTHON_TB_HEADER.search(raw_text):
+        lines = raw_text.splitlines()
+        result: list[str] = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if _PYTHON_TB_HEADER.match(line):
+                result.append(line)
+                i += 1
+                frames: list[list[str]] = []
+                while i < len(lines):
+                    f_match = _PYTHON_FRAME_START.match(lines[i])
+                    if f_match:
+                        frame_lines = [lines[i]]
+                        i += 1
+                        while (
+                            i < len(lines)
+                            and not _PYTHON_FRAME_START.match(lines[i])
+                            and (lines[i].startswith("    ") or lines[i].startswith("  "))
+                        ):
+                            if lines[i].strip() and not _PYTHON_TB_HEADER.match(lines[i]):
+                                frame_lines.append(lines[i])
+                                i += 1
+                            else:
+                                break
+                        frames.append(frame_lines)
+                    else:
+                        break
+
+                if frames:
+                    k = 0
+                    while k < len(frames):
+                        frame = frames[k]
+                        m = _PYTHON_FRAME_START.match(frame[0])
+                        path = m.group(1) if m else ""
+                        if _is_library_path(path):
+                            lib_start = k
+                            while k < len(frames):
+                                km = _PYTHON_FRAME_START.match(frames[k][0])
+                                kp = km.group(1) if km else ""
+                                if _is_library_path(kp):
+                                    k += 1
+                                else:
+                                    break
+                            lib_count = k - lib_start
+                            if lib_count > 2:
+                                result.extend(frames[lib_start])
+                                omitted = lib_count - 2
+                                result.append(
+                                    f"  ... [{omitted} library frames in site-packages/ omitted; full trace recoverable via tokencut_retrieve] ..."
+                                )
+                                result.extend(frames[k - 1])
+                            else:
+                                for idx in range(lib_start, k):
+                                    result.extend(frames[idx])
+                        else:
+                            result.extend(frame)
+                            k += 1
+                continue
+
+            result.append(line)
+            i += 1
+
+        ret = "\n".join(result)
+        return ret + "\n" if raw_text.endswith("\n") else ret
+
+    # Node.js traceback detection
+    node_err_match = re.search(r"^(?:[A-Za-z]+Error|Error):.*", raw_text, re.MULTILINE)
+    if node_err_match and re.search(r"^\s+at\s+", raw_text, re.MULTILINE):
+        lines = raw_text.splitlines()
+        result = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if re.match(r"^\s+at\s+", line):
+                lib_frames: list[str] = []
+                while i < len(lines) and re.match(r"^\s+at\s+", lines[i]):
+                    lm = _NODE_FRAME_START.match(lines[i])
+                    path = lm.group(1) if lm else ""
+                    if _is_library_path(path):
+                        lib_frames.append(lines[i])
+                        i += 1
+                    else:
+                        break
+                if len(lib_frames) > 2:
+                    result.append(lib_frames[0])
+                    result.append(
+                        f"    ... [{len(lib_frames) - 2} internal/node_modules frames omitted; full trace recoverable via tokencut_retrieve] ..."
+                    )
+                    result.append(lib_frames[-1])
+                else:
+                    result.extend(lib_frames)
+                if i < len(lines) and re.match(r"^\s+at\s+", lines[i]):
+                    result.append(lines[i])
+                    i += 1
+                continue
+            result.append(line)
+            i += 1
+        ret = "\n".join(result)
+        return ret + "\n" if raw_text.endswith("\n") else ret
+
+    return raw_text
+
+
+_HTTP_LOG_RE = re.compile(
+    r"^\s*(?:\[\d{2}:\d{2}:\d{2}\]\s+)?(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\S+)\s+(2\d\d|3\d\d)\b(.*)",
+    re.IGNORECASE,
+)
+_VITE_HMR_RE = re.compile(r"^\s*\[vite\]\s+hmr\s+update\s+(\S+)", re.IGNORECASE)
+_STATIC_ASSET_RE = re.compile(
+    r"^\s*(?:\[\d{2}:\d{2}:\d{2}\]\s+)?GET\s+(/(?:_next|static|assets|@vite|node_modules)/\S+)\s+(2\d\d|3\d\d)\b",
+    re.IGNORECASE,
+)
+
+
+def filter_dev_server_logs(raw_text: str) -> str:
+    """Compact dev server outputs (Vite HMR, Next.js, repeated HTTP 200/304 access logs)."""
+    if not raw_text.strip():
+        return raw_text
+
+    lines = raw_text.splitlines()
+    result: list[str] = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        # Check for Vite HMR updates
+        if _VITE_HMR_RE.match(stripped):
+            hmr_count = 0
+            while i < len(lines) and _VITE_HMR_RE.match(lines[i].strip()):
+                hmr_count += 1
+                i += 1
+            if hmr_count > 2:
+                result.append(f"[TokenCut: {hmr_count} Vite HMR updates collapsed]")
+            else:
+                for k in range(i - hmr_count, i):
+                    result.append(lines[k])
+            continue
+
+        # Check for static asset requests
+        if _STATIC_ASSET_RE.match(stripped):
+            static_count = 0
+            while i < len(lines) and _STATIC_ASSET_RE.match(lines[i].strip()):
+                static_count += 1
+                i += 1
+            if static_count > 2:
+                result.append(
+                    f"[TokenCut: {static_count} static asset requests (200/304 OK) collapsed]"
+                )
+            else:
+                for k in range(i - static_count, i):
+                    result.append(lines[k])
+            continue
+
+        # Check for repeated identical HTTP requests
+        m_http = _HTTP_LOG_RE.match(stripped)
+        if m_http:
+            method, path, status = m_http.group(1), m_http.group(2), m_http.group(3)
+            key = (method, path, status)
+            rep_count = 1
+            j = i + 1
+            while j < len(lines):
+                mj = _HTTP_LOG_RE.match(lines[j].strip())
+                if mj and (mj.group(1), mj.group(2), mj.group(3)) == key:
+                    rep_count += 1
+                    j += 1
+                else:
+                    break
+            if rep_count > 2:
+                result.append(f"{method} {path} {status} [TokenCut: repeated {rep_count}x]")
+                i = j
+                continue
+
+        result.append(line)
+        i += 1
+
+    ret = "\n".join(result)
+    return ret + "\n" if raw_text.endswith("\n") else ret
+
+
+_NOISY_DIR_NAMES = frozenset(
+    {
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".git",
+        ".next",
+        ".nuxt",
+        "dist",
+        "build",
+        "target",
+        ".turbo",
+        ".cache",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "coverage",
+        ".gradle",
+        "vendor",
+    }
+)
+
+
+def filter_directory_scan(raw_output: str) -> str:
+    """Compact verbose find / tree / ls -R directory listings by collapsing noisy vendor/cache dirs."""
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    noisy_dirs_seen: dict[str, int] = {}
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            result.append(line)
+            continue
+
+        parts = stripped.replace("\\", "/").split("/")
+        noisy_idx = next((idx for idx, part in enumerate(parts) if part in _NOISY_DIR_NAMES), None)
+
+        if noisy_idx is not None:
+            noisy_root = "/".join(parts[: noisy_idx + 1])
+            noisy_dirs_seen[noisy_root] = noisy_dirs_seen.get(noisy_root, 0) + 1
+            continue
+
+        result.append(line)
+
+    if noisy_dirs_seen:
+        for root, count in sorted(noisy_dirs_seen.items()):
+            result.append(
+                f"{root}/ [... {count} items omitted by tokencut; use targeted path to inspect ...]"
+            )
+
+    ret = "\n".join(result)
+    return ret + "\n" if raw_output.endswith("\n") else ret
+
+
+def _is_directory_scan_command(cmd_lower: str) -> bool:
+    prefixes = (
+        "find ",
+        "find\t",
+        "ls -r",
+        "ls -la -r",
+        "ls -al -r",
+        "tree",
+    )
+    return cmd_lower in {"find", "find .", "tree"} or any(cmd_lower.startswith(p) for p in prefixes)
+
+
 def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
     """Detect if command has a specialized ultra-dense filter."""
     cmd_lower = command.lower().strip()
@@ -1062,12 +1345,53 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
     elif _is_pyright_command(cmd_lower):
         return filter_pyright(raw_output)
 
+    if _is_directory_scan_command(cmd_lower):
+        res = filter_directory_scan(raw_output)
+        if res != raw_output:
+            return res
+
+    if _is_dev_server_output(cmd_lower, raw_output):
+        res = filter_dev_server_logs(raw_output)
+        if res != raw_output:
+            return res
+
+    if _is_traceback_output(cmd_lower, raw_output):
+        res = filter_traceback(raw_output)
+        if res != raw_output:
+            return res
+
     # Check for large or verbose JSON output
     json_result = filter_json_output(raw_output, command=command)
     if json_result is not None:
         return json_result
 
     return None
+
+
+def _is_dev_server_output(cmd_lower: str, raw_output: str) -> bool:
+    dev_cmds = (
+        "dev",
+        "serve",
+        "start",
+        "vite",
+        "next dev",
+        "nuxt dev",
+        "uvicorn",
+        "fastapi dev",
+    )
+    if any(cmd_lower.startswith(c) or f" {c} " in f" {cmd_lower} " for c in dev_cmds):
+        return True
+    return bool(_VITE_HMR_RE.search(raw_output) or _STATIC_ASSET_RE.search(raw_output))
+
+
+def _is_traceback_output(cmd_lower: str, raw_output: str) -> bool:
+    return bool(
+        _PYTHON_TB_HEADER.search(raw_output)
+        or (
+            re.search(r"^(?:[A-Za-z]+Error|Error):.*", raw_output, re.MULTILINE)
+            and re.search(r"^\s+at\s+", raw_output, re.MULTILINE)
+        )
+    )
 
 
 _CARGO_VALUE_FLAGS = frozenset(

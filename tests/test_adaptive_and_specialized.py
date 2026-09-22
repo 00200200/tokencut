@@ -1368,3 +1368,37 @@ def test_cleaning_still_returns_recoverable_reference():
     assert count_tokens(output).claude <= 100
     ref = re.search(r"tc_[a-f0-9]+", output).group()
     assert ContextCache().retrieve(ref) == raw
+
+
+def test_filter_directory_scan():
+    from tokencut.core.specialized import filter_directory_scan
+
+    raw = """./src
+./src/index.ts
+./src/app.ts
+./node_modules
+./node_modules/react
+./node_modules/react/index.js
+./node_modules/react/package.json
+./.git
+./.git/HEAD
+./.git/config
+./package.json
+./README.md
+"""
+    compact = filter_directory_scan(raw)
+    assert "./src/index.ts" in compact
+    assert "./src/app.ts" in compact
+    assert "./package.json" in compact
+    assert "./README.md" in compact
+    assert "node_modules/ [... 4 items omitted by tokencut" in compact
+    assert ".git/ [... 3 items omitted by tokencut" in compact
+    assert "./node_modules/react/index.js" not in compact
+
+
+def test_auto_specialize_routes_find_and_tree():
+    raw = "\n".join([f"./node_modules/pkg_{i}/file.js" for i in range(20)] + ["./src/main.py"])
+    res = auto_specialize_command_output("find . -type f", raw)
+    assert res is not None
+    assert "./src/main.py" in res
+    assert "node_modules/ [... 20 items omitted by tokencut" in res
