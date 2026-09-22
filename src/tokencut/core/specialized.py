@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
+from pathlib import PurePath
 
 from tokencut.core.diff_slimmer import slim_git_diff
 from tokencut.core.json_slimmer import slim_json
@@ -153,78 +155,154 @@ def filter_git_diff(raw_output: str, max_context_lines: int = 2) -> str:
     return slim_git_diff(raw_output, max_context_lines=max_context_lines)
 
 
-# Cargo prints one line per test. Only unambiguous passes are collapsed, and the
-# diagnostic vocabulary mirrors safe_filter so failures are never reinterpreted.
-_CARGO_OK = re.compile(r"^test \S+ \.\.\. ok$")
-_CARGO_DIAGNOSTIC = re.compile(
-    r"\b(?:FAILED|failures|failed|panicked|error|warning|timeout)\b", re.IGNORECASE
+# Cargo / nextest print one progress line per passing test. Collapse those hard,
+# keep fail/pass identity + test names + assertion lines, and drop stack frames.
+_NEXTEST_PASS = re.compile(r"^PASS\s+\[\s*[0-9.]+s\]\s+.+")
+_CARGO_PASS_LINE = re.compile(r"^(?:test \S+ \.\.\. ok|PASS\s+\[\s*[0-9.]+s\]\s+.+)$")
+_CARGO_FAILED_LINE = re.compile(r"^(?:test \S+ \.\.\. FAILED|FAIL\s+\[\s*[0-9.]+s\]\s+.+)$")
+_CARGO_BACKTRACE_START = re.compile(r"^stack backtrace:\s*$", re.IGNORECASE)
+_CARGO_BACKTRACE_NOTE = re.compile(
+    r"^note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\s*$"
 )
 
 
-def filter_cargo_test(raw_output: str) -> str:
-    """Collapse runs of passing cargo test records while keeping every diagnostic.
+def _is_cargo_pass_progress(line: str) -> bool:
+    return bool(_CARGO_PASS_LINE.fullmatch(line.strip()))
 
-    Mirrors the pytest handling in ``safe_filter``: once a diagnostic line appears
-    the remainder of the output is kept verbatim, so failures, panics and
-    backtraces always reach the model intact. The trailing ``test result:`` summary
-    carries the authoritative pass and fail counts and is never rewritten.
+
+def filter_cargo_test(raw_output: str) -> str:
+    """Collapse cargo/nextest pass progress; keep failures dense.
+
+    Passing ``test ... ok`` / nextest ``PASS [..]`` runs collapse to one marker.
+    Failed tests keep their status line, name, panic location, and assertion
+    (including ``left:`` / ``right:``). Stack backtraces are dropped — they are
+    the bulk of the tokens and do not add identity beyond the assertion line.
+    Passes that appear after a failure stay as named lines. The trailing
+    ``test result:`` / nextest ``Summary`` line is preserved.
     """
     lines = raw_output.splitlines()
     result: list[str] = []
     index = 0
-    collapsed = False
+    changed = False
+    in_backtrace = False
+    seen_failure = False
 
     while index < len(lines):
         line = lines[index]
-        # A record matching the anchored pass pattern ends in "... ok" and cannot be
-        # a diagnostic, so test names containing "error" still collapse.
-        if not _CARGO_OK.fullmatch(line.strip()) and _CARGO_DIAGNOSTIC.search(line):
-            result.extend(lines[index:])
-            break
+        stripped = line.strip()
 
-        if _CARGO_OK.fullmatch(line.strip()):
+        if in_backtrace:
+            if (
+                stripped.startswith("test ")
+                or stripped.startswith("test result:")
+                or stripped.startswith("failures:")
+                or stripped.startswith("error:")
+                or _NEXTEST_PASS.fullmatch(stripped)
+                or stripped.startswith("FAIL ")
+                or stripped.startswith("Summary ")
+                or stripped.startswith("────")
+                or stripped.startswith("───")
+            ):
+                in_backtrace = False
+            else:
+                changed = True
+                index += 1
+                continue
+
+        if _CARGO_BACKTRACE_START.match(stripped):
+            in_backtrace = True
+            changed = True
+            index += 1
+            continue
+
+        if _CARGO_BACKTRACE_NOTE.match(stripped):
+            changed = True
+            index += 1
+            continue
+
+        if _CARGO_FAILED_LINE.fullmatch(stripped):
+            seen_failure = True
+            result.append(line)
+            index += 1
+            continue
+
+        if _is_cargo_pass_progress(line):
+            if seen_failure:
+                result.append(line)
+                index += 1
+                continue
             end = index + 1
-            while end < len(lines):
-                if not _CARGO_OK.fullmatch(lines[end].strip()):
-                    break
+            while end < len(lines) and _is_cargo_pass_progress(lines[end]):
                 end += 1
             passed = end - index
             result.append(f"[TokenCut: {passed} passing tests, {passed} progress records]")
-            collapsed = True
+            changed = True
             index = end
             continue
 
         result.append(line)
         index += 1
 
-    if not collapsed:
+    if not changed:
         return raw_output
     return "\n".join(result)
 
 
 # Go test outputs pairs or lines of '=== RUN' and '--- PASS:'.
-# Diagnosing lines contain '--- FAIL:', 'panic:', 'FAIL', etc.
+# Keep --- FAIL / panic assertion lines; drop goroutine stack dumps.
 _GO_TEST_OK = re.compile(r"^\s*(?:=== RUN\s+\S+|--- PASS:\s+\S+\s+\([0-9.]+s\))$")
 _GO_PASS_RECORD = re.compile(r"^\s*--- PASS:\s+\S+\s+\([0-9.]+s\)")
-_GO_DIAGNOSTIC = re.compile(
-    r"\b(?:FAIL|panic|fatal|error|warning|timeout|SIGSEGV)\b|--- FAIL:", re.IGNORECASE
-)
+_GO_GOROUTINE = re.compile(r"^goroutine \d+ \[")
+_GO_STACK_FILE = re.compile(r"^\S+\.go:\d+\s+\+0x[0-9a-fA-F]+")
+_GO_STACK_FUNC = re.compile(r"^[0-9a-zA-Z_./\-]+(?:\.|·|/)\S*\(.*\)\s*$")
 
 
 def filter_go_test(raw_output: str) -> str:
-    """Collapse runs of passing go test records while keeping diagnostics verbatim."""
+    """Collapse passing go test records; keep fail identity and panic lines dense."""
     lines = raw_output.splitlines()
     result: list[str] = []
     index = 0
-    collapsed = False
+    changed = False
+    in_stack = False
 
     while index < len(lines):
         line = lines[index]
-        if not _GO_TEST_OK.match(line.strip()) and _GO_DIAGNOSTIC.search(line):
-            result.extend(lines[index:])
-            break
+        stripped = line.strip()
 
-        if _GO_TEST_OK.match(line.strip()):
+        if in_stack:
+            if (
+                stripped.startswith("=== ")
+                or stripped.startswith("--- ")
+                or stripped.startswith("panic:")
+                or stripped == "PASS"
+                or stripped == "FAIL"
+                or stripped.startswith("FAIL\t")
+                or stripped.startswith("ok\t")
+                or stripped.startswith("PASS\t")
+            ):
+                in_stack = False
+            elif (
+                _GO_GOROUTINE.match(stripped)
+                or _GO_STACK_FILE.match(stripped)
+                or _GO_STACK_FUNC.match(stripped)
+                or stripped.startswith("created by ")
+            ):
+                changed = True
+                index += 1
+                continue
+            else:
+                # Unknown stack-adjacent noise — drop while in a dump.
+                changed = True
+                index += 1
+                continue
+
+        if _GO_GOROUTINE.match(stripped):
+            in_stack = True
+            changed = True
+            index += 1
+            continue
+
+        if _GO_TEST_OK.match(stripped):
             end = index + 1
             while end < len(lines):
                 if not _GO_TEST_OK.match(lines[end].strip()):
@@ -235,18 +313,17 @@ def filter_go_test(raw_output: str) -> str:
             records = len(chunk)
             if passed > 0:
                 result.append(f"[TokenCut: {passed} passing tests, {records} progress records]")
-                collapsed = True
+                changed = True
                 index = end
                 continue
-            else:
-                result.extend(chunk)
-                index = end
-                continue
+            result.extend(chunk)
+            index = end
+            continue
 
         result.append(line)
         index += 1
 
-    if not collapsed:
+    if not changed:
         return raw_output
     return "\n".join(result)
 
@@ -736,23 +813,18 @@ def filter_npm_install(raw_output: str) -> str:
 def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
     """Detect if command has a specialized ultra-dense filter."""
     cmd_lower = command.lower().strip()
+    cargo_sub = _cargo_subcommand(command.strip())
     if cmd_lower.startswith("git log"):
         return filter_git_log(raw_output)
     elif cmd_lower.startswith("git status"):
         return filter_git_status(raw_output)
     elif cmd_lower.startswith(("git diff", "git show")):
         return filter_git_diff(raw_output)
-    elif cmd_lower.startswith("cargo test"):
+    elif cargo_sub in {"test", "nextest"}:
         return filter_cargo_test(raw_output)
-    elif any(
-        cmd_lower.startswith(prefix)
-        for prefix in (
-            "cargo build",
-            "cargo check",
-        )
-    ):
+    elif cargo_sub in {"build", "check"}:
         return filter_cargo_build(raw_output)
-    elif cmd_lower.startswith("go test"):
+    elif _is_go_test_command(command.strip()):
         return filter_go_test(raw_output)
     elif any(
         cmd_lower.startswith(prefix)
@@ -822,6 +894,69 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return json_result
 
     return None
+
+
+_CARGO_VALUE_FLAGS = frozenset(
+    {
+        "--manifest-path",
+        "--target",
+        "--target-dir",
+        "--color",
+        "--config",
+        "-Z",
+        "--profile",
+        "--package",
+        "-p",
+        "--features",
+        "--bin",
+        "--example",
+        "--test",
+        "--bench",
+        "--message-format",
+        "--jobs",
+        "-j",
+    }
+)
+
+
+def _cargo_subcommand(command: str) -> str | None:
+    """Return cargo's subcommand (``test``, ``nextest``, ``build``, …) or None."""
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return None
+    if not words or PurePath(words[0]).name.lower() not in {"cargo", "cargo.exe"}:
+        return None
+    index = 1
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            return None
+        if word.startswith("+"):
+            index += 1
+            continue
+        if word in _CARGO_VALUE_FLAGS:
+            index += 2
+            continue
+        if word.startswith("--") and "=" in word:
+            index += 1
+            continue
+        if word.startswith("-"):
+            index += 1
+            continue
+        return word.lower()
+    return None
+
+
+def _is_go_test_command(command: str) -> bool:
+    """Recognize ``go test`` including absolute paths to the go binary."""
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if len(words) < 2:
+        return False
+    return PurePath(words[0]).name.lower() in {"go", "go.exe"} and words[1] == "test"
 
 
 def _is_ruff_command(cmd_lower: str) -> bool:

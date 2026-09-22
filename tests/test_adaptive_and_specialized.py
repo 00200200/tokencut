@@ -140,6 +140,72 @@ FAIL	github.com/acme/server	0.018s
 FAIL
 """
 
+
+SAMPLE_CARGO_LARGE = "\n".join(
+    [
+        "   Compiling acme-core v0.4.1 (/src/acme-core)",
+        "     Running unittests src/lib.rs (target/debug/deps/acme_core-3f9a2b1c)",
+        "",
+        "running 201 tests",
+    ]
+    + [f"test module{i // 10}::tests::case_{i} ... ok" for i in range(200)]
+    + [
+        "test parser::tests::rejects_bad_utf8 ... FAILED",
+        "",
+        "failures:",
+        "",
+        "---- parser::tests::rejects_bad_utf8 stdout ----",
+        "thread 'parser::tests::rejects_bad_utf8' panicked at src/parser.rs:212:9:",
+        "assertion `left == right` failed",
+        "  left: Err(InvalidUtf8)",
+        " right: Ok(())",
+        "",
+        "stack backtrace:",
+    ]
+    + [f"   {i}: acme_core::parser::parse_{i}" for i in range(48)]
+    + [f"             at ./src/parser.rs:{200 + i}:5" for i in range(48)]
+    + [
+        "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+        "",
+        "failures:",
+        "    parser::tests::rejects_bad_utf8",
+        "",
+        "test result: FAILED. 200 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; "
+        "finished in 1.24s",
+    ]
+)
+
+SAMPLE_GO_LARGE = "\n".join(
+    sum(
+        ([f"=== RUN   TestOk{i}", f"--- PASS: TestOk{i} (0.00s)"] for i in range(120)),
+        [],
+    )
+    + [
+        "=== RUN   TestPanicRecovery",
+        "--- FAIL: TestPanicRecovery (0.00s)",
+        "panic: unhandled nil pointer dereference [recovered]",
+        "\tpanic: runtime error: invalid memory address",
+        "goroutine 16 [running]:",
+    ]
+    + [f"main.helper{i}(0x1400011e1e0)" for i in range(36)]
+    + [f"\t/src/server_test.go:{40 + i} +0x28" for i in range(36)]
+    + [
+        "FAIL",
+        "FAIL\tgithub.com/acme/server\t0.018s",
+        "FAIL",
+    ]
+)
+
+SAMPLE_NEXTEST_PASS = "\n".join(
+    [
+        "    Starting 24 tests across 1 binary",
+    ]
+    + [f"        PASS [   0.01{i % 10}s] acme tests::case_{i}" for i in range(24)]
+    + [
+        "     Summary [   0.42s] 24 tests run: 24 passed, 0 skipped",
+    ]
+)
+
 SAMPLE_VITEST_PASS = """ ✓ src/utils/format.test.ts (4 tests) 12ms
    ✓ formats currency correctly (2ms)
    ✓ parses date string (1ms)
@@ -392,16 +458,15 @@ def test_filter_cargo_test_collapses_passing_runs():
     assert count_tokens(compact).claude < count_tokens(SAMPLE_CARGO_PASS).claude
 
 
-def test_filter_cargo_test_keeps_failures_verbatim():
+def test_filter_cargo_test_keeps_failure_identity_and_assertion():
     compact = filter_cargo_test(SAMPLE_CARGO_FAIL)
 
-    # Everything from the first diagnostic onward is reproduced untouched.
     assert "test parser::tests::rejects_bad_utf8 ... FAILED" in compact
     assert "panicked at src/parser.rs:212:9" in compact
     assert "assertion `left == right` failed" in compact
     assert "left: Err(InvalidUtf8)" in compact
     assert "test result: FAILED. 5 passed; 1 failed" in compact
-    # Passes before the failure may still collapse; passes after it must not.
+    # Passes after the failure stay visible; progress before it may collapse.
     assert "test parser::tests::roundtrip ... ok" in compact
 
 
@@ -446,18 +511,78 @@ def test_filter_go_test_collapses_passing_runs():
     assert count_tokens(compact).claude < count_tokens(SAMPLE_GO_PASS).claude
 
 
-def test_filter_go_test_keeps_failures_and_panics_verbatim():
+def test_filter_go_test_keeps_failure_identity_and_assertion():
     compact = filter_go_test(SAMPLE_GO_FAIL)
 
     assert "--- FAIL: TestPanicRecovery" in compact
     assert "panic: unhandled nil pointer dereference" in compact
     assert "runtime error: invalid memory address" in compact
-    assert "main.TestPanicRecovery" in compact
     assert "FAIL\tgithub.com/acme/server" in compact
+    # Stack frames are noise once the panic line is kept.
+    assert "main.TestPanicRecovery" not in compact
 
 
 def test_auto_specialize_routes_go_test():
     compact = auto_specialize_command_output("go test -v ./...", SAMPLE_GO_PASS)
+    assert compact is not None
+    assert "[TokenCut: 3 passing tests, 6 progress records]" in compact
+
+
+def test_filter_cargo_test_compacts_failures_hard_with_large_savings():
+    compact = filter_cargo_test(SAMPLE_CARGO_LARGE)
+    raw_tokens = count_tokens(SAMPLE_CARGO_LARGE).openai
+    out_tokens = count_tokens(compact).openai
+    reduction = 100 * (raw_tokens - out_tokens) / raw_tokens
+
+    # Pass/fail identity, names, assertion — not the 96-line backtrace.
+    assert "test parser::tests::rejects_bad_utf8 ... FAILED" in compact
+    assert "assertion `left == right` failed" in compact
+    assert "left: Err(InvalidUtf8)" in compact
+    assert "test result: FAILED. 200 passed; 1 failed" in compact
+    assert "[TokenCut: 200 passing tests, 200 progress records]" in compact
+    assert "stack backtrace:" not in compact
+    assert "acme_core::parser::parse_12" not in compact
+    assert reduction >= 85.0, (
+        f"expected >=85% savings, got {reduction:.1f}% ({raw_tokens}->{out_tokens})"
+    )
+
+
+def test_filter_go_test_compacts_failures_hard_with_large_savings():
+    compact = filter_go_test(SAMPLE_GO_LARGE)
+    raw_tokens = count_tokens(SAMPLE_GO_LARGE).openai
+    out_tokens = count_tokens(compact).openai
+    reduction = 100 * (raw_tokens - out_tokens) / raw_tokens
+
+    assert "--- FAIL: TestPanicRecovery" in compact
+    assert "panic: unhandled nil pointer dereference" in compact
+    assert "runtime error: invalid memory address" in compact
+    assert "FAIL\tgithub.com/acme/server" in compact
+    assert "[TokenCut: 120 passing tests, 241 progress records]" in compact
+    assert "goroutine 16 [running]:" not in compact
+    assert "main.helper12" not in compact
+    assert reduction >= 85.0, (
+        f"expected >=85% savings, got {reduction:.1f}% ({raw_tokens}->{out_tokens})"
+    )
+
+
+def test_auto_specialize_routes_cargo_toolchain_absolute_and_nextest():
+    assert auto_specialize_command_output("cargo +nightly test", SAMPLE_CARGO_PASS) is not None
+    assert (
+        auto_specialize_command_output("cargo --locked test --all-features", SAMPLE_CARGO_PASS)
+        is not None
+    )
+    assert (
+        auto_specialize_command_output("/Users/me/.cargo/bin/cargo test", SAMPLE_CARGO_PASS)
+        is not None
+    )
+    compact = auto_specialize_command_output("cargo nextest run", SAMPLE_NEXTEST_PASS)
+    assert compact is not None
+    assert "[TokenCut: 24 passing tests, 24 progress records]" in compact
+    assert "PASS [   0.010s]" not in compact
+
+
+def test_auto_specialize_routes_absolute_go_test():
+    compact = auto_specialize_command_output("/usr/local/go/bin/go test -v ./...", SAMPLE_GO_PASS)
     assert compact is not None
     assert "[TokenCut: 3 passing tests, 6 progress records]" in compact
 
