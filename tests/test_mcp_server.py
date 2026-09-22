@@ -94,6 +94,40 @@ def test_handle_tokencut_read(tmp_path):
     assert "..." in res
 
 
+def test_handle_tokencut_read_if_modified_since(tmp_path):
+    import hashlib
+
+    f = tmp_path / "data.py"
+    f.write_text("x = 100\n")
+    content_hash = hashlib.sha256(f.read_bytes()).hexdigest()
+
+    # When hash matches, returns 304 Not Modified notice
+    cached_res = handle_tokencut_read({"path": str(f), "if_modified_since_hash": content_hash})
+    assert "304 Not Modified" in cached_res
+    assert "data.py" in cached_res
+
+    # When hash does not match, returns fresh file content
+    diff_hash = "0" * 64
+    fresh_res = handle_tokencut_read({"path": str(f), "if_modified_since_hash": diff_hash})
+    assert "304 Not Modified" not in fresh_res
+    assert "x = 100" in fresh_res
+
+
+def test_handle_tokencut_read_include_hash_and_strip_comments(tmp_path):
+    f = tmp_path / "code.py"
+    f.write_text("# verbose commentary\nval = 42\n# trailing note\n")
+
+    # With include_hash
+    hash_res = handle_tokencut_read({"path": str(f), "include_hash": True})
+    assert "# [sha256:" in hash_res
+    assert "val = 42" in hash_res
+
+    # With strip_comments
+    clean_res = handle_tokencut_read({"path": str(f), "strip_comments": True})
+    assert "# verbose commentary" not in clean_res
+    assert "val = 42" in clean_res
+
+
 def test_handle_tokencut_retrieve():
     res = handle_tokencut_retrieve({"ref_id": "tc_nonexistent"})
     assert "not found" in res

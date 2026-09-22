@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from tokencut.core.json_slimmer import slim_json
 from tokencut.core.redactor import redact_secrets
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
+from tokencut.core.specialized import auto_specialize_command_output
 from tokencut.core.telemetry import record_text, recovery_engine
 from tokencut.core.tree_scanner import format_tree_as_text, scan_directory
 from tokencut.metrics.tokenizer import count_tokens
@@ -176,6 +178,20 @@ TOOLS_DEFINITIONS = [
                 "symbol": {
                     "type": "string",
                     "description": "Exact qualified name, e.g. Cache.get, optionally @line for ambiguity. Returns original source and file hash.",
+                },
+                "strip_comments": {
+                    "type": "boolean",
+                    "description": "If true, strip comments and blank lines to reduce context consumption.",
+                    "default": False,
+                },
+                "if_modified_since_hash": {
+                    "type": "string",
+                    "description": "SHA-256 hash or prefix from previous read. If unchanged, returns short 304 Not Modified notice.",
+                },
+                "include_hash": {
+                    "type": "boolean",
+                    "description": "If true, prepends the file's SHA-256 hash header for conditional re-reads.",
+                    "default": False,
                 },
             },
             "required": ["path"],
@@ -572,8 +588,10 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
     if paused():
         output = combined_raw + footer
     elif any(key in arguments for key in ("max_tokens", "max_lines", "budget")):
+        specialized = auto_specialize_command_output(command, combined_raw)
+        base_text = specialized if specialized is not None else combined_raw
         opts = CleanerOptions(max_lines=max_lines, enable_cache=False)
-        compacted = compact_terminal_output(combined_raw, opts)
+        compacted = compact_terminal_output(base_text, opts)
         output = _compress(
             compacted,
             budget,
@@ -582,7 +600,11 @@ def handle_tokencut_exec(arguments: dict[str, Any]) -> str:
             source="exec",
         )
     else:
-        output = safe_compact_output(combined_raw, command=command) + footer
+        specialized = auto_specialize_command_output(command, combined_raw)
+        if specialized is not None:
+            output = specialized + footer
+        else:
+            output = safe_compact_output(combined_raw, command=command) + footer
     return _record(
         combined_raw, output, project=_cwd(arguments), duration_s=time.perf_counter() - start
     )
@@ -595,8 +617,42 @@ def handle_tokencut_read(arguments: dict[str, Any]) -> str:
     skeleton = arguments.get("skeleton", False)
     lines = arguments.get("lines")
     symbol = arguments.get("symbol")
+    strip_comments = bool(arguments.get("strip_comments", False))
+    include_hash = bool(arguments.get("include_hash", False))
+    if_modified_since_hash = arguments.get("if_modified_since_hash")
 
-    extracted = extract_symbol_or_range(path, symbol=symbol, lines_range=lines, skeleton=skeleton)
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+
+    if if_modified_since_hash:
+        source_bytes = p.read_bytes()
+        current_hash = hashlib.sha256(source_bytes).hexdigest()
+        clean_req = str(if_modified_since_hash).strip().lower()
+        if (
+            current_hash == clean_req
+            or current_hash.startswith(clean_req)
+            or clean_req.startswith(current_hash)
+        ):
+            notice = (
+                f"# [tokencut: 304 Not Modified. File '{p.name}' is unchanged "
+                f"since hash {current_hash[:12]} ({len(source_bytes):,} bytes).]"
+            )
+            raw = p.read_text(encoding="utf-8", errors="replace")
+            return _record(raw, notice, operation="read", project=path)
+
+    extracted = extract_symbol_or_range(
+        path,
+        symbol=symbol,
+        lines_range=lines,
+        skeleton=skeleton,
+        strip_comments=strip_comments,
+    )
+    if include_hash:
+        source_bytes = p.read_bytes()
+        current_hash = hashlib.sha256(source_bytes).hexdigest()
+        extracted = f"# [sha256: {current_hash[:16]}]\n" + extracted
+
     output = _compress(extracted, budget, source="read")
     # Compare with the requested view, not an unrequested full-file read.
     return _record(extracted, output, operation="read", project=path)

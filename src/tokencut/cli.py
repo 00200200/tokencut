@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -749,6 +750,17 @@ def cat(
     strip_comments: Annotated[
         bool, typer.Option("--strip-comments", "-c", help="Strip comments and blank lines")
     ] = False,
+    if_modified_since: Annotated[
+        str | None,
+        typer.Option(
+            "--if-modified-since",
+            "-m",
+            help="SHA-256 hash to check for conditional 304 read (returns short notice if unchanged)",
+        ),
+    ] = None,
+    include_hash: Annotated[
+        bool, typer.Option("--include-hash", "-H", help="Prepend file SHA-256 hash header")
+    ] = False,
     budget: Annotated[
         int | None, typer.Option("--budget", "-b", help="Strict token ceiling budget")
     ] = None,
@@ -759,6 +771,30 @@ def cat(
         raise typer.Exit(code=1)
 
     start = time.perf_counter()
+    if if_modified_since:
+        source_bytes = file_path.read_bytes()
+        current_hash = hashlib.sha256(source_bytes).hexdigest()
+        clean_req = if_modified_since.strip().lower()
+        if (
+            current_hash == clean_req
+            or current_hash.startswith(clean_req)
+            or clean_req.startswith(current_hash)
+        ):
+            notice = (
+                f"# [tokencut: 304 Not Modified. File '{file_path.name}' is unchanged "
+                f"since hash {current_hash[:12]} ({len(source_bytes):,} bytes).]\n"
+            )
+            sys.stdout.write(notice)
+            record_text(
+                file_path.read_text(encoding="utf-8", errors="replace"),
+                notice,
+                operation="read",
+                project=file_path,
+                duration_s=time.perf_counter() - start,
+                engine="none" if paused() else "tokencut",
+            )
+            return
+
     try:
         output = extract_symbol_or_range(
             file_path,
@@ -769,6 +805,11 @@ def cat(
         )
     except (ValueError, SyntaxError, OSError) as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+    if include_hash:
+        source_bytes = file_path.read_bytes()
+        current_hash = hashlib.sha256(source_bytes).hexdigest()
+        output = f"# [sha256: {current_hash[:16]}]\n" + output
 
     requested = output
     if budget and not paused():

@@ -11,6 +11,7 @@ from tokencut.core.specialized import (
     filter_git_status,
     filter_go_test,
     filter_jest_vitest,
+    filter_json_output,
     filter_tsc,
 )
 from tokencut.metrics.tokenizer import count_tokens
@@ -390,6 +391,37 @@ def test_auto_specialize_routes_tsc():
     assert compact is not None
     assert "~~~~~" not in compact
     assert "error TS2345" in compact
+
+
+def test_filter_json_output_large_array():
+    import json
+
+    raw_items = [
+        {"id": i, "name": f"item_{i}", "description": "some long description here " * 5}
+        for i in range(25)
+    ]
+    raw_json = json.dumps(raw_items, indent=2)
+
+    slimmed = filter_json_output(raw_json, command="gh api /repos/owner/repo/issues")
+    assert slimmed is not None
+    assert "Ref: tc_" in slimmed
+    assert "omitted" in slimmed
+    assert len(slimmed) < len(raw_json) * 0.5
+
+
+def test_filter_json_output_small_json_untouched():
+    raw_json = '{"status": "healthy", "uptime": 12345}'
+    assert filter_json_output(raw_json, command="curl http://localhost/health") is None
+
+
+def test_auto_specialize_routes_json_command():
+    import json
+
+    large_payload = json.dumps({"records": [{"id": i, "data": "val"} for i in range(50)]})
+    result = auto_specialize_command_output("docker inspect container-1", large_payload)
+    assert result is not None
+    assert "omitted" in result
+    assert "Ref: tc_" in result
 
 
 def test_compress_to_budget():

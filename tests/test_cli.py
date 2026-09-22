@@ -231,6 +231,32 @@ def test_cli_cat_strip_comments(tmp_path):
     assert "def run():" in res.output
 
 
+def test_cli_cat_if_modified_since_and_hash(tmp_path):
+    import hashlib
+
+    f = tmp_path / "app.py"
+    f.write_text("var = 'constant'\n")
+    content_hash = hashlib.sha256(f.read_bytes()).hexdigest()
+
+    # When unchanged, returns 304 Not Modified notice
+    res_cached = runner.invoke(app, ["cat", str(f), "--if-modified-since", content_hash])
+    assert res_cached.exit_code == 0
+    assert "304 Not Modified" in res_cached.output
+    assert "app.py" in res_cached.output
+
+    # When changed / mismatched hash, returns full content
+    res_fresh = runner.invoke(app, ["cat", str(f), "--if-modified-since", "wronghash123"])
+    assert res_fresh.exit_code == 0
+    assert "304 Not Modified" not in res_fresh.output
+    assert "var = 'constant'" in res_fresh.output
+
+    # With --include-hash
+    res_hash = runner.invoke(app, ["cat", str(f), "--include-hash"])
+    assert res_hash.exit_code == 0
+    assert "# [sha256:" in res_hash.output
+    assert "var = 'constant'" in res_hash.output
+
+
 def test_cli_cache():
     res_stats = runner.invoke(app, ["cache", "stats"])
     assert res_stats.exit_code == 0

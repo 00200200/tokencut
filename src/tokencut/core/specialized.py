@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
 
 from tokencut.core.diff_slimmer import slim_git_diff
+from tokencut.core.json_slimmer import slim_json
 
 # `git log` indents commit messages by exactly four spaces. Patch bodies (-p) and
 # --stat blocks sit at other indents, so they must be detected explicitly instead
@@ -344,6 +346,50 @@ def filter_tsc(raw_output: str) -> str:
     return "\n".join(result)
 
 
+def filter_json_output(raw_output: str, command: str = "") -> str | None:
+    """Automatically slim large or verbose JSON output from commands.
+
+    Targeted for commands like `gh api`, `docker inspect`, `curl`, `kubectl -o json`,
+    or any command output that is valid JSON with substantial array or nested structures.
+    Full uncompressed payload is cached in SQLite CCR with a recovery reference.
+    """
+    stripped = raw_output.strip()
+    if not (stripped.startswith("{") or stripped.startswith("[")):
+        return None
+
+    cmd_lower = command.lower().strip()
+    is_explicit_json_cmd = any(
+        kw in cmd_lower
+        for kw in (
+            "gh api",
+            "docker inspect",
+            "podman inspect",
+            "-o json",
+            "-o=json",
+            "--format json",
+            "--format=json",
+            "--output json",
+            "--output=json",
+        )
+    )
+
+    # For general commands, avoid compacting small objects or short responses (< 10 lines and < 300 chars)
+    if not is_explicit_json_cmd and len(stripped) < 300 and stripped.count("\n") < 10:
+        return None
+
+    try:
+        json.loads(stripped)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    slimmed = slim_json(raw_output, max_array_items=3, cache_full=True)
+    # Only return specialized output if we actually achieved significant reduction (>= 15%)
+    if len(slimmed) <= len(raw_output) * 0.85:
+        return slimmed
+
+    return None
+
+
 def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
     """Detect if command has a specialized ultra-dense filter."""
     cmd_lower = command.lower().strip()
@@ -380,4 +426,10 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         )
     ):
         return filter_tsc(raw_output)
+
+    # Check for large or verbose JSON output
+    json_result = filter_json_output(raw_output, command=command)
+    if json_result is not None:
+        return json_result
+
     return None
