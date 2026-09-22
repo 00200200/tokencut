@@ -1,30 +1,115 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="520" viewBox="0 0 1040 520">
-  <title>TokenCut — keep the signal, cut the noise</title>
-  <desc>Background artwork for the animated README, composed with the existing TokenCut pet by scripts/render_readme.sh. The benchmark is the built-in authored pytest fixture.</desc>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">TokenCut - keep the signal, cut the noise</title>
+  <desc id="desc">Dark hero for TokenCut. Built-in authored pytest fixture: 1,562 tokens cut to 174, failure preserved, original recoverable. Local estimate, no model calls.</desc>
   <defs>
-    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0c2021"/><stop offset="1" stop-color="#080f15"/></linearGradient>
-    <radialGradient id="glow"><stop stop-color="#2ec79b" stop-opacity=".21"/><stop offset="1" stop-color="#2ec79b" stop-opacity="0"/></radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07161a"/>
+      <stop offset="45%" stop-color="#0a1c1f"/>
+      <stop offset="100%" stop-color="#050b10"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7dffb3"/>
+      <stop offset="100%" stop-color="#2ec79b"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#122c2e"/>
+      <stop offset="100%" stop-color="#0b1c1f"/>
+    </linearGradient>
+    <linearGradient id="cut" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b3f5cd" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#b3f5cd" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#b3f5cd" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="82%" cy="42%" r="38%">
+      <stop offset="0%" stop-color="#2ec79b" stop-opacity="0.30"/>
+      <stop offset="55%" stop-color="#2ec79b" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#2ec79b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="12%" cy="90%" r="34%">
+      <stop offset="0%" stop-color="#1aa6ff" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#1aa6ff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M36 0H0V36" fill="none" stroke="#b3f5cd" stroke-opacity="0.03" stroke-width="1"/>
+    </pattern>
+    <filter id="soft" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+    <style>
+      .sans { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    </style>
   </defs>
-  <rect width="1040" height="520" rx="24" fill="url(#bg)"/>
-  <circle cx="847" cy="193" r="245" fill="url(#glow)"/>
-  <circle cx="847" cy="193" r="185" fill="none" stroke="#21483e" stroke-opacity=".45"/>
-  <circle cx="847" cy="193" r="154" fill="none" stroke="#21483e" stroke-opacity=".35"/>
-  <g fill="#eaf7f3" font-family="Arial, Helvetica, sans-serif">
-    <path d="M51 37c17-8 25 3 18 15-7 10-20 8-20-2 0-7 5-10 13-11-4 4-7 9-9 13" fill="#b3f5cd"/>
-    <text x="83" y="54" font-size="19" font-weight="700" letter-spacing="2">TOKENCUT</text>
-    <text x="49" y="150" font-size="64" font-weight="700" letter-spacing="-2">Keep the signal.</text>
-    <text x="49" y="221" font-size="64" font-weight="700" letter-spacing="-2" fill="#b3f5cd">Cut the noise.</text>
-    <text x="52" y="267" font-size="19" fill="#a7c3bb">Local context tools for your AI coding agent.</text>
-    <text x="52" y="309" font-size="12" letter-spacing="2" fill="#86ac9e">CLI  /  MCP  /  OPTIONAL macOS COMPANION</text>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#grid)"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+  <rect width="1280" height="640" fill="url(#glow2)"/>
+
+  <!-- Pet landing zone (right third stays visually open for compositing) -->
+  <circle cx="1080" cy="290" r="210" fill="none" stroke="#21483e" stroke-opacity=".35"/>
+  <circle cx="1080" cy="290" r="168" fill="none" stroke="#21483e" stroke-opacity=".22"/>
+
+  <!-- Brand -->
+  <g transform="translate(56, 42)">
+    <path d="M0 10c14-7 21 2 15 12-6 8-17 7-17-2 0-6 4-8 11-9-3 3-6 7-7 11" fill="#b3f5cd"/>
+    <text x="28" y="24" class="sans" font-size="20" font-weight="700" letter-spacing="3.2" fill="#eaf7f3">TOKENCUT</text>
   </g>
-  <rect x="50" y="355" width="580" height="116" rx="16" fill="#102c29" stroke="#29463e"/>
-  <rect x="658" y="355" width="332" height="116" rx="16" fill="#b3f5cd"/>
-  <g font-family="Arial, Helvetica, sans-serif">
-    <text x="73" y="382" font-size="11" letter-spacing="1.2" fill="#a2c0b5">VERBOSE PYTEST · BUILT-IN DEMO</text>
-    <text x="73" y="423" font-size="35" font-weight="700" fill="#effbf5">1,562 <tspan fill="#779e8d">→</tspan> 174 <tspan font-size="16" font-weight="400" fill="#a2c0b5">tokens</tspan></text>
-    <text x="74" y="449" font-size="13" fill="#a2c0b5">Failure preserved. Original recoverable.</text>
-    <text x="683" y="413" font-size="44" font-weight="700" letter-spacing="-1.5" fill="#0d392a">88.9%</text>
-    <text x="685" y="443" font-size="14" fill="#22513f">less tool text in this fixture</text>
-    <text x="52" y="496" font-size="11" fill="#728f86">Local o200k_base estimate · No model calls · Not a subscription-usage claim</text>
+
+  <!-- Hook - left two-thirds -->
+  <g class="sans" transform="translate(56, 110)">
+    <text x="0" y="0" font-size="56" font-weight="800" letter-spacing="-1.6" fill="#f4fffa">Keep the signal.</text>
+    <text x="0" y="66" font-size="56" font-weight="800" letter-spacing="-1.6" fill="url(#mint)">Cut the noise.</text>
+    <text x="2" y="112" font-size="18" fill="#9bb8ae">Local CLI + MCP that folds verbose tool output for AI coding agents.</text>
+    <text x="2" y="140" class="mono" font-size="12" letter-spacing="1.6" fill="#6f9588">FAILURE KEPT   -   ORIGINAL RECOVERABLE   -   NO MODEL CALLS</text>
   </g>
+
+  <!-- Before -> Cut -> After (fits under copy; leaves right third for pet) -->
+  <g transform="translate(56, 290)" filter="url(#soft)">
+    <!-- BEFORE -->
+    <g>
+      <rect width="300" height="268" rx="16" fill="url(#panel)" stroke="#274540" stroke-width="1.4"/>
+      <circle cx="24" cy="26" r="4.5" fill="#ff5f56"/>
+      <circle cx="42" cy="26" r="4.5" fill="#ffbd2e"/>
+      <circle cx="60" cy="26" r="4.5" fill="#27c93f"/>
+      <text x="84" y="30" class="mono" font-size="11" fill="#7f9e94">pytest -v  -  raw</text>
+
+      <text x="20" y="68" class="mono" font-size="12" fill="#5f7d74">test_login PASSED</text>
+      <text x="20" y="90" class="mono" font-size="12" fill="#5f7d74">test_logout PASSED</text>
+      <text x="20" y="112" class="mono" font-size="12" fill="#5f7d74">test_invoice PASSED</text>
+      <text x="20" y="134" class="mono" font-size="12" fill="#5f7d74">... 116 more passes ...</text>
+      <text x="20" y="168" class="mono" font-size="12" font-weight="700" fill="#ff8f86">FAILED test_refund</text>
+      <text x="20" y="192" class="mono" font-size="11" fill="#c9a0a0">AssertionError: 500</text>
+      <rect x="20" y="216" width="128" height="28" rx="7" fill="#1a3330"/>
+      <text x="32" y="235" class="mono" font-size="13" font-weight="700" fill="#cfe7dd">1,562 tok</text>
+    </g>
+
+    <!-- CUT -->
+    <g transform="translate(318, 0)">
+      <rect x="22" width="3" height="268" fill="url(#cut)"/>
+      <circle cx="23.5" cy="134" r="24" fill="#0d2a26" stroke="#b3f5cd" stroke-width="2"/>
+      <path d="M13 134h21M23.5 123.5v21" stroke="#b3f5cd" stroke-width="2.4" stroke-linecap="round"/>
+      <text x="23.5" y="176" text-anchor="middle" class="sans" font-size="10" font-weight="700" letter-spacing="1.4" fill="#b3f5cd">CUT</text>
+    </g>
+
+    <!-- AFTER -->
+    <g transform="translate(386, 0)">
+      <rect width="300" height="268" rx="16" fill="#0d2f29" stroke="#3ecf9a" stroke-width="1.7"/>
+      <circle cx="24" cy="26" r="4.5" fill="#ff5f56"/>
+      <circle cx="42" cy="26" r="4.5" fill="#ffbd2e"/>
+      <circle cx="60" cy="26" r="4.5" fill="#27c93f"/>
+      <text x="84" y="30" class="mono" font-size="11" fill="#8fd6b8">tokencut  -  kept</text>
+
+      <text x="20" y="68" class="mono" font-size="12" fill="#6f9588">119 passed collapsed</text>
+      <text x="20" y="100" class="mono" font-size="13" font-weight="700" fill="#ffb4ae">FAILED test_refund</text>
+      <text x="20" y="126" class="mono" font-size="12" fill="#eaf7f3">AssertionError: 500</text>
+      <text x="20" y="158" class="mono" font-size="12" fill="#7dffb3">recover  -  tc_demo</text>
+      <rect x="20" y="186" width="260" height="52" rx="10" fill="#b3f5cd"/>
+      <text x="36" y="208" class="sans" font-size="18" font-weight="800" fill="#0d392a">174 tokens</text>
+      <text x="36" y="228" class="sans" font-size="13" font-weight="600" fill="#22513f">88.9% less tool text</text>
+    </g>
+  </g>
+
+  <text x="56" y="602" class="mono" font-size="11" fill="#5d7a71">Authored fixture  -  local o200k_base  -  failure preserved  -  original recoverable  -  not a billing / quota claim</text>
 </svg>
