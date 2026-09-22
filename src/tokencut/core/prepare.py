@@ -28,7 +28,9 @@ def format_prepare_counts(before: int, after: int) -> str:
     return f"{before:,} → {after:,} ({delta_text} · {percent_text})"
 
 
-def prepare_text(text: str, *, mode: str = DEFAULT_PREPARE_MODE, budget: int = DEFAULT_PREPARE_BUDGET) -> dict:
+def prepare_text(
+    text: str, *, mode: str = DEFAULT_PREPARE_MODE, budget: int = DEFAULT_PREPARE_BUDGET
+) -> dict:
     if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_INPUT_BYTES:
         raise ValueError("text must be UTF-8 text of at most 128 KiB")
     if mode not in {"conservative", "summary", "optimize", "desktop"}:

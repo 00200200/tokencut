@@ -147,9 +147,7 @@ def test_prepare_text_includes_counts_summary_and_percent():
     text = "Downloading unchanged dependency\n" * 250 + "ERROR: installation failed\n"
     result = prepare_text(text)
     assert result["difference"] > 0
-    assert result["percent"] == round(
-        (result["after"] - result["before"]) / result["before"] * 100
-    )
+    assert result["percent"] == round((result["after"] - result["before"]) / result["before"] * 100)
     assert result["counts"] == format_prepare_counts(result["before"], result["after"])
 
 
