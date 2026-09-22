@@ -182,14 +182,17 @@ def optimize_rules(content: str) -> dict[str, Any]:
     simplifications = [
         (
             re.compile(
-                r"^\s*You are a (?:helpful|world-class|expert|senior)\s+(?:coding\s+|software\s+)?assistant[^\n]*\.\s*$",
+                r"\bYou are (?:a|an)\s+(?:helpful|world-class|expert|senior)?\s*(?:coding\s+|software\s+|AI\s+)?assistant[^\n.]*[\.]?\s*",
                 re.IGNORECASE,
             ),
             "",
         ),
         (
-            re.compile(r"\bPlease make sure to always remember to never forget\b", re.IGNORECASE),
-            "Always",
+            re.compile(
+                r"\bPlease make sure to always remember to never forget[^\n.]*[\.]?\s*",
+                re.IGNORECASE,
+            ),
+            "",
         ),
         (re.compile(r"\bPlease (?:ensure|make sure) (?:that you |to )?", re.IGNORECASE), ""),
         (re.compile(r"\bFeel free to\b", re.IGNORECASE), "You may"),
