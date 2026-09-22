@@ -15,6 +15,7 @@ from tokencut.core.cache import ContextCache
 from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
 from tokencut.core.companion_state import already_wrapped, client_name, paused
 from tokencut.core.diff_slimmer import slim_git_diff
+from tokencut.core.gain import build_gain_report
 from tokencut.core.json_slimmer import slim_json
 from tokencut.core.redactor import redact_secrets
 from tokencut.core.safe_filter import safe_compact_output
@@ -412,6 +413,34 @@ TOOLS_DEFINITIONS = [
             "properties": {},
         },
     },
+    {
+        "name": "tokencut_gain",
+        "description": (
+            "Local savings report by tool family from tokencut telemetry "
+            "(same data as `tokencut gain`). Local output estimates only — "
+            "not model billing or subscription quota."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "history": {
+                    "type": "boolean",
+                    "description": "Include recent per-event reductions in the JSON report.",
+                },
+                "passthrough": {
+                    "type": "boolean",
+                    "description": "When true, still returns the full report; passthrough ops are always listed.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "default": 20,
+                    "description": "History length when history is requested (default 20).",
+                },
+            },
+        },
+    },
 ]
 
 for _tool in TOOLS_DEFINITIONS:
@@ -423,6 +452,7 @@ for _tool in TOOLS_DEFINITIONS:
     }
     if _tool["name"] not in {
         "tokencut_stats",
+        "tokencut_gain",
         "tokencut_context",
         "tokencut_edit_symbol",
         "tokencut_clip",
@@ -461,6 +491,7 @@ CODING_TOOLS = frozenset(
         "tokencut_context",
         "tokencut_diff",
         "tokencut_stats",
+        "tokencut_gain",
     }
 )
 
@@ -474,6 +505,7 @@ DESKTOP_TOOLS = frozenset(
         "tokencut_context",
         "tokencut_diff",
         "tokencut_stats",
+        "tokencut_gain",
         "tokencut_optimize",
         "tokencut_clip",
     }
@@ -488,6 +520,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "tokencut_retrieve": "Recover full original output from SQLite cache by ref_id.",
     "tokencut_context": "Save/read bounded task milestones across session turns.",
     "tokencut_stats": "Report session token savings.",
+    "tokencut_gain": "Local per-tool-family savings from telemetry. Estimates only — not billing or quota.",
     "tokencut_optimize": "Autonomous prompt, code block, log, and table context optimizer.",
     "tokencut_clip": "Compact noisy text, logs, diffs, or stack traces before pasting into chat.",
 }
@@ -571,7 +604,8 @@ def server_instructions(profile: str) -> str:
         + "Use tokencut_exec for verbose noninteractive commands with an absolute cwd. "
         "In Codex prefer tokencut run inside the native shell to retain its sandbox and approvals. "
         "Omit max_tokens/max_lines to preserve command diagnostics; explicit limits permit truncation. "
-        "Recover needed details with tokencut_retrieve. Do not rerun successful commands just to compress output. "
+        "Recover needed details with tokencut_retrieve. Query local savings with tokencut_gain "
+        "(estimates only, not billing). Do not rerun successful commands just to compress output. "
         "Keep normal approvals. This server does not intercept chat or change account quotas."
     )
 
@@ -869,6 +903,22 @@ def handle_tokencut_stats() -> str:
     )
 
 
+def handle_tokencut_gain(arguments: dict[str, Any] | None = None) -> str:
+    """Return durable local savings JSON (not this-process session counters)."""
+    arguments = arguments or {}
+    limit = arguments.get("limit", 20)
+    if type(limit) is not int or not 1 <= limit <= 500:
+        raise ValueError("limit must be an integer between 1 and 500")
+    # history/passthrough flags mirror the CLI view toggles; JSON always carries
+    # by_operation + passthrough. Omit history rows unless asked to keep payloads small.
+    include_history = bool(arguments.get("history", False))
+    report = build_gain_report(history_limit=limit if include_history else 1)
+    payload = report.to_dict()
+    if not include_history:
+        payload["history"] = []
+    return json.dumps(payload, indent=2)
+
+
 def _validate_arguments(name: str, arguments: Any) -> None:
     if not isinstance(arguments, dict):
         raise ValueError("arguments must be an object")
@@ -1039,6 +1089,7 @@ def _respond(req: Any, *, profile: str = "full") -> dict[str, Any] | None:
         "tokencut_table": handle_tokencut_table,
         "tokencut_optimize": handle_tokencut_optimize,
         "tokencut_stats": lambda _: handle_tokencut_stats(),
+        "tokencut_gain": handle_tokencut_gain,
     }
     name, arguments = params.get("name"), params.get("arguments", {})
     if not isinstance(name, str) or name not in {

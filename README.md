@@ -89,7 +89,7 @@ tokencut run -- npx eslint . --format codeframe
 - **Cut noise, keep the failure.** Specialized filters for pytest, Docker, cargo, go, vitest, eslint, tsc, mypy, pyright, git diff, ruff…
 - **Session dedup + spill.** Same `run` output *or* identical `cat` / MCP `tokencut_read` view within ~15 minutes → short cache ref. Payloads over ~20 KiB → file + preview (`TOKENCUT_SPILL_BYTES`).
 - **Recover by reference.** Omitted text stays in a local CCR cache: `tokencut retrieve tc_…`
-- **Measure it.** `tokencut gain` — per-tool-family savings and passthrough candidates (not account quotas).
+- **Measure it.** `tokencut gain` / MCP `tokencut_gain` — per-tool-family savings and passthrough candidates (local estimates, not account quotas).
 - **Desktop-ready.** MCP for Claude Code / Codex / Cursor / Claude Desktop; Prepare-for-chat clipboard flow; optional macOS pet.
 
 ```sh
@@ -105,7 +105,7 @@ tokencut prepare --file draft.txt
 
 ## Connect your agent
 
-**Desktop & Coding profiles:** 8–10 essential tools instead of 15 — about **37% smaller tool schemas** in local measurements (3,198 → 2,018 tokens).
+**Desktop & Coding profiles:** 9–11 essential tools instead of 16 — about **36% smaller tool schemas** in local `o200k_base` measurements. Not a per-turn usage guarantee.
 
 ```sh
 # One-command installer for Codex & Claude Desktop
