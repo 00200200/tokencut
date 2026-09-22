@@ -137,6 +137,9 @@ def test_handle_tokencut_diff():
     res = handle_tokencut_diff({})
     assert isinstance(res, str)
 
+    res_ignore = handle_tokencut_diff({"ignore_patterns": [r"\.tmp$"]})
+    assert isinstance(res_ignore, str)
+
 
 def test_handle_tokencut_tree(tmp_path):
     (tmp_path / "sub").mkdir()

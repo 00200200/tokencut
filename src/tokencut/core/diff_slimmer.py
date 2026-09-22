@@ -4,17 +4,26 @@ import re
 
 LOCKFILE_PATTERNS = [
     re.compile(
-        r"(?:package-lock\.json|yarn\.lock|pnpm-lock\.yaml|uv\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock)"
+        r"(?:package-lock\.json|yarn\.lock|pnpm-lock\.yaml|uv\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|go\.sum)"
     ),
-    re.compile(r"\.(?:min\.js|min\.css|map|svg)$"),
+    re.compile(r"\.(?:min\.js|min\.css|map|svg|snap)$"),
+    re.compile(r"(?:\.pb\.go|_pb2\.py|_pb2_grpc\.py)$"),
 ]
 
 
-def is_lockfile_or_generated(filename: str) -> bool:
-    return any(p.search(filename) for p in LOCKFILE_PATTERNS)
+def is_lockfile_or_generated(filename: str, extra_patterns: list[re.Pattern] | None = None) -> bool:
+    if any(p.search(filename) for p in LOCKFILE_PATTERNS):
+        return True
+    if extra_patterns and any(p.search(filename) for p in extra_patterns):
+        return True
+    return False
 
 
-def slim_git_diff(raw_diff: str, max_context_lines: int = 2) -> str:
+def slim_git_diff(
+    raw_diff: str,
+    max_context_lines: int = 2,
+    extra_patterns: list[str] | None = None,
+) -> str:
     """Compress unified git diffs.
 
     - Detects lockfiles & generated files, collapsing them into concise 1-line notices.
@@ -23,6 +32,8 @@ def slim_git_diff(raw_diff: str, max_context_lines: int = 2) -> str:
     """
     if not raw_diff:
         return ""
+
+    compiled_extra = [re.compile(p) for p in extra_patterns] if extra_patterns else None
 
     lines = raw_diff.splitlines()
     output_lines: list[str] = []
@@ -46,7 +57,7 @@ def slim_git_diff(raw_diff: str, max_context_lines: int = 2) -> str:
             # Extract filename (e.g. diff --git a/foo/bar.py b/foo/bar.py)
             parts = line.split()
             current_file = parts[-1] if len(parts) >= 4 else line
-            is_collapsing_file = is_lockfile_or_generated(current_file)
+            is_collapsing_file = is_lockfile_or_generated(current_file, compiled_extra)
             output_lines.append(line)
             hunk_context_count = 0
             continue

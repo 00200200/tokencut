@@ -230,6 +230,11 @@ TOOLS_DEFINITIONS = [
                     "description": "If true, view staged changes (--cached).",
                     "default": False,
                 },
+                "ignore_patterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional regex patterns of files to fold in the diff (e.g. test snapshots or fixtures).",
+                },
             },
         },
     },
@@ -694,9 +699,10 @@ def handle_tokencut_diff(arguments: dict[str, Any]) -> str:
     if res.returncode:
         raise ValueError(f"git diff failed ({res.returncode}): {res.stderr[:500]}")
     raw_diff = res.stdout
+    ignore_patterns = arguments.get("ignore_patterns")
     output = (
         _compress(
-            slim_git_diff(raw_diff),
+            slim_git_diff(raw_diff, extra_patterns=ignore_patterns),
             budget,
             original_text=raw_diff,
             source="diff",

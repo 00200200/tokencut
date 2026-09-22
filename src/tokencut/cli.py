@@ -1224,6 +1224,10 @@ def pipe(
 @app.command()
 def diff(
     staged: Annotated[bool, typer.Option("--staged", "-s", help="Inspect staged changes")] = False,
+    ignore_patterns: Annotated[
+        list[str] | None,
+        typer.Option("--ignore", "-i", help="Regex patterns of files to fold in diff"),
+    ] = None,
 ):
     """Slim git diff by folding lockfiles and suppressing excessive context."""
     start = time.perf_counter()
@@ -1235,7 +1239,7 @@ def diff(
     if res.returncode:
         sys.stderr.write(res.stderr)
         raise typer.Exit(res.returncode)
-    slimmed = raw_diff if paused() else slim_git_diff(raw_diff)
+    slimmed = raw_diff if paused() else slim_git_diff(raw_diff, extra_patterns=ignore_patterns)
     emitted = _emit(slimmed)
     sys.stderr.write(res.stderr)
     record_text(
