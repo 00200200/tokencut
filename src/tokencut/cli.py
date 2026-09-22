@@ -1171,6 +1171,7 @@ def gain(
     if hints:
         console.print(f"\n[dim]Also: {' · '.join(hints)}[/dim]")
 
+
 @app.command("share")
 def share_command(
     badge: Annotated[
