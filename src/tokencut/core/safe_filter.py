@@ -16,7 +16,8 @@ _MAX_DIAG_LINE = 220
 _COLOR = re.compile(r"\x1b\[[0-9;]*m")
 _PYTHON = re.compile(r"python(?:\d+(?:\.\d+)*)?")
 _PASSED = re.compile(
-    r"(?:\[gw\d+\]\s+\[\s*\d+%\]\s+PASSED\s+\S+\.py::\S+"
+    # xdist -v may print ``[gw0] PASSED path::test`` (docs) or include ``[ N%]``.
+    r"(?:\[gw\d+\]\s+(?:\[\s*\d+%\]\s+)?PASSED\s+\S+\.py::\S+"
     r"|\S+\.py::\S+\s+PASSED(?:\s+\[\s*\d+%\])?)\s*"
 )
 _DOTS = re.compile(r"(?:\S+\.py\s+)?(?P<dots>\.+)\s+\[\s*\d+%\]\s*")

@@ -210,6 +210,42 @@ def test_pytest_failure_noise_is_cut_while_keeping_failure_and_recovery():
     assert _cached(result) == original
 
 
+def test_xdist_passed_records_compact_with_or_without_progress_percent():
+    """pytest-xdist's documented -v form omits the percentage; both shapes must collapse.
+
+    Official xdist examples print ``[gw0] PASSED path::test`` with no ``[ N%]``.
+    The cutter already recognized the percentage form; without it, whole xdist
+    sessions stayed raw even under a recognized ``pytest -n`` command.
+    """
+    without_pct = "".join(
+        f"[gw{i % 4}] PASSED tests/test_api.py::test_endpoint_{i}\n" for i in range(80)
+    )
+    with_pct = "".join(
+        f"[gw{i % 4}] [ {min(i, 99):2d}%] PASSED tests/test_api.py::test_endpoint_{i}\n"
+        for i in range(80)
+    )
+    failure = (
+        "[gw2] FAILED tests/test_api.py::test_crash\n"
+        "====================== FAILURES ======================\n"
+        "AssertionError: worker failure preserved\n"
+    )
+    for passes in (without_pct, with_pct):
+        original = (
+            "===================== test session starts =====================\n"
+            "platform linux -- Python 3.12, pytest-8.3.0, pytest-xdist\n"
+            "gw0 [20] / gw1 [20] / gw2 [20] / gw3 [20]\n"
+            "scheduling tests via LoadScheduling\n\n"
+            + passes
+            + failure
+            + "===================== 1 failed, 80 passed in 1.2s =====================\n"
+        )
+        result = safe_compact_output(original, command="pytest -n auto -v", exit_code=1)
+        assert "80 passing tests" in result
+        assert failure in result
+        assert "[gw0] PASSED" not in result
+        assert _cached(result) == original
+
+
 @pytest.mark.parametrize("text", ["", "ok\n", "same\n" * 2, "tests/a.py::test_a PASSED [100%]\n"])
 def test_short_results_are_unchanged(text):
     assert safe_compact_output(text, command="pytest", exit_code=0) == text
