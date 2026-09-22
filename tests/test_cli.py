@@ -47,6 +47,10 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
         data["specialized"]["docker_build"]["output_tokens"]
         < data["specialized"]["docker_build"]["raw_tokens"]
     )
+    assert data["specialized"]["tsc"]["output_tokens"] < data["specialized"]["tsc"]["raw_tokens"]
+    assert (
+        data["specialized"]["eslint"]["output_tokens"] < data["specialized"]["eslint"]["raw_tokens"]
+    )
     assert os.environ["TOKENCUT_CACHE_DIR"] == cache_path
     assert cache.get_stats()["count"] == before
     assert cache.retrieve(ref) == "existing user output"
