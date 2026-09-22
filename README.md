@@ -56,7 +56,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 `tokencut demo` is offline — **no model calls**. Failures stay; originals recover exactly.
 
 <p align="center">
-  <img src="assets/cuts.svg" width="920" alt="Measured savings: docker 99.4%, go 98%, cargo 95.1%, pytest noisy 93.2%">
+  <img src="assets/cuts.svg" width="920" alt="Measured savings: docker 99.4%, go 98%, terraform 96%, cargo 95.1%, kubectl 92.5%">
 </p>
 
 <p align="center">
@@ -67,8 +67,10 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 | --- | ---: |
 | `docker build` BuildKit | 18,360 → **107** (99.4%) |
 | `go test` + goroutine dump | 3,281 → **64** (98.0%) |
+| `terraform plan` refresh/read | 5,885 → **236** (96.0%) |
 | `cargo test` + backtrace | 3,795 → **185** (95.1%) |
 | pytest noisy (xdist + I/O) | 5,111 → **348** (93.2%) |
+| `kubectl describe` pod | 8,049 → **601** (92.5%) |
 | pytest recovery demo | 1,562 → **174** (88.9%) |
 | `vitest` / `eslint` / `tsc` | up to **98.8%** / **79%** |
 
@@ -79,6 +81,8 @@ tokencut run -- pytest -v
 tokencut run -- docker build -t app .
 tokencut run -- cargo test
 tokencut run -- go test ./...
+tokencut run -- kubectl describe pod api-7d8f9c-xk2m9
+tokencut run -- terraform plan
 tokencut run -- npx eslint . --format codeframe
 ```
 
@@ -86,8 +90,13 @@ tokencut run -- npx eslint . --format codeframe
 
 ## What you get
 
+<<<<<<< HEAD
 - **Cut noise, keep the failure.** Specialized filters for pytest, Docker, cargo, go, vitest, eslint, tsc, mypy, pyright, git diff, ruff…
 - **Session dedup + spill.** Same `run` output *or* identical `cat` / MCP `tokencut_read` view within ~15 minutes → short cache ref. Payloads over ~20 KiB → file + preview (`TOKENCUT_SPILL_BYTES`).
+=======
+- **Cut noise, keep the failure.** Specialized filters for pytest, Docker, cargo, go, vitest, eslint, tsc, mypy, pyright, kubectl, terraform, git diff, ruff…
+- **Session dedup + spill.** Same output within ~15 minutes → short cache ref. Payloads over ~20 KiB → file + preview (`TOKENCUT_SPILL_BYTES`).
+>>>>>>> 8e30f62 (feat(specialized): compact kubectl describe/get and terraform plan)
 - **Recover by reference.** Omitted text stays in a local CCR cache: `tokencut retrieve tc_…`
 - **Measure it.** `tokencut gain` / MCP `tokencut_gain` — per-tool-family savings and passthrough candidates (local estimates, not account quotas).
 - **Desktop-ready.** MCP for Claude Code / Codex / Cursor / Claude Desktop; Prepare-for-chat clipboard flow; optional macOS pet.

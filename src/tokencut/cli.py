@@ -51,8 +51,14 @@ from tokencut.core.rules_linter import (
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import (
+<<<<<<< HEAD
     auto_specialize_command_output,
     filter_gh_command_output,
+=======
+    author_kubectl_describe_fixture,
+    author_terraform_plan_fixture,
+    auto_specialize_command_output,
+>>>>>>> 7b226f2 (feat(specialized): compact kubectl describe/get and terraform plan)
 )
 from tokencut.core.spill import spill_large_output
 from tokencut.core.telemetry import TelemetryStore, record_text, recovery_engine
@@ -2039,6 +2045,8 @@ Found 8 errors in 4 files (checked 24 source files)
         ]
     )
     noisy_vitest = "\n".join(vitest_lines)
+    noisy_kubectl = author_kubectl_describe_fixture()
+    noisy_terraform = author_terraform_plan_fixture()
 
     def _reduction(raw: int, out: int) -> dict[str, float | int]:
         return {
@@ -2080,6 +2088,15 @@ Found 8 errors in 4 files (checked 24 source files)
             )
             pyright_compact = auto_specialize_command_output("npx pyright", noisy_pyright) or ""
             vitest_compact = auto_specialize_command_output("npx vitest run", noisy_vitest) or ""
+            kubectl_compact = (
+                auto_specialize_command_output(
+                    "kubectl -n production describe pod api-7d8f9c-xk2m9", noisy_kubectl
+                )
+                or ""
+            )
+            terraform_compact = (
+                auto_specialize_command_output("terraform plan -out=tfplan", noisy_terraform) or ""
+            )
             checks = {
                 "complete_failure_tail_preserved": failure_tail in compacted,
                 "original_recovered_exactly": recovered == noisy_pytest,
@@ -2166,6 +2183,21 @@ Found 8 errors in 4 files (checked 24 source files)
                     and "Tests  390 passed (390)" in vitest_compact
                     and "case_0" not in vitest_compact
                 ),
+                "kubectl_keeps_crash_drops_annotations": (
+                    "CrashLoopBackOff" in kubectl_compact
+                    and "Back-off restarting failed container" in kubectl_compact
+                    and "Liveness probe failed" in kubectl_compact
+                    and "last-applied-configuration" not in kubectl_compact
+                    and "CFG_VAR_0:" not in kubectl_compact
+                    and "annotations collapsed" in kubectl_compact
+                ),
+                "terraform_keeps_plan_drops_refresh": (
+                    "Plan: 1 to add, 1 to change, 0 to destroy." in terraform_compact
+                    and 'resource "aws_instance" "api"' in terraform_compact
+                    and "Refreshing state..." not in terraform_compact
+                    and "Reading..." not in terraform_compact
+                    and "refresh/read lines collapsed" in terraform_compact
+                ),
             }
         finally:
             if previous_cache is None:
@@ -2207,6 +2239,12 @@ Found 8 errors in 4 files (checked 24 source files)
         ),
         "vitest": _reduction(
             count_tokens(noisy_vitest).openai, count_tokens(vitest_compact).openai
+        ),
+        "kubectl_describe": _reduction(
+            count_tokens(noisy_kubectl).openai, count_tokens(kubectl_compact).openai
+        ),
+        "terraform_plan": _reduction(
+            count_tokens(noisy_terraform).openai, count_tokens(terraform_compact).openai
         ),
     }
     passed = all(checks.values())
@@ -2305,6 +2343,18 @@ Found 8 errors in 4 files (checked 24 source files)
                 specialized["pyright"]["raw_tokens"],
                 specialized["pyright"]["output_tokens"],
                 specialized["pyright"]["reduction_pct"],
+            ),
+            (
+                "kubectl describe (annotations/events)",
+                specialized["kubectl_describe"]["raw_tokens"],
+                specialized["kubectl_describe"]["output_tokens"],
+                specialized["kubectl_describe"]["reduction_pct"],
+            ),
+            (
+                "terraform plan (refresh/read)",
+                specialized["terraform_plan"]["raw_tokens"],
+                specialized["terraform_plan"]["output_tokens"],
+                specialized["terraform_plan"]["reduction_pct"],
             ),
         ]
         for label, raw, out, pct in rows_out:

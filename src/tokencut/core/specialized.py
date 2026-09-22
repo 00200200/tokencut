@@ -1575,6 +1575,10 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return filter_docker_build(raw_output)
     elif _is_pyright_command(cmd_lower):
         return filter_pyright(raw_output)
+    elif _is_kubectl_command(command.strip()):
+        return filter_kubectl(raw_output)
+    elif _is_terraform_command(command.strip()):
+        return filter_terraform(raw_output)
 
     if _is_directory_scan_command(cmd_lower):
         res = filter_directory_scan(raw_output)
@@ -1772,3 +1776,487 @@ def _is_pyright_command(cmd_lower: str) -> bool:
         or cmd_lower.startswith(prefix + "\t")
         for prefix in prefixes
     )
+
+
+# ---------------------------------------------------------------------------
+# kubectl get / describe — table noise and describe annotation/env/event dumps
+# ---------------------------------------------------------------------------
+
+_KUBECTL_GET_HEADER_RE = re.compile(
+    r"^NAME\s+READY\s+STATUS\b|^NAME\s+STATUS\b|^NAME\s+AGE\b", re.I
+)
+_KUBECTL_EVENT_ROW_RE = re.compile(r"^\s*(Normal|Warning|Error)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.*)$")
+_TF_REFRESH_RE = re.compile(
+    r"^(\S+):\s+(?:Reading\.\.\.|Read complete after\b|Refreshing state\.\.\.)"
+)
+
+
+def filter_kubectl(raw_output: str) -> str:
+    """Compact kubectl get tables and describe dumps; keep unhealthy signal."""
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    if any(_KUBECTL_GET_HEADER_RE.match(line.strip()) for line in lines):
+        return _filter_kubectl_get(lines)
+    if lines and lines[0].startswith("Name:"):
+        return _filter_kubectl_describe(lines)
+    return raw_output
+
+
+def _filter_kubectl_get(lines: list[str]) -> str:
+    header = None
+    healthy: list[str] = []
+    keep: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _KUBECTL_GET_HEADER_RE.match(stripped):
+            header = line
+            continue
+        parts = stripped.split()
+        ready = parts[1] if len(parts) > 1 else ""
+        status = parts[2] if len(parts) > 2 else ""
+        is_healthy = (
+            status in {"Running", "Completed", "Succeeded"}
+            and ready
+            and "/" in ready
+            and not ready.startswith("0/")
+        )
+        if is_healthy:
+            healthy.append(stripped)
+        else:
+            keep.append(line)
+
+    if not healthy:
+        return "\n".join(lines)
+
+    result: list[str] = []
+    if header:
+        result.append(header)
+    result.append(f"[TokenCut: {len(healthy)} healthy Running/Completed rows collapsed]")
+    result.extend(keep)
+    return "\n".join(result)
+
+
+def _filter_kubectl_describe(lines: list[str]) -> str:
+    result: list[str] = []
+    index = 0
+    collapsed = False
+    annotation_count = 0
+    env_count = 0
+    normal_events = 0
+
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+
+        # Annotations: ... (inline or multi-line indented block)
+        if stripped.startswith("Annotations:"):
+            rest = stripped[len("Annotations:") :].strip()
+            index += 1
+            annotation_count = 1 if rest and rest != "<none>" else 0
+            # Count continuing indented annotation keys / JSON continuation.
+            while index < len(lines):
+                nxt = lines[index]
+                if not nxt.strip():
+                    break
+                # Next top-level section starts at column 0 with Key:
+                if nxt[:1] not in " \t" and ":" in nxt:
+                    break
+                # Indented content belongs to annotations.
+                if nxt.lstrip().startswith("kubectl.kubernetes.io/last-applied"):
+                    annotation_count += 1
+                elif re.match(r"^\s+\S", nxt) and ":" in nxt and not nxt.strip().startswith("{"):
+                    annotation_count += 1
+                elif re.match(r"^\s+", nxt):
+                    # Continuation of previous annotation value (JSON blob etc.)
+                    pass
+                else:
+                    break
+                index += 1
+            if annotation_count:
+                result.append(
+                    f"Annotations:      [TokenCut: {annotation_count} annotations collapsed]"
+                )
+            else:
+                result.append("Annotations:      <none>")
+            collapsed = True
+            continue
+
+        # Environment: under a container — collapse keys, keep secret refs briefly.
+        if stripped == "Environment:" or stripped.startswith("Environment:"):
+            # Preserve indent of the Environment header's parent context via spaces.
+            indent = line[: len(line) - len(line.lstrip())]
+            index += 1
+            env_count = 0
+            secret_refs: list[str] = []
+            while index < len(lines):
+                nxt = lines[index]
+                nxt_stripped = nxt.strip()
+                if not nxt_stripped:
+                    break
+                nxt_indent = len(nxt) - len(nxt.lstrip())
+                if (
+                    nxt_indent <= len(indent)
+                    and ":" in nxt_stripped
+                    and not nxt_stripped.startswith(("<", "-"))
+                ):
+                    # Next sibling field at same/less indent (Mounts, etc.)
+                    break
+                if (
+                    nxt_indent <= len(indent)
+                    and nxt_stripped.endswith(":")
+                    and " " not in nxt_stripped
+                ):
+                    break
+                # Env entry lines are more indented than "Environment:"
+                if re.match(r"^\s+\S+:\s+", nxt):
+                    env_count += 1
+                    if "<set to the key" in nxt_stripped or "Optional:" in nxt_stripped:
+                        secret_refs.append(nxt_stripped)
+                    index += 1
+                    continue
+                if nxt_indent > len(indent):
+                    index += 1
+                    continue
+                break
+            result.append(f"{indent}Environment:      [TokenCut: {env_count} env vars collapsed]")
+            for ref in secret_refs[:5]:
+                result.append(f"{indent}  {ref}")
+            collapsed = True
+            continue
+
+        # Events section
+        if stripped.startswith("Events:"):
+            result.append(
+                line if stripped == "Events:" or stripped.startswith("Events:") else "Events:"
+            )
+            index += 1
+            # Skip header separator rows
+            while index < len(lines) and (
+                lines[index].strip().startswith("Type")
+                or lines[index].strip().startswith("----")
+                or not lines[index].strip()
+            ):
+                if lines[index].strip().startswith("Type"):
+                    result.append(lines[index])
+                index += 1
+            warnings: list[str] = []
+            while index < len(lines):
+                ev = lines[index]
+                ev_stripped = ev.strip()
+                if not ev_stripped:
+                    index += 1
+                    continue
+                # New top-level section would be rare after Events; stop on non-event.
+                m = _KUBECTL_EVENT_ROW_RE.match(ev_stripped)
+                if not m:
+                    # Sometimes events are "  <none>"
+                    if ev_stripped == "<none>":
+                        result.append(ev)
+                        index += 1
+                        break
+                    break
+                kind = m.group(1)
+                if kind == "Normal":
+                    normal_events += 1
+                else:
+                    warnings.append(ev)
+                index += 1
+            if normal_events:
+                result.append(f"  [TokenCut: {normal_events} Normal events collapsed]")
+                collapsed = True
+            result.extend(warnings)
+            continue
+
+        result.append(line)
+        index += 1
+
+    if not collapsed:
+        return "\n".join(lines)
+    return "\n".join(result)
+
+
+def filter_terraform(raw_output: str) -> str:
+    """Collapse terraform/tofu plan refresh/read chatter; keep the plan body."""
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    if not any(_TF_REFRESH_RE.match(line.strip()) for line in lines):
+        return raw_output
+
+    result: list[str] = []
+    refresh_count = 0
+
+    def flush_refresh():
+        nonlocal refresh_count
+        if refresh_count:
+            result.append(f"[TokenCut: {refresh_count} refresh/read lines collapsed]")
+            refresh_count = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if _TF_REFRESH_RE.match(stripped):
+            refresh_count += 1
+            continue
+        flush_refresh()
+        result.append(line)
+
+    flush_refresh()
+    return "\n".join(result)
+
+
+def _is_kubectl_command(command: str) -> bool:
+    """Recognize kubectl get/describe (flags may precede the verb)."""
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if not words or PurePath(words[0]).name.lower() not in {"kubectl", "kubectl.exe"}:
+        return False
+    value_flags = {
+        "-n",
+        "--namespace",
+        "--context",
+        "--kubeconfig",
+        "--cluster",
+        "--user",
+        "-l",
+        "--selector",
+        "-o",
+        "--output",
+        "-f",
+        "--filename",
+        "--field-selector",
+        "--token",
+        "--server",
+        "-s",
+        "--request-timeout",
+    }
+    index = 1
+    while index < len(words):
+        word = words[index]
+        if word in {"get", "describe"}:
+            return True
+        if word in value_flags:
+            index += 2
+            continue
+        if word.startswith("--") and "=" in word:
+            index += 1
+            continue
+        if word.startswith("-"):
+            index += 1
+            continue
+        # Positional resource type before we saw get/describe — not our target.
+        return False
+    return False
+
+
+def _is_terraform_command(command: str) -> bool:
+    """Recognize terraform/tofu plan (and apply, which also emits refresh noise)."""
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if not words:
+        return False
+    binary = PurePath(words[0]).name.lower()
+    if binary not in {"terraform", "terraform.exe", "tofu", "tofu.exe"}:
+        return False
+    return any(word in {"plan", "apply"} for word in words[1:])
+
+
+def author_kubectl_describe_fixture() -> str:
+    """Authored kubectl describe pod: annotations, env, Normal events dominate tokens."""
+    last_applied = json.dumps(
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": "api",
+                "namespace": "production",
+                "labels": {f"label-{i}": f"value-{i}" for i in range(20)},
+                "annotations": {f"anno-{i}": f"cfg-{i}-{'x' * 40}" for i in range(30)},
+            },
+            "spec": {
+                "replicas": 3,
+                "template": {
+                    "spec": {
+                        "containers": [
+                            {
+                                "name": "api",
+                                "image": "registry.example.com/api:1.4.2",
+                                "env": [
+                                    {"name": f"CFG_{i}", "value": f"setting-{i}-{'y' * 24}"}
+                                    for i in range(40)
+                                ],
+                            }
+                        ]
+                    }
+                },
+            },
+        }
+    )
+    annotation_lines = [
+        "Annotations:      deployment.kubernetes.io/revision: 42",
+        "                  kubectl.kubernetes.io/default-container: api",
+        f"                  kubectl.kubernetes.io/last-applied-configuration:\n"
+        f"                    {last_applied}",
+    ]
+    for i in range(25):
+        annotation_lines.append(f'                  prometheus.io/scrape-{i}: "true"')
+        annotation_lines.append(f"                  checksum/config-{i}: {'a' * 64}")
+
+    env_lines = ["    Environment:"]
+    for i in range(50):
+        env_lines.append(f"      CFG_VAR_{i}:  value-for-config-{i}-{'z' * 20}")
+    env_lines.append("      DATABASE_URL:  <set to the key 'url' of secret 'db-credentials'>")
+
+    normal_events = []
+    for i in range(40):
+        normal_events.append(
+            f"  Normal   Scheduled  {i}m    default-scheduler  "
+            f"Successfully assigned production/api-7d8f9c-{i:04d} to node-{i % 8}"
+        )
+        normal_events.append(
+            f"  Normal   Pulled     {i}m    kubelet            "
+            f'Container image "registry.example.com/api:1.4.2" already present on machine'
+        )
+        normal_events.append(
+            f"  Normal   Created    {i}m    kubelet            Created container api"
+        )
+        normal_events.append(
+            f"  Normal   Started    {i}m    kubelet            Started container api"
+        )
+
+    return "\n".join(
+        [
+            "Name:             api-7d8f9c-xk2m9",
+            "Namespace:        production",
+            "Priority:         0",
+            "Service Account:  api",
+            "Node:             ip-10-0-1-5/10.0.1.5",
+            "Start Time:       Mon, 21 Sep 2026 10:00:00 +0000",
+            "Labels:           app=api",
+            "                  pod-template-hash=7d8f9c",
+            "                  version=1.4.2",
+            *annotation_lines,
+            "Status:           Running",
+            "IP:               10.0.2.15",
+            "IPs:",
+            "  IP:  10.0.2.15",
+            "Controlled By:  ReplicaSet/api-7d8f9c",
+            "Containers:",
+            "  api:",
+            "    Container ID:  containerd://abcdef0123456789",
+            "    Image:         registry.example.com/api:1.4.2",
+            "    Image ID:      registry.example.com/api@sha256:" + ("ab" * 32),
+            "    Port:          8080/TCP",
+            "    Host Port:     0/TCP",
+            "    State:          Waiting",
+            "      Reason:       CrashLoopBackOff",
+            "    Last State:     Terminated",
+            "      Reason:       Error",
+            "      Exit Code:    1",
+            "      Started:      Mon, 21 Sep 2026 10:40:00 +0000",
+            "      Finished:     Mon, 21 Sep 2026 10:40:02 +0000",
+            "    Ready:          False",
+            "    Restart Count:  12",
+            *env_lines,
+            "    Mounts:",
+            "      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access (ro)",
+            "Conditions:",
+            "  Type              Status",
+            "  Initialized       True",
+            "  Ready             False",
+            "  ContainersReady   False",
+            "  PodScheduled      True",
+            "Volumes:",
+            "  kube-api-access:",
+            "    Type:                    Projected (a volume that contains injected data)",
+            "QoS Class:                   Burstable",
+            "Node-Selectors:              <none>",
+            "Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s",
+            "Events:",
+            "  Type     Reason     Age    From               Message",
+            "  ----     ------     ----   ----               -------",
+            *normal_events,
+            "  Warning  BackOff    2m     kubelet            "
+            "Back-off restarting failed container api in pod api-7d8f9c-xk2m9",
+            "  Warning  Unhealthy  90s    kubelet            "
+            'Liveness probe failed: Get "http://10.0.2.15:8080/healthz": dial tcp '
+            "10.0.2.15:8080: connect: connection refused",
+        ]
+    )
+
+
+def author_kubectl_get_fixture() -> str:
+    """Authored kubectl get pods -o wide with many healthy rows + two failures."""
+    header = (
+        "NAME                         READY   STATUS             RESTARTS   AGE   "
+        "IP            NODE"
+    )
+    rows = [header]
+    for i in range(60):
+        rows.append(
+            f"api-7d8f9c-{i:04d}             1/1     Running            0          "
+            f"10d   10.0.2.{i}    node-{i % 8}"
+        )
+    rows.append(
+        "worker-crash-aaaa             0/1     CrashLoopBackOff   14         "
+        "5m    10.0.3.9      node-1"
+    )
+    rows.append(
+        "worker-pending-bbbb           0/1     Pending            0          "
+        "2m    <none>        <none>"
+    )
+    return "\n".join(rows)
+
+
+def author_terraform_plan_fixture() -> str:
+    """Authored terraform plan: refresh/read chatter dwarfs the actionable plan."""
+    lines: list[str] = []
+    for i in range(80):
+        lines.append(f"data.aws_iam_policy_document.policy_{i}: Reading...")
+        lines.append(
+            f"data.aws_iam_policy_document.policy_{i}: Read complete after 0s "
+            f"[id={i:04d}-{'a' * 40}]"
+        )
+    for i in range(60):
+        lines.append(f"aws_security_group.svc_{i}: Refreshing state... [id=sg-{'b' * 8}{i:04d}]")
+        lines.append(f"aws_instance.worker_{i}: Refreshing state... [id=i-{'c' * 8}{i:04d}]")
+    lines.extend(
+        [
+            "",
+            "Terraform used the selected providers to generate the following execution plan.",
+            "Resource actions are indicated with the following symbols:",
+            "  + create",
+            "  ~ update in-place",
+            "",
+            "Terraform will perform the following actions:",
+            "",
+            "  # aws_instance.api will be updated in-place",
+            '  ~ resource "aws_instance" "api" {',
+            '      ~ instance_type = "t3.small" -> "t3.medium"',
+            '        id            = "i-0abc123def456"',
+            "    }",
+            "",
+            "  # aws_lb_listener_rule.canary will be created",
+            '  + resource "aws_lb_listener_rule" "canary" {',
+            "      + arn        = (known after apply)",
+            "      + priority   = 100",
+            '      + listener_arn = "arn:aws:elasticloadbalancing:us-east-1:123:listener/app/1"',
+            "    }",
+            "",
+            "Plan: 1 to add, 1 to change, 0 to destroy.",
+            "",
+            "─────────────────────────────────────────────────────────────────────────────",
+            "",
+            "Note: You didn't use the -out option to save this plan, so Terraform can't",
+            'guarantee to take exactly these actions if you run "terraform apply" now.',
+        ]
+    )
+    return "\n".join(lines)

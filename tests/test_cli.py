@@ -100,6 +100,16 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
         "output_tokens": 44,
         "reduction_pct": 98.8,
     }
+    assert data["specialized"]["kubectl_describe"] == {
+        "raw_tokens": 8049,
+        "output_tokens": 601,
+        "reduction_pct": 92.5,
+    }
+    assert data["specialized"]["terraform_plan"] == {
+        "raw_tokens": 5885,
+        "output_tokens": 236,
+        "reduction_pct": 96.0,
+    }
     assert data["checks"]["cargo_keeps_failure_drops_passes"]
     assert data["checks"]["go_keeps_failure_drops_passes"]
     assert data["checks"]["nextest_collapses_passes"]
@@ -108,6 +118,8 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
     assert data["checks"]["vitest_collapses_passing_runs"]
     assert data["checks"]["mypy_keeps_codes_drops_frames"]
     assert data["checks"]["npm_test_keeps_failure_drops_console"]
+    assert data["checks"]["kubectl_keeps_crash_drops_annotations"]
+    assert data["checks"]["terraform_keeps_plan_drops_refresh"]
     assert os.environ["TOKENCUT_CACHE_DIR"] == cache_path
     assert cache.get_stats()["count"] == before
     assert cache.retrieve(ref) == "existing user output"
