@@ -11,6 +11,7 @@ from tokencut.core.specialized import (
     filter_git_status,
     filter_go_test,
     filter_jest_vitest,
+    filter_tsc,
 )
 from tokencut.metrics.tokenizer import count_tokens
 
@@ -167,6 +168,20 @@ Test Suites: 1 failed, 1 passed, 2 total
 Tests:       1 failed, 1 passed, 2 total
 Snapshots:   0 total
 Time:        0.85 s
+"""
+
+SAMPLE_TSC_ERRORS = """src/auth/jwt.ts:45:12 - error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+
+45   verifyToken(headerToken);
+                 ~~~~~~~~~~~
+
+src/models/user.ts:18:7 - error TS2741: Property 'email' is missing in type '{ id: number; name: string; }'.
+
+18 const u: User = { id: 1, name: "Alice" };
+         ~
+
+Found 2 errors in 2 files.
 """
 
 
@@ -352,6 +367,29 @@ def test_auto_specialize_routes_jest_and_vitest():
     compact_npm = auto_specialize_command_output("npm test -- --coverage", SAMPLE_VITEST_PASS)
     assert compact_npm is not None
     assert "[TokenCut: 9 passing tests, 9 progress records]" in compact_npm
+
+
+def test_filter_tsc_compacts_errors_and_strips_squiggles():
+    compact = filter_tsc(SAMPLE_TSC_ERRORS)
+
+    assert "~~~~~" not in compact
+    assert "src/auth/jwt.ts:45:12 - error TS2345" in compact
+    assert "TS2741" in compact
+    assert "Found 2 errors in 2 files." in compact
+    assert "verifyToken(headerToken);" in compact
+    assert count_tokens(compact).claude < count_tokens(SAMPLE_TSC_ERRORS).claude
+
+
+def test_filter_tsc_clean_output_untouched():
+    clean = "✨ Done in 1.42s"
+    assert filter_tsc(clean) == clean
+
+
+def test_auto_specialize_routes_tsc():
+    compact = auto_specialize_command_output("npx tsc --noEmit", SAMPLE_TSC_ERRORS)
+    assert compact is not None
+    assert "~~~~~" not in compact
+    assert "error TS2345" in compact
 
 
 def test_compress_to_budget():

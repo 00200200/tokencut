@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tokencut.core.prompt_optimizer import align_prompt, lint_prompt
+from tokencut.core.prompt_optimizer import align_prompt, lint_prompt, minify_prompt
 
 
 def test_lint_clean_prompt():
@@ -42,3 +42,25 @@ def test_align_prompt_restructures_volatile_prefix():
     assert res.aligned_text.startswith("You are an AI assistant")
     # Date and request ID should be isolated at the end
     assert "Today's date is September 21, 2026" in res.aligned_text
+
+
+def test_minify_prompt_collapses_fluff_and_comments():
+    raw_prompt = """<!-- Global Guidelines -->
+You are a helpful and expert AI coding assistant.
+Please make sure to always remember to run tests before committing.
+It is extremely important that you never commit secrets.
+
+<!-- Environment Notes -->
+Under no circumstances should you ever delete production databases.
+
+- Follow Clean Code
+- Follow Clean Code
+"""
+    res = minify_prompt(raw_prompt)
+    assert res.reduction_pct > 0
+    assert res.saved_tokens > 0
+    assert "Global Guidelines" not in res.minified_text
+    assert "Always run tests before committing." in res.minified_text
+    assert "never commit secrets." in res.minified_text
+    assert "Never delete production databases." in res.minified_text
+    assert res.minified_text.count("- Follow Clean Code") == 1

@@ -281,6 +281,69 @@ def filter_jest_vitest(raw_output: str) -> str:
     return "\n".join(result)
 
 
+# TypeScript compiler outputs multi-line error frames with ASCII squiggles (~~~).
+# Compact them into dense single-line error descriptions with exact file, line, col, code, and source snippet.
+_TSC_HEADER_RE = re.compile(
+    r"^(\S+?)(?::(\d+):(\d+)\s+-\s+error\s+(TS\d+):\s*(.*)|\((\d+),(\d+)\):\s*error\s+(TS\d+):\s*(.*))$"
+)
+_SQUIGGLE_RE = re.compile(r"^\s*[~^]+\s*$")
+_LINE_NUM_CODE_RE = re.compile(r"^\s*\d+\s+(.*)$")
+
+
+def filter_tsc(raw_output: str) -> str:
+    """Compact verbose TypeScript compiler (tsc) output by stripping squiggle underlines and padding."""
+    lines = raw_output.splitlines()
+    if not any("error TS" in line for line in lines):
+        return raw_output
+
+    result: list[str] = []
+    current_error = ""
+    current_continuations: list[str] = []
+    current_source = ""
+
+    def flush_error():
+        nonlocal current_error, current_continuations, current_source
+        if current_error:
+            entry = current_error
+            if current_continuations:
+                entry += " " + " ".join(current_continuations)
+            if current_source:
+                entry += f" | `{current_source}`"
+            result.append(entry)
+        current_error = ""
+        current_continuations = []
+        current_source = ""
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _SQUIGGLE_RE.match(stripped):
+            continue
+
+        if _TSC_HEADER_RE.match(stripped):
+            flush_error()
+            current_error = stripped
+            continue
+
+        if current_error:
+            if stripped.startswith("Found ") or stripped.startswith("==="):
+                flush_error()
+                result.append(stripped)
+            elif _LINE_NUM_CODE_RE.match(stripped):
+                current_source = _LINE_NUM_CODE_RE.match(stripped).group(1).strip()
+            elif not current_source and not stripped.startswith("error TS"):
+                current_continuations.append(stripped)
+            else:
+                flush_error()
+                result.append(line)
+        else:
+            result.append(line)
+
+    flush_error()
+    return "\n".join(result)
+
+
 def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
     """Detect if command has a specialized ultra-dense filter."""
     cmd_lower = command.lower().strip()
@@ -306,4 +369,15 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         )
     ):
         return filter_jest_vitest(raw_output)
+    elif any(
+        cmd_lower.startswith(prefix)
+        for prefix in (
+            "tsc",
+            "npx tsc",
+            "pnpm tsc",
+            "yarn tsc",
+            "bun x tsc",
+        )
+    ):
+        return filter_tsc(raw_output)
     return None

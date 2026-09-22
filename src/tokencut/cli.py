@@ -503,6 +503,56 @@ def prompt_align_command(
     err_console.print(f"[dim]Cacheability score: {result.cacheability_score}/100[/dim]")
 
 
+@prompt_app.command("minify")
+def prompt_minify_command(
+    file: Annotated[Path, typer.Argument(help="Path to prompt, CLAUDE.md, or AGENTS.md file")],
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Write minified prompt to file")
+    ] = None,
+    stats: Annotated[
+        bool, typer.Option("--stats", "-s", help="Print token reduction summary to stderr")
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit minification metrics as JSON")
+    ] = False,
+    copy: Annotated[
+        bool, typer.Option("--copy", "-c", help="Copy minified prompt to clipboard")
+    ] = False,
+):
+    """Minify system instructions, CLAUDE.md, and AGENTS.md without semantic loss."""
+    from tokencut.core.clip import set_clipboard
+    from tokencut.core.prompt_optimizer import minify_prompt
+
+    try:
+        raw = file.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise typer.BadParameter(f"Cannot read file: {exc}") from exc
+
+    result = minify_prompt(raw)
+
+    if json_output:
+        _emit(json.dumps(result.to_dict(), indent=2))
+        return
+
+    if output is not None:
+        output.write_text(result.minified_text, encoding="utf-8")
+        err_console.print(f"[green]Minified prompt written to {output}[/green]")
+    else:
+        _emit(result.minified_text)
+
+    if copy:
+        if set_clipboard(result.minified_text):
+            err_console.print("[green]Minified prompt copied to clipboard![/green]")
+        else:
+            err_console.print("[yellow]Failed to copy to clipboard.[/yellow]")
+
+    if stats or output is not None:
+        err_console.print(
+            f"[dim]Tokens: {result.original_tokens} → {result.minified_tokens} "
+            f"({result.reduction_pct}% reduction, {result.saved_tokens} tokens saved)[/dim]"
+        )
+
+
 @app.command("optimize")
 def optimize_command(
     target: Annotated[

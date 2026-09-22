@@ -324,6 +324,15 @@ def test_cli_prompt_lint_and_align(tmp_path):
     assert "DYNAMIC RUNTIME CONTEXT" in out_file.read_text()
 
 
+def test_cli_prompt_minify(tmp_path):
+    f = tmp_path / "instructions.md"
+    f.write_text("<!-- comment -->\nPlease make sure to always write tests.\n")
+    res = runner.invoke(app, ["prompt", "minify", str(f), "--stats"])
+    assert res.exit_code == 0
+    assert "Always write tests." in res.output
+    assert "comment" not in res.output
+
+
 def test_cli_optimize_file(tmp_path):
     f = tmp_path / "prompt.md"
     f.write_text("""Review this table:
