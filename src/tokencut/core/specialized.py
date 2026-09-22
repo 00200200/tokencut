@@ -336,9 +336,48 @@ _JS_DIAGNOSTIC = re.compile(
     r"\b(?:FAIL|failed|failure|failures|Error|AssertionError|panic|fatal|warning|timeout)\b|[✕×]",
     re.IGNORECASE,
 )
+# Jest console.* dumps and Vitest stdout| / stderr| / ● Console blocks.
+_JS_CONSOLE_HEAD = re.compile(
+    r"^\s*(?:"
+    r"console\.(?:log|info|debug|warn|error|dir|table|trace)\b|"
+    r"stdout\s*\||"
+    r"stderr\s*\||"
+    r"●\s*Console"
+    r")\s*"
+)
+_JS_SUMMARY = re.compile(r"^\s*(?:Test (?:Suites|Files)|Tests|Snapshots|Time|Duration|Start at)\b")
+_JS_FAIL_SUITE = re.compile(r"^\s*(?:FAIL\s+\S+|✕|×)")
 # Vitest states a per-file test count; Jest prints a bare suite header instead.
 _JS_FILE_COUNT_RE = re.compile(r"\((\d+)\s+tests?\)")
 _JS_SUITE_RE = re.compile(r"^PASS\s+\S+")
+
+
+def _js_console_head(line: str) -> bool:
+    return bool(_JS_CONSOLE_HEAD.match(line.strip()))
+
+
+def _js_hard_boundary(line: str) -> bool:
+    """Suite/test/summary lines that end console folding (not another console dump)."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    return bool(
+        _JS_TEST_OK.match(stripped) or _JS_FAIL_SUITE.match(stripped) or _JS_SUMMARY.match(stripped)
+    )
+
+
+def _js_should_keep_verbatim(line: str) -> bool:
+    """True when the rest of the run must stay untouched (real failure signal).
+
+    ``console.error`` must not trip this: ``\\bError\\b`` matches inside it under
+    IGNORECASE, which used to freeze filtering for the rest of the log.
+    """
+    stripped = line.strip()
+    if not stripped or _JS_TEST_OK.match(stripped) or _JS_CONSOLE_HEAD.match(stripped):
+        return False
+    if _JS_FAIL_SUITE.match(stripped):
+        return True
+    return bool(_JS_DIAGNOSTIC.search(line))
 
 
 def _summarize_js_records(chunk: list[str]) -> str:
@@ -377,7 +416,7 @@ def _summarize_js_records(chunk: list[str]) -> str:
 
 
 def filter_jest_vitest(raw_output: str) -> str:
-    """Collapse runs of passing Jest/Vitest records while keeping diagnostics verbatim."""
+    """Collapse passing Jest/Vitest records and console dumps; keep failures dense."""
     lines = raw_output.splitlines()
     result: list[str] = []
     index = 0
@@ -385,9 +424,32 @@ def filter_jest_vitest(raw_output: str) -> str:
 
     while index < len(lines):
         line = lines[index]
-        if not _JS_TEST_OK.match(line.strip()) and _JS_DIAGNOSTIC.search(line):
+
+        if _js_should_keep_verbatim(line):
             result.extend(lines[index:])
             break
+
+        if _js_console_head(line):
+            end = index + 1
+            while end < len(lines):
+                nxt = lines[end]
+                if _js_hard_boundary(nxt):
+                    break
+                if _js_console_head(nxt):
+                    end += 1
+                    continue
+                if not nxt.strip():
+                    look = end + 1
+                    while look < len(lines) and not lines[look].strip():
+                        look += 1
+                    if look >= len(lines) or _js_hard_boundary(lines[look]):
+                        break
+                end += 1
+            omitted = end - index
+            result.append(f"[TokenCut: {omitted} console lines omitted]")
+            collapsed = True
+            index = end
+            continue
 
         if _JS_TEST_OK.match(line.strip()):
             end = index + 1
