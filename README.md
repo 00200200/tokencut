@@ -107,6 +107,20 @@ tokencut prepare --file draft.txt
 
 ---
 
+## How it fits
+
+TokenCut is **not** a chat interceptor. It sits on the tool path (CLI wrapper, MCP, Prepare-for-chat) so agents still see failures — just without the noise.
+
+| Approach | What TokenCut does instead |
+| --- | --- |
+| Blind head/tail truncation | Specialized cutters keep the failure signal; rest recovers via `tokencut retrieve` |
+| Rewrite the whole chat stream | MCP + `prepare` only — Desktop cannot rewrite model turns |
+| Opaque “saved tokens” badges | `tokencut gain` shows local Raw→Compact by tool family (not billing quotas) |
+
+Same CCR idea as peers (compress → cache → retrieve). Differentiation is specialized cutters, session dedup, spill-to-file, and Desktop/MCP install paths — not a claim that we beat RTK/snip/headroom on every workload.
+
+---
+
 ## Connect your agent
 
 **Desktop & Coding profiles:** 9–11 essential tools instead of 16 — about **36–38% smaller tool schemas** in local `o200k_base` measurements (3,414 → 2,183 / 2,102). Not a per-turn usage guarantee.
