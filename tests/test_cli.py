@@ -137,6 +137,9 @@ def test_cli_diff():
     res = runner.invoke(app, ["diff"])
     assert res.exit_code == 0
 
+    res_ignore = runner.invoke(app, ["diff", "--ignore", r"\.tmp$"])
+    assert res_ignore.exit_code == 0
+
 
 def test_cli_lint(tmp_path):
     f = tmp_path / "CLAUDE.md"

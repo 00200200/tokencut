@@ -390,6 +390,163 @@ def filter_json_output(raw_output: str, command: str = "") -> str | None:
     return None
 
 
+_CARGO_STEP_RE = re.compile(
+    r"^\s*(?:Compiling|Downloading|Checking)\s+([a-zA-Z0-9_-]+)\s+v([^\s]+)"
+)
+
+
+def filter_cargo_build(raw_output: str) -> str:
+    """Compact cargo build / cargo check output, suppressing routine compilation lines."""
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    compiled_crates: list[str] = []
+
+    def flush_crates():
+        nonlocal compiled_crates
+        if compiled_crates:
+            if len(compiled_crates) > 2:
+                result.append(f"[TokenCut: compiled/checked {len(compiled_crates)} crates]")
+            else:
+                for c in compiled_crates:
+                    result.append(f"   Compiling {c}")
+            compiled_crates = []
+
+    for line in lines:
+        m = _CARGO_STEP_RE.match(line)
+        if m:
+            compiled_crates.append(f"{m.group(1)} v{m.group(2)}")
+            continue
+
+        flush_crates()
+        result.append(line)
+
+    flush_crates()
+    return "\n".join(result)
+
+
+_PIP_PROGRESS_RE = re.compile(r"^\s*(?:━+|\|+|\d+%).*(?:kB/s|MB/s|eta)")
+_PIP_COLLECTING_RE = re.compile(r"^\s*Collecting\s+([a-zA-Z0-9_.-]+)")
+_PIP_DOWNLOAD_RE = re.compile(r"^\s*(?:Downloading|Using cached)\s+([a-zA-Z0-9_.-]+)")
+_PIP_SATISFIED_RE = re.compile(r"^\s*Requirement already satisfied:\s+([a-zA-Z0-9_.-]+)")
+
+
+def _normalize_pip_pkg(raw: str) -> str:
+    base = re.split(r"[><=~;\[\s]", raw)[0]
+    base = base.split("-")[0]
+    return base.lower()
+
+
+def filter_pip_install(raw_output: str) -> str:
+    """Compact pip / uv pip install output, suppressing progress bars and download lines."""
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    downloaded_pkgs: set[str] = set()
+    satisfied_count = 0
+
+    def flush_downloads():
+        nonlocal downloaded_pkgs
+        if downloaded_pkgs:
+            result.append(f"[TokenCut: resolved/downloaded {len(downloaded_pkgs)} packages]")
+            downloaded_pkgs = set()
+
+    def flush_satisfied():
+        nonlocal satisfied_count
+        if satisfied_count > 0:
+            result.append(f"[TokenCut: {satisfied_count} requirements already satisfied]")
+            satisfied_count = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if _PIP_PROGRESS_RE.search(stripped):
+            continue
+
+        m_sat = _PIP_SATISFIED_RE.match(stripped)
+        if m_sat:
+            flush_downloads()
+            satisfied_count += 1
+            continue
+
+        m_coll = _PIP_COLLECTING_RE.match(stripped)
+        if m_coll:
+            flush_satisfied()
+            downloaded_pkgs.add(_normalize_pip_pkg(m_coll.group(1)))
+            continue
+
+        m_down = _PIP_DOWNLOAD_RE.match(stripped)
+        if m_down:
+            flush_satisfied()
+            downloaded_pkgs.add(_normalize_pip_pkg(m_down.group(1)))
+            continue
+
+        if stripped.startswith("Installing collected packages:"):
+            flush_downloads()
+            flush_satisfied()
+            result.append(stripped)
+            continue
+
+        flush_downloads()
+        flush_satisfied()
+        result.append(line)
+
+    flush_downloads()
+    flush_satisfied()
+    return "\n".join(result)
+
+
+_NPM_WARN_DEPRECATED = re.compile(r"^\s*npm\s+warn\s+deprecated\s+(.*)")
+
+
+def filter_npm_install(raw_output: str) -> str:
+    """Compact npm/pnpm/yarn install output, grouping routine deprecations and funding messages."""
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    deprecations: list[str] = []
+
+    def flush_deprecations():
+        nonlocal deprecations
+        if deprecations:
+            if len(deprecations) > 2:
+                result.append(
+                    f"[TokenCut: {len(deprecations)} package deprecation warnings collapsed]"
+                )
+            else:
+                for d in deprecations:
+                    result.append(f"npm warn deprecated {d}")
+            deprecations = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        m_dep = _NPM_WARN_DEPRECATED.match(stripped)
+        if m_dep:
+            deprecations.append(m_dep.group(1))
+            continue
+
+        if "packages are looking for funding" in stripped or stripped.startswith("run `npm fund`"):
+            flush_deprecations()
+            continue
+
+        flush_deprecations()
+        result.append(line)
+
+    flush_deprecations()
+    return "\n".join(result)
+
+
 def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
     """Detect if command has a specialized ultra-dense filter."""
     cmd_lower = command.lower().strip()
@@ -399,8 +556,27 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return filter_git_status(raw_output)
     elif cmd_lower.startswith("cargo test"):
         return filter_cargo_test(raw_output)
+    elif any(
+        cmd_lower.startswith(prefix)
+        for prefix in (
+            "cargo build",
+            "cargo check",
+        )
+    ):
+        return filter_cargo_build(raw_output)
     elif cmd_lower.startswith("go test"):
         return filter_go_test(raw_output)
+    elif any(
+        cmd_lower.startswith(prefix)
+        for prefix in (
+            "pip install",
+            "pip3 install",
+            "uv pip install",
+            "poetry add",
+            "poetry install",
+        )
+    ) or any(kw in cmd_lower for kw in ("python -m pip install", "python3 -m pip install")):
+        return filter_pip_install(raw_output)
     elif any(
         cmd_lower.startswith(prefix)
         for prefix in (
@@ -415,6 +591,21 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         )
     ):
         return filter_jest_vitest(raw_output)
+    elif any(
+        cmd_lower.startswith(prefix)
+        for prefix in (
+            "npm install",
+            "npm i ",
+            "pnpm install",
+            "pnpm i ",
+            "pnpm add",
+            "yarn add",
+            "yarn install",
+            "bun add",
+            "bun install",
+        )
+    ) or cmd_lower in ("npm i", "pnpm i", "yarn", "pnpm install", "npm install"):
+        return filter_npm_install(raw_output)
     elif any(
         cmd_lower.startswith(prefix)
         for prefix in (

@@ -6,12 +6,15 @@ from tokencut.core.adaptive import compress_to_budget
 from tokencut.core.cache import ContextCache
 from tokencut.core.specialized import (
     auto_specialize_command_output,
+    filter_cargo_build,
     filter_cargo_test,
     filter_git_log,
     filter_git_status,
     filter_go_test,
     filter_jest_vitest,
     filter_json_output,
+    filter_npm_install,
+    filter_pip_install,
     filter_tsc,
 )
 from tokencut.metrics.tokenizer import count_tokens
@@ -422,6 +425,85 @@ def test_auto_specialize_routes_json_command():
     assert result is not None
     assert "omitted" in result
     assert "Ref: tc_" in result
+
+
+def test_filter_cargo_build_collapses_crates():
+    crates = "\n".join([f"   Compiling crate_{i} v0.{i}.0" for i in range(20)])
+    raw = f"{crates}\nwarning: unused variable `x`\n --> src/main.rs:5:9\n    Finished dev [unoptimized + debuginfo] in 3.12s\n"
+    res = filter_cargo_build(raw)
+    assert "[TokenCut: compiled/checked 20 crates]" in res
+    assert "warning: unused variable `x`" in res
+    assert "Finished dev" in res
+    assert "Compiling crate_0" not in res
+
+
+def test_filter_cargo_build_preserves_error():
+    raw = (
+        "   Compiling crate_a v0.1.0\n"
+        "   Compiling crate_b v0.2.0\n"
+        "   Compiling crate_c v0.3.0\n"
+        "error[E0425]: cannot find value `foo` in this scope\n"
+        "  --> src/main.rs:10:5\n"
+        "   |\n"
+        "10 |     foo();\n"
+        "   |     ^^^ not found\n"
+    )
+    res = filter_cargo_build(raw)
+    assert "[TokenCut: compiled/checked 3 crates]" in res
+    assert "error[E0425]: cannot find value `foo` in this scope" in res
+    assert "10 |     foo();" in res
+
+
+def test_filter_pip_install_collapses_progress_and_downloads():
+    raw = (
+        "Collecting requests>=2.31.0\n"
+        "  Downloading requests-2.31.0-py3-none-any.whl (62 kB)\n"
+        "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 62.6/62.6 kB 8.2 MB/s eta 0:00:00\n"
+        "Collecting urllib3<3,>=1.21.1\n"
+        "  Downloading urllib3-2.2.1-py3-none-any.whl (121 kB)\n"
+        "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 121.1/121.1 kB 12.1 MB/s eta 0:00:00\n"
+        "Installing collected packages: urllib3, requests\n"
+        "Successfully installed requests-2.31.0 urllib3-2.2.1\n"
+    )
+    res = filter_pip_install(raw)
+    assert "[TokenCut: resolved/downloaded 2 packages]" in res
+    assert "Successfully installed requests-2.31.0 urllib3-2.2.1" in res
+    assert "━━━━━━━━━━━━━━━━" not in res
+
+
+def test_filter_npm_install_collapses_deprecations():
+    deprecations = "\n".join(
+        [f"npm warn deprecated pkg_{i}@1.0.0: version is deprecated" for i in range(8)]
+    )
+    raw = (
+        f"{deprecations}\n"
+        "added 185 packages, and audited 186 packages in 2s\n"
+        "12 packages are looking for funding\n"
+        "  run `npm fund`\n"
+        "found 0 vulnerabilities\n"
+    )
+    res = filter_npm_install(raw)
+    assert "[TokenCut: 8 package deprecation warnings collapsed]" in res
+    assert "added 185 packages, and audited 186 packages in 2s" in res
+    assert "found 0 vulnerabilities" in res
+    assert "run `npm fund`" not in res
+
+
+def test_auto_specialize_routes_build_and_package_commands():
+    cargo_raw = "   Compiling a v1.0.0\n   Compiling b v1.0.0\n   Compiling c v1.0.0\n"
+    res_cargo = auto_specialize_command_output("cargo build --release", cargo_raw)
+    assert res_cargo is not None
+    assert "[TokenCut: compiled/checked 3 crates]" in res_cargo
+
+    pip_raw = "Collecting foo\nSuccessfully installed foo-1.0.0\n"
+    res_pip = auto_specialize_command_output("pip install foo", pip_raw)
+    assert res_pip is not None
+    assert "Successfully installed foo-1.0.0" in res_pip
+
+    npm_raw = "npm warn deprecated a\nnpm warn deprecated b\nnpm warn deprecated c\nadded 10 pkgs\n"
+    res_npm = auto_specialize_command_output("npm install", npm_raw)
+    assert res_npm is not None
+    assert "[TokenCut: 3 package deprecation warnings collapsed]" in res_npm
 
 
 def test_compress_to_budget():
