@@ -22,6 +22,14 @@ def test_cli_demo():
     assert "verify your installation" in res.output
     assert "PASS" in res.output
     assert "No model calls" in res.output
+    assert "cargo test" in res.output
+    assert "go test" in res.output
+    assert "nextest" in res.output
+    assert "pytest noisy failure" in res.output
+    assert "pyright" in res.output
+    assert "vitest" in res.output
+    assert "mypy" in res.output
+    assert "npm test" in res.output
 
 
 def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
@@ -51,20 +59,55 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
     assert (
         data["specialized"]["eslint"]["output_tokens"] < data["specialized"]["eslint"]["raw_tokens"]
     )
-    assert data["specialized"]["mypy"]["output_tokens"] < data["specialized"]["mypy"]["raw_tokens"]
-    assert (
-        data["specialized"]["mypy"]["raw_tokens"] - data["specialized"]["mypy"]["output_tokens"]
-        >= data["specialized"]["mypy"]["raw_tokens"] * 0.45
-    )
-    assert (
-        data["specialized"]["npm_test"]["output_tokens"]
-        < data["specialized"]["npm_test"]["raw_tokens"]
-    )
-    assert (
-        data["specialized"]["npm_test"]["raw_tokens"]
-        - data["specialized"]["npm_test"]["output_tokens"]
-        >= data["specialized"]["npm_test"]["raw_tokens"] * 0.85
-    )
+    # Measured o200k_base counts — keep README in lockstep with tokencut demo.
+    assert data["specialized"]["mypy"] == {
+        "raw_tokens": 522,
+        "output_tokens": 259,
+        "reduction_pct": 50.4,
+    }
+    assert data["specialized"]["npm_test"] == {
+        "raw_tokens": 1588,
+        "output_tokens": 156,
+        "reduction_pct": 90.2,
+    }
+    assert data["specialized"]["cargo_test"] == {
+        "raw_tokens": 3795,
+        "output_tokens": 185,
+        "reduction_pct": 95.1,
+    }
+    assert data["specialized"]["go_test"] == {
+        "raw_tokens": 3281,
+        "output_tokens": 64,
+        "reduction_pct": 98.0,
+    }
+    assert data["specialized"]["nextest"] == {
+        "raw_tokens": 464,
+        "output_tokens": 46,
+        "reduction_pct": 90.1,
+    }
+    assert data["specialized"]["pytest_noise"] == {
+        "raw_tokens": 5111,
+        "output_tokens": 348,
+        "reduction_pct": 93.2,
+    }
+    assert data["specialized"]["pyright"] == {
+        "raw_tokens": 4244,
+        "output_tokens": 2302,
+        "reduction_pct": 45.8,
+    }
+    assert data["specialized"]["vitest"] == {
+        "raw_tokens": 3816,
+        "output_tokens": 44,
+        "reduction_pct": 98.8,
+    }
+    assert data["checks"]["cargo_keeps_failure_drops_passes"]
+    assert data["checks"]["go_keeps_failure_drops_passes"]
+    assert data["checks"]["nextest_collapses_passes"]
+    assert data["checks"]["pytest_noise_keeps_failure_drops_io"]
+    assert data["checks"]["pyright_keeps_diagnostics_drops_frames"]
+    assert data["checks"]["vitest_collapses_passing_runs"]
+    assert data["checks"]["mypy_keeps_codes_drops_frames"]
+    assert data["checks"]["npm_test_keeps_failure_drops_console"]
     assert os.environ["TOKENCUT_CACHE_DIR"] == cache_path
     assert cache.get_stats()["count"] == before
     assert cache.retrieve(ref) == "existing user output"

@@ -1640,6 +1640,155 @@ src/auth/session.py:44: note: Error code "return-value" not covered by "type: ig
 Found 8 errors in 4 files (checked 24 source files)
 """
 
+    noisy_cargo = "\n".join(
+        [
+            "   Compiling acme-core v0.4.1 (/src/acme-core)",
+            "     Running unittests src/lib.rs (target/debug/deps/acme_core-3f9a2b1c)",
+            "",
+            "running 201 tests",
+        ]
+        + [f"test module{i // 10}::tests::case_{i} ... ok" for i in range(200)]
+        + [
+            "test parser::tests::rejects_bad_utf8 ... FAILED",
+            "",
+            "failures:",
+            "",
+            "---- parser::tests::rejects_bad_utf8 stdout ----",
+            "thread 'parser::tests::rejects_bad_utf8' panicked at src/parser.rs:212:9:",
+            "assertion `left == right` failed",
+            "  left: Err(InvalidUtf8)",
+            " right: Ok(())",
+            "",
+            "stack backtrace:",
+        ]
+        + [f"   {i}: acme_core::parser::parse_{i}" for i in range(48)]
+        + [f"             at ./src/parser.rs:{200 + i}:5" for i in range(48)]
+        + [
+            "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+            "",
+            "failures:",
+            "    parser::tests::rejects_bad_utf8",
+            "",
+            "test result: FAILED. 200 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; "
+            "finished in 1.24s",
+        ]
+    )
+    noisy_go = "\n".join(
+        sum(
+            ([f"=== RUN   TestOk{i}", f"--- PASS: TestOk{i} (0.00s)"] for i in range(120)),
+            [],
+        )
+        + [
+            "=== RUN   TestPanicRecovery",
+            "--- FAIL: TestPanicRecovery (0.00s)",
+            "panic: unhandled nil pointer dereference [recovered]",
+            "\tpanic: runtime error: invalid memory address",
+            "goroutine 16 [running]:",
+        ]
+        + [f"main.helper{i}(0x1400011e1e0)" for i in range(36)]
+        + [f"\t/src/server_test.go:{40 + i} +0x28" for i in range(36)]
+        + [
+            "FAIL",
+            "FAIL\tgithub.com/acme/server\t0.018s",
+            "FAIL",
+        ]
+    )
+    noisy_nextest = "\n".join(
+        [
+            "    Starting 24 tests across 1 binary",
+        ]
+        + [f"        PASS [   0.01{i % 10}s] acme tests::case_{i}" for i in range(24)]
+        + [
+            "     Summary [   0.42s] 24 tests run: 24 passed, 0 skipped",
+        ]
+    )
+    xdist_nodes = "\n".join(f"gw{i} I /Users/dev/.venv/bin/python [tox.ini]" for i in range(8))
+    pytest_passes = "\n".join(
+        f"[gw{i % 4}] [ {i:2d}%] PASSED tests/test_api.py::test_ok_{i}" for i in range(60)
+    )
+    items = ", ".join(f"{{'k': {i}, 'v': '{'z' * 40}'}}" for i in range(30))
+    rows = ", ".join(f"{{'c': {i}, 's': '{'w' * 50}'}}" for i in range(25))
+    captured_out = (
+        "---------------------------- Captured stdout call -----------------------------\n"
+        + "\n".join(
+            f"INFO worker processed record id={i} payload={{'user': 'u{i}', 'blob': '{'x' * 80}'}}"
+            for i in range(40)
+        )
+    )
+    captured_err = (
+        "---------------------------- Captured stderr call -----------------------------\n"
+        + "\n".join(f"DEBUG retry attempt {i} connection=Conn({'y' * 60})" for i in range(20))
+    )
+    noisy_pytest_failure = (
+        "============================= test session starts ==============================\n"
+        "platform linux -- Python 3.12.0, pytest-8.3.0, pluggy-1.5.0\n"
+        "created: 8/8 workers\n"
+        f"{xdist_nodes}\n"
+        "scheduling tests via LoadScheduling\n\n"
+        f"{pytest_passes}\n"
+        "=================================== FAILURES ===================================\n"
+        "________________________ test_parse[hypothesis] ________________________\n"
+        "Falsifying example: test_parse(\n"
+        f"    data={{'nested': {{'items': [{items}]}}}},\n"
+        "    flag=True,\n"
+        ")\n"
+        "tests/test_parse.py:88: in test_parse\n"
+        "    assert result == expected\n"
+        f"E   AssertionError: assert {{'id': 1, 'rows': [{rows}]}} == {{'id': 1, 'rows': []}}\n"
+        f"{captured_out}\n"
+        f"{captured_err}\n"
+        "=========================== short test summary info ============================\n"
+        "FAILED tests/test_parse.py::test_parse - AssertionError\n"
+        "========================= 1 failed, 60 passed in 4.2s ==========================\n"
+    )
+    noisy_pyright = "\n".join(
+        [
+            line
+            for i in range(1, 30)
+            for line in (
+                (
+                    f"/Users/me/proj/src/mod_{i}.py:{12 + i}:5 - error: Type "
+                    f'"str | None" is not assignable to declared type "str" '
+                    f"(reportGeneralTypeIssues)"
+                ),
+                f"    /Users/me/proj/src/mod_{i}.py:{12 + i}:5",
+                f"        {12 + i}     token_{i}: str = maybe_token_{i}",
+                "               ~~~~~",
+                (
+                    f"/Users/me/proj/src/mod_{i}.py:{28 + i}:16 - error: Argument of type "
+                    f'"int" cannot be assigned to parameter "user_id" of type "str" '
+                    f"(reportArgumentType)"
+                ),
+                f"    /Users/me/proj/src/mod_{i}.py:{28 + i}:16",
+                f"        {28 + i}     lookup_user_{i}({i})",
+                "                       ~~",
+            )
+        ]
+        + ["58 errors, 0 warnings, 0 informations"]
+    )
+    vitest_lines: list[str] = []
+    for i in range(20):
+        n_tests = 20 if i < 19 else 10
+        vitest_lines.append(f" ✓ src/f{i}.test.ts ({n_tests} tests) 10ms")
+        for j in range(n_tests):
+            vitest_lines.append(f"   ✓ case_{j} (1ms)")
+    vitest_lines.extend(
+        [
+            "",
+            " Test Files  20 passed (20)",
+            "      Tests  390 passed (390)",
+            "   Duration  1.2s",
+        ]
+    )
+    noisy_vitest = "\n".join(vitest_lines)
+
+    def _reduction(raw: int, out: int) -> dict[str, float | int]:
+        return {
+            "raw_tokens": raw,
+            "output_tokens": out,
+            "reduction_pct": round(100 * (raw - out) / raw, 1),
+        }
+
     # A disposable cache makes the demo independent of the user's project and
     # existing history. Always restore an explicit caller-provided cache path.
     previous_cache = os.environ.get("TOKENCUT_CACHE_DIR")
@@ -1663,6 +1812,16 @@ Found 8 errors in 4 files (checked 24 source files)
             )
             mypy_compact = auto_specialize_command_output("mypy src", noisy_mypy) or ""
             npm_test_compact = auto_specialize_command_output("npm test", noisy_npm_test) or ""
+            cargo_compact = auto_specialize_command_output("cargo test", noisy_cargo) or ""
+            go_compact = auto_specialize_command_output("go test -v ./...", noisy_go) or ""
+            nextest_compact = (
+                auto_specialize_command_output("cargo nextest run", noisy_nextest) or ""
+            )
+            pytest_noise_compact = safe_compact_output(
+                noisy_pytest_failure, command="pytest -n auto -v", exit_code=1
+            )
+            pyright_compact = auto_specialize_command_output("npx pyright", noisy_pyright) or ""
+            vitest_compact = auto_specialize_command_output("npx vitest run", noisy_vitest) or ""
             checks = {
                 "complete_failure_tail_preserved": failure_tail in compacted,
                 "original_recovered_exactly": recovered == noisy_pytest,
@@ -1709,6 +1868,46 @@ Found 8 errors in 4 files (checked 24 source files)
                     and "debug payload item=0" not in npm_test_compact
                     and "console lines omitted" in npm_test_compact
                 ),
+                "cargo_keeps_failure_drops_passes": (
+                    "parser::tests::rejects_bad_utf8" in cargo_compact
+                    and "left: Err(InvalidUtf8)" in cargo_compact
+                    and "200 passing tests" in cargo_compact
+                    and "test module0::tests::case_0 ... ok" not in cargo_compact
+                    and "acme_core::parser::parse_10" not in cargo_compact
+                ),
+                "go_keeps_failure_drops_passes": (
+                    "TestPanicRecovery" in go_compact
+                    and "invalid memory address" in go_compact
+                    and "120 passing tests" in go_compact
+                    and "--- PASS: TestOk0" not in go_compact
+                    and "main.helper10" not in go_compact
+                ),
+                "nextest_collapses_passes": (
+                    "24 passing tests" in nextest_compact
+                    and "24 tests run: 24 passed" in nextest_compact
+                    and "acme tests::case_0" not in nextest_compact
+                ),
+                "pytest_noise_keeps_failure_drops_io": (
+                    "FAILURES" in pytest_noise_compact
+                    and "test_parse" in pytest_noise_compact
+                    and "AssertionError" in pytest_noise_compact
+                    and "FAILED tests/test_parse.py::test_parse" in pytest_noise_compact
+                    and "tests/test_parse.py:88" in pytest_noise_compact
+                    and "payload={'user':" not in pytest_noise_compact
+                    and "DEBUG retry attempt" not in pytest_noise_compact
+                    and "gw0 I /Users/dev" not in pytest_noise_compact
+                ),
+                "pyright_keeps_diagnostics_drops_frames": (
+                    "reportGeneralTypeIssues" in pyright_compact
+                    and "reportArgumentType" in pyright_compact
+                    and "58 errors, 0 warnings, 0 informations" in pyright_compact
+                    and "token_1: str = maybe_token_1" not in pyright_compact
+                ),
+                "vitest_collapses_passing_runs": (
+                    "390 passing tests in 20 files" in vitest_compact
+                    and "Tests  390 passed (390)" in vitest_compact
+                    and "case_0" not in vitest_compact
+                ),
             }
         finally:
             if previous_cache is None:
@@ -1719,20 +1918,39 @@ Found 8 errors in 4 files (checked 24 source files)
     raw_tokens = count_tokens(noisy_pytest).openai
     output_tokens = count_tokens(compacted).openai
     checks["smaller_including_recovery_notice"] = output_tokens < raw_tokens
-    git_raw_tokens = count_tokens(noisy_git_diff).openai
-    git_output_tokens = count_tokens(git_diff_compact).openai
-    ruff_raw_tokens = count_tokens(noisy_ruff).openai
-    ruff_output_tokens = count_tokens(ruff_compact).openai
-    docker_raw_tokens = count_tokens(noisy_docker).openai
-    docker_output_tokens = count_tokens(docker_compact).openai
-    tsc_raw_tokens = count_tokens(noisy_tsc).openai
-    tsc_output_tokens = count_tokens(tsc_compact).openai
-    eslint_raw_tokens = count_tokens(noisy_eslint).openai
-    eslint_output_tokens = count_tokens(eslint_compact).openai
-    mypy_raw_tokens = count_tokens(noisy_mypy).openai
-    mypy_output_tokens = count_tokens(mypy_compact).openai
-    npm_raw_tokens = count_tokens(noisy_npm_test).openai
-    npm_output_tokens = count_tokens(npm_test_compact).openai
+    specialized = {
+        "git_diff": _reduction(
+            count_tokens(noisy_git_diff).openai, count_tokens(git_diff_compact).openai
+        ),
+        "ruff": _reduction(count_tokens(noisy_ruff).openai, count_tokens(ruff_compact).openai),
+        "docker_build": _reduction(
+            count_tokens(noisy_docker).openai, count_tokens(docker_compact).openai
+        ),
+        "tsc": _reduction(count_tokens(noisy_tsc).openai, count_tokens(tsc_compact).openai),
+        "eslint": _reduction(
+            count_tokens(noisy_eslint).openai, count_tokens(eslint_compact).openai
+        ),
+        "mypy": _reduction(count_tokens(noisy_mypy).openai, count_tokens(mypy_compact).openai),
+        "npm_test": _reduction(
+            count_tokens(noisy_npm_test).openai, count_tokens(npm_test_compact).openai
+        ),
+        "cargo_test": _reduction(
+            count_tokens(noisy_cargo).openai, count_tokens(cargo_compact).openai
+        ),
+        "go_test": _reduction(count_tokens(noisy_go).openai, count_tokens(go_compact).openai),
+        "nextest": _reduction(
+            count_tokens(noisy_nextest).openai, count_tokens(nextest_compact).openai
+        ),
+        "pytest_noise": _reduction(
+            count_tokens(noisy_pytest_failure).openai, count_tokens(pytest_noise_compact).openai
+        ),
+        "pyright": _reduction(
+            count_tokens(noisy_pyright).openai, count_tokens(pyright_compact).openai
+        ),
+        "vitest": _reduction(
+            count_tokens(noisy_vitest).openai, count_tokens(vitest_compact).openai
+        ),
+    }
     passed = all(checks.values())
     result = {
         "measurement": "local tokenizer estimate on authored fixtures; not model billing or quota",
@@ -1740,57 +1958,7 @@ Found 8 errors in 4 files (checked 24 source files)
         "raw_tokens": raw_tokens,
         "output_tokens": output_tokens,
         "reduction_pct": round(100 * (raw_tokens - output_tokens) / raw_tokens, 1),
-        "specialized": {
-            "git_diff": {
-                "raw_tokens": git_raw_tokens,
-                "output_tokens": git_output_tokens,
-                "reduction_pct": round(
-                    100 * (git_raw_tokens - git_output_tokens) / git_raw_tokens, 1
-                ),
-            },
-            "ruff": {
-                "raw_tokens": ruff_raw_tokens,
-                "output_tokens": ruff_output_tokens,
-                "reduction_pct": round(
-                    100 * (ruff_raw_tokens - ruff_output_tokens) / ruff_raw_tokens, 1
-                ),
-            },
-            "docker_build": {
-                "raw_tokens": docker_raw_tokens,
-                "output_tokens": docker_output_tokens,
-                "reduction_pct": round(
-                    100 * (docker_raw_tokens - docker_output_tokens) / docker_raw_tokens, 1
-                ),
-            },
-            "tsc": {
-                "raw_tokens": tsc_raw_tokens,
-                "output_tokens": tsc_output_tokens,
-                "reduction_pct": round(
-                    100 * (tsc_raw_tokens - tsc_output_tokens) / tsc_raw_tokens, 1
-                ),
-            },
-            "eslint": {
-                "raw_tokens": eslint_raw_tokens,
-                "output_tokens": eslint_output_tokens,
-                "reduction_pct": round(
-                    100 * (eslint_raw_tokens - eslint_output_tokens) / eslint_raw_tokens, 1
-                ),
-            },
-            "mypy": {
-                "raw_tokens": mypy_raw_tokens,
-                "output_tokens": mypy_output_tokens,
-                "reduction_pct": round(
-                    100 * (mypy_raw_tokens - mypy_output_tokens) / mypy_raw_tokens, 1
-                ),
-            },
-            "npm_test": {
-                "raw_tokens": npm_raw_tokens,
-                "output_tokens": npm_output_tokens,
-                "reduction_pct": round(
-                    100 * (npm_raw_tokens - npm_output_tokens) / npm_raw_tokens, 1
-                ),
-            },
-        },
+        "specialized": specialized,
         "checks": checks,
         "passed": passed,
     }
@@ -1800,59 +1968,89 @@ Found 8 errors in 4 files (checked 24 source files)
         table = Table(title="TokenCut: verify your installation")
         table.add_column("Authored fixture", style="cyan")
         table.add_column("Result")
-        table.add_row(
-            "pytest (incl. recovery notice)",
-            f"{raw_tokens:,} -> {output_tokens:,} ({result['reduction_pct']}%)",
-        )
-        table.add_row(
-            "git diff (lockfile + code hunk)",
+        rows_out = [
+            ("pytest (incl. recovery notice)", raw_tokens, output_tokens, result["reduction_pct"]),
             (
-                f"{git_raw_tokens:,} -> {git_output_tokens:,} "
-                f"({result['specialized']['git_diff']['reduction_pct']}%)"
+                "pytest noisy failure (xdist + I/O)",
+                specialized["pytest_noise"]["raw_tokens"],
+                specialized["pytest_noise"]["output_tokens"],
+                specialized["pytest_noise"]["reduction_pct"],
             ),
-        )
-        table.add_row(
-            "ruff check (full frames)",
             (
-                f"{ruff_raw_tokens:,} -> {ruff_output_tokens:,} "
-                f"({result['specialized']['ruff']['reduction_pct']}%)"
+                "git diff (lockfile + code hunk)",
+                specialized["git_diff"]["raw_tokens"],
+                specialized["git_diff"]["output_tokens"],
+                specialized["git_diff"]["reduction_pct"],
             ),
-        )
-        table.add_row(
-            "docker build (BuildKit progress)",
             (
-                f"{docker_raw_tokens:,} -> {docker_output_tokens:,} "
-                f"({result['specialized']['docker_build']['reduction_pct']}%)"
+                "ruff check (full frames)",
+                specialized["ruff"]["raw_tokens"],
+                specialized["ruff"]["output_tokens"],
+                specialized["ruff"]["reduction_pct"],
             ),
-        )
-        table.add_row(
-            "tsc (pretty frames)",
             (
-                f"{tsc_raw_tokens:,} -> {tsc_output_tokens:,} "
-                f"({result['specialized']['tsc']['reduction_pct']}%)"
+                "docker build (BuildKit progress)",
+                specialized["docker_build"]["raw_tokens"],
+                specialized["docker_build"]["output_tokens"],
+                specialized["docker_build"]["reduction_pct"],
             ),
-        )
-        table.add_row(
-            "eslint (codeframe + stacks)",
             (
-                f"{eslint_raw_tokens:,} -> {eslint_output_tokens:,} "
-                f"({result['specialized']['eslint']['reduction_pct']}%)"
+                "cargo test (pass + backtrace)",
+                specialized["cargo_test"]["raw_tokens"],
+                specialized["cargo_test"]["output_tokens"],
+                specialized["cargo_test"]["reduction_pct"],
             ),
-        )
-        table.add_row(
-            "mypy --pretty (frames)",
             (
-                f"{mypy_raw_tokens:,} -> {mypy_output_tokens:,} "
-                f"({result['specialized']['mypy']['reduction_pct']}%)"
+                "go test (pass + goroutine dump)",
+                specialized["go_test"]["raw_tokens"],
+                specialized["go_test"]["output_tokens"],
+                specialized["go_test"]["reduction_pct"],
             ),
-        )
-        table.add_row(
-            "npm test (console dumps)",
             (
-                f"{npm_raw_tokens:,} -> {npm_output_tokens:,} "
-                f"({result['specialized']['npm_test']['reduction_pct']}%)"
+                "cargo nextest (passing run)",
+                specialized["nextest"]["raw_tokens"],
+                specialized["nextest"]["output_tokens"],
+                specialized["nextest"]["reduction_pct"],
             ),
-        )
+            (
+                "vitest (390 passing tests)",
+                specialized["vitest"]["raw_tokens"],
+                specialized["vitest"]["output_tokens"],
+                specialized["vitest"]["reduction_pct"],
+            ),
+            (
+                "npm test (console dumps)",
+                specialized["npm_test"]["raw_tokens"],
+                specialized["npm_test"]["output_tokens"],
+                specialized["npm_test"]["reduction_pct"],
+            ),
+            (
+                "tsc (pretty frames)",
+                specialized["tsc"]["raw_tokens"],
+                specialized["tsc"]["output_tokens"],
+                specialized["tsc"]["reduction_pct"],
+            ),
+            (
+                "eslint (codeframe + stacks)",
+                specialized["eslint"]["raw_tokens"],
+                specialized["eslint"]["output_tokens"],
+                specialized["eslint"]["reduction_pct"],
+            ),
+            (
+                "mypy --pretty (frames)",
+                specialized["mypy"]["raw_tokens"],
+                specialized["mypy"]["output_tokens"],
+                specialized["mypy"]["reduction_pct"],
+            ),
+            (
+                "pyright (frames across files)",
+                specialized["pyright"]["raw_tokens"],
+                specialized["pyright"]["output_tokens"],
+                specialized["pyright"]["reduction_pct"],
+            ),
+        ]
+        for label, raw, out, pct in rows_out:
+            table.add_row(label, f"{raw:,} -> {out:,} ({pct}%)")
         for name, ok in checks.items():
             table.add_row(name.replace("_", " "), "PASS" if ok else "FAIL")
         console.print(table)
