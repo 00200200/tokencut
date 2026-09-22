@@ -38,6 +38,36 @@ Untracked files:
 """
 
 
+SAMPLE_GIT_LOG_PATCH = """commit a1b2c3d4e5f67890abcdef1234567890abcdef12
+Author: Alice Developer <alice@example.com>
+Date:   Mon Sep 15 14:00:00 2026 +0200
+
+    fix(api): guard against empty payloads
+
+diff --git a/src/api.py b/src/api.py
+index 1111111..2222222 100644
+--- a/src/api.py
++++ b/src/api.py
+@@ -10,6 +10,8 @@ class Handler:
+     def handle(self, payload):
+         logger.debug("incoming payload")
++        if not payload:
++            raise ValueError("empty payload")
+         return self.process(payload)
+"""
+
+SAMPLE_GIT_LOG_STAT = """commit a1b2c3d4e5f67890abcdef1234567890abcdef12
+Author: Alice Developer <alice@example.com>
+Date:   Mon Sep 15 14:00:00 2026 +0200
+
+    chore(deps): bump pinned versions
+
+ README.md |  4 +-
+ uv.lock   | 20 ++++++----
+ 2 files changed, 16 insertions(+), 8 deletions(-)
+"""
+
+
 def test_filter_git_log():
     compact = filter_git_log(SAMPLE_GIT_LOG)
     assert "a1b2c3d" in compact
@@ -51,6 +81,41 @@ def test_filter_git_status():
     compact = filter_git_status(SAMPLE_GIT_STATUS)
     assert "tmp/ (4 untracked files)" in compact
     assert "single_file.txt" in compact
+
+
+def test_filter_git_log_keeps_patch_body():
+    compact = filter_git_log(SAMPLE_GIT_LOG_PATCH)
+
+    # The patch is the point of `git log -p`; it must survive compaction.
+    assert "diff --git a/src/api.py b/src/api.py" in compact
+    assert 'raise ValueError("empty payload")' in compact
+    assert "Date:" not in compact
+
+
+def test_filter_git_log_does_not_absorb_diff_context_into_message():
+    compact = filter_git_log(SAMPLE_GIT_LOG_PATCH)
+    subject = compact.splitlines()[0]
+
+    # Context lines are indented like message lines, but are not message text.
+    assert subject == "a1b2c3d [Alice Developer] fix(api): guard against empty payloads"
+    assert "def handle" not in subject
+    assert "logger.debug" not in subject
+
+
+def test_filter_git_log_keeps_stat_block():
+    compact = filter_git_log(SAMPLE_GIT_LOG_STAT)
+
+    assert "a1b2c3d [Alice Developer] chore(deps): bump pinned versions" in compact
+    assert "README.md" in compact
+    assert "2 files changed, 16 insertions(+), 8 deletions(-)" in compact
+
+
+def test_filter_git_log_plain_format_stays_dense():
+    # The headline one-line-per-commit behaviour must not regress.
+    compact = filter_git_log(SAMPLE_GIT_LOG)
+
+    assert len(compact.splitlines()) == 2
+    assert "diff --git" not in compact
 
 
 def test_auto_specialize():
