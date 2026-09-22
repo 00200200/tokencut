@@ -1,6 +1,9 @@
 name: 'tokencut Context Optimizer & Token Gate'
 description: 'Token optimization engine and PR context impact gate for AI coding workflows.'
 author: '00200200'
+branding:
+  icon: 'scissors'
+  color: 'green'
 
 inputs:
   command:
