@@ -1059,11 +1059,19 @@ def stats(
 @app.command()
 def gain(
     history: Annotated[
-        bool, typer.Option("--history", "-H", help="Show recent per-event reductions")
+        bool,
+        typer.Option(
+            "--history",
+            "-H",
+            help="Also show recent per-event reductions (keeps the by-op table)",
+        ),
     ] = False,
     by_op: Annotated[
         bool,
-        typer.Option("--by-op", help="Break down savings by tool family (exec:pytest, …)"),
+        typer.Option(
+            "--by-op",
+            help="Show only the by-tool-family table (skip passthrough unless --passthrough)",
+        ),
     ] = False,
     passthrough: Annotated[
         bool,
@@ -1081,30 +1089,40 @@ def gain(
         sys.stdout.write(json.dumps(report.to_dict(), indent=2) + "\n")
         return
 
-    # Default: summary + by-op; flags narrow the view.
-    show_by_op = by_op or not (history or passthrough)
+    # Additive flags: --history never hides by-op; --by-op alone skips passthrough;
+    # --passthrough alone focuses on near-zero cuts (still shows summary).
+    only_passthrough = passthrough and not by_op and not history
+    show_by_op = by_op or history or not passthrough
     show_history = history
     show_passthrough = passthrough or (not history and not by_op)
 
     console.print(
-        f"[bold]TokenCut gain[/bold] — {report.total_events:,} events, "
-        f"~{report.saved_openai:,} openai-est tokens cut ({report.reduction_pct}%)"
+        f"[bold]TokenCut gain[/bold] — {report.total_events:,} events · "
+        f"{report.raw_openai:,}→{report.compact_openai:,} openai-est · "
+        f"~{report.saved_openai:,} saved ({report.reduction_pct}%)"
     )
     console.print("[dim]Local output estimates only — not model billing or account limits.[/dim]\n")
+
+    if report.total_events == 0:
+        console.print("No events yet — run `tokencut run -- …` (or MCP tools), then re-check gain.")
+        return
 
     if show_by_op and report.by_operation:
         table = Table(title="By tool family")
         table.add_column("Operation")
         table.add_column("Events", justify="right")
+        table.add_column("Raw→Compact", justify="right")
         table.add_column("Saved", justify="right")
         table.add_column("Cut %", justify="right")
+        table.add_column("Note")
         for row in report.by_operation:
-            mark = " · passthrough" if row.passthrough else ""
             table.add_row(
-                row.operation + mark,
+                row.operation,
                 str(row.events),
+                f"{row.raw_openai:,}→{row.compact_openai:,}",
                 f"{row.saved_openai:,}",
                 f"{row.reduction_pct}%",
+                "passthrough" if row.passthrough else "",
             )
         console.print(table)
 
@@ -1112,28 +1130,46 @@ def gain(
         if report.passthrough:
             console.print("\n[bold]Passthrough / near-zero cut[/bold] (add a specializer?)")
             for row in report.passthrough:
-                console.print(f"  • {row.operation}: {row.events} events, {row.reduction_pct}% cut")
+                console.print(
+                    f"  • {row.operation}: {row.events} events, "
+                    f"{row.raw_openai:,}→{row.compact_openai:,} ({row.reduction_pct}% cut)"
+                )
         elif passthrough:
             console.print("\nNo passthrough operations recorded.")
 
     if show_history and report.history:
-        table = Table(title=f"Last {len(report.history)} events")
+        if show_by_op and report.by_operation:
+            console.print()
+        table = Table(title=f"Recent history (last {len(report.history)})")
         table.add_column("When")
         table.add_column("Operation")
-        table.add_column("Raw→Compact")
+        table.add_column("Raw→Compact", justify="right")
+        table.add_column("Saved", justify="right")
         table.add_column("Cut %", justify="right")
+        table.add_column("Delivery")
         for event in report.history:
             when = time.strftime("%Y-%m-%d %H:%M", time.localtime(event.timestamp))
             table.add_row(
                 when,
                 event.operation,
                 f"{event.raw_openai:,}→{event.compact_openai:,}",
+                f"{event.saved_openai:,}",
                 f"{event.reduction_pct}%",
+                event.delivery,
             )
         console.print(table)
     elif show_history:
         console.print("No history yet — run `tokencut run -- …` first.")
 
+    hints: list[str] = []
+    if not show_history:
+        hints.append("tokencut gain --history")
+    if not show_passthrough and report.passthrough:
+        hints.append("tokencut gain --passthrough")
+    if only_passthrough:
+        hints.append("tokencut gain --by-op")
+    if hints:
+        console.print(f"\n[dim]Also: {' · '.join(hints)}[/dim]")
 
 @app.command("share")
 def share_command(

@@ -105,6 +105,62 @@ def test_cli_gain_json(tmp_path, monkeypatch):
     assert "saved_openai" in result.stdout
 
 
+def _seed_gain_events(tmp_path):
+    store = TelemetryStore(db_path=tmp_path / "telemetry.db")
+    store.record(1000, 200, 1000, 200, 1000, 200, operation="exec:pytest")
+    store.record(400, 400, 400, 400, 400, 400, operation="exec:echo")
+    return store
+
+
+def test_cli_gain_default_shows_by_op_and_passthrough(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    _seed_gain_events(tmp_path)
+    result = CliRunner().invoke(app, ["gain"])
+    assert result.exit_code == 0
+    out = result.stdout
+    assert "1000→200" in out or "1,000→200" in out
+    assert "By tool family" in out
+    assert "exec:pytest" in out
+    assert "exec:echo" in out
+    assert "passthrough" in out.lower()
+    assert "Passthrough / near-zero cut" in out
+    assert "tokencut gain --history" in out
+
+
+def test_cli_gain_history_keeps_by_op_and_shows_saved(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    _seed_gain_events(tmp_path)
+    result = CliRunner().invoke(app, ["gain", "--history"])
+    assert result.exit_code == 0
+    out = result.stdout
+    assert "By tool family" in out
+    assert "Recent history" in out
+    assert "exec:pytest" in out
+    assert "Saved" in out
+    # History view stays focused — no passthrough dump, no "also --history" hint.
+    assert "Passthrough / near-zero cut" not in out
+    assert "tokencut gain --history" not in out
+
+
+def test_cli_gain_passthrough_alone_skips_by_op_table(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    _seed_gain_events(tmp_path)
+    result = CliRunner().invoke(app, ["gain", "--passthrough"])
+    assert result.exit_code == 0
+    out = result.stdout
+    assert "By tool family" not in out
+    assert "exec:echo" in out
+    assert "tokencut gain --by-op" in out
+
+
+def test_cli_gain_empty_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    TelemetryStore(db_path=tmp_path / "telemetry.db")
+    result = CliRunner().invoke(app, ["gain"])
+    assert result.exit_code == 0
+    assert "No events yet" in result.stdout
+
+
 def test_cli_run_records_operation_family(tmp_path, monkeypatch):
     monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
     runner = CliRunner()

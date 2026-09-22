@@ -97,9 +97,9 @@ tokencut run -- npx eslint . --format codeframe
 - **Desktop-ready.** MCP for Claude Code / Codex / Cursor / Claude Desktop; Prepare-for-chat clipboard flow; optional macOS pet.
 
 ```sh
-tokencut gain
-tokencut gain --history
-tokencut gain --passthrough
+tokencut gain                 # summary + by tool family + passthrough tips
+tokencut gain --history       # same tables + recent Raw→Compact / Saved rows
+tokencut gain --passthrough   # near-zero cuts only (specializer candidates)
 tokencut prepare --file draft.txt
 ```
 
