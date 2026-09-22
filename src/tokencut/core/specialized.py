@@ -259,6 +259,44 @@ _JS_DIAGNOSTIC = re.compile(
     r"\b(?:FAIL|failed|failure|failures|Error|AssertionError|panic|fatal|warning|timeout)\b|[✕×]",
     re.IGNORECASE,
 )
+# Vitest states a per-file test count; Jest prints a bare suite header instead.
+_JS_FILE_COUNT_RE = re.compile(r"\((\d+)\s+tests?\)")
+_JS_SUITE_RE = re.compile(r"^PASS\s+\S+")
+
+
+def _summarize_js_records(chunk: list[str]) -> str:
+    """Describe a collapsed run without inflating the test count.
+
+    A per-file record already accounts for the individual records printed beneath
+    it, so the two are never added together. Counts that the output does not state
+    are reported as files rather than guessed at.
+    """
+    declared = 0
+    counted_files = 0
+    bare_files = 0
+    individual = 0
+
+    for raw_line in chunk:
+        line = raw_line.strip()
+        match = _JS_FILE_COUNT_RE.search(line)
+        if match:
+            declared += int(match.group(1))
+            counted_files += 1
+        elif _JS_SUITE_RE.match(line):
+            bare_files += 1
+        else:
+            individual += 1
+
+    def plural(count: int, noun: str) -> str:
+        return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+    if not counted_files and not bare_files:
+        return f"{individual} passing tests"
+    if not counted_files:
+        return f"{plural(bare_files, 'passing test file')}"
+    if bare_files:
+        return f"{declared} passing tests and {plural(bare_files, 'more test file')}"
+    return f"{declared} passing tests in {plural(counted_files, 'file')}"
 
 
 def filter_jest_vitest(raw_output: str) -> str:
@@ -280,8 +318,9 @@ def filter_jest_vitest(raw_output: str) -> str:
                 if not _JS_TEST_OK.match(lines[end].strip()):
                     break
                 end += 1
-            passed = end - index
-            result.append(f"[TokenCut: {passed} passing tests, {passed} progress records]")
+            records = end - index
+            summary = _summarize_js_records(lines[index:end])
+            result.append(f"[TokenCut: {summary}, {records} progress records]")
             collapsed = True
             index = end
             continue
@@ -641,9 +680,13 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         cmd_lower.startswith(prefix)
         for prefix in (
             "npm test",
+            "npm run test",
             "pnpm test",
+            "pnpm run test",
             "yarn test",
+            "yarn run test",
             "bun test",
+            "bun run test",
             "vitest",
             "npx vitest",
             "jest",
