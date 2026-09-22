@@ -4,6 +4,8 @@ import SwiftUI
 struct PreparedDraft: Decodable {
     let text: String
     let before, after, difference: Int
+    let percent: Int?
+    let counts: String?
     let changed, redacted: Bool
 }
 
@@ -11,7 +13,7 @@ struct PreparedDraft: Decodable {
     static let shared = PreparationModel()
     @Published var input = "" { didSet { invalidate() } }
     @Published var mode = "conservative" { didSet { invalidate() } }
-    @Published var budget = 1500 { didSet { invalidate() } }
+    @Published var budget = 2000 { didSet { invalidate() } }
     @Published var result: PreparedDraft?
     @Published var busy = false
     @Published var message: String?
@@ -69,6 +71,21 @@ struct PreparedDraft: Decodable {
     func clear() { input = "" }
 }
 
+private func prepareCountsLabel(_ result: PreparedDraft) -> String {
+    if let counts = result.counts, !counts.isEmpty { return counts }
+    let delta = result.after - result.before
+    let percent: Int
+    if result.before == 0 {
+        percent = result.after == 0 ? 0 : 100
+    } else {
+        percent = Int((Double(delta) / Double(result.before) * 100).rounded())
+    }
+    let sign = delta < 0 ? "−" : (delta > 0 ? "+" : "")
+    let deltaText = delta == 0 ? "0" : "\(sign)\(count(abs(delta)))"
+    let percentText = delta == 0 ? "0%" : "\(sign)\(abs(percent))%"
+    return "\(count(result.before)) → \(count(result.after)) (\(deltaText) · \(percentText))"
+}
+
 struct PrepareView: View {
     @ObservedObject var model = PreparationModel.shared
     private let green = Color(red: 0.05, green: 0.57, blue: 0.40)
@@ -86,14 +103,15 @@ struct PrepareView: View {
             }
             HStack(spacing: 12) {
                 Picker("Mode", selection: $model.mode) {
-                    Text("Autonomous optimizer · smart").tag("optimize")
                     Text("Preserve diagnostics").tag("conservative")
+                    Text("Desktop · Claude / Codex").tag("desktop")
+                    Text("Autonomous optimizer · smart").tag("optimize")
                     Text("Conversation summary · lossy").tag("summary")
-                }.frame(maxWidth: 360)
-                if model.mode == "summary" || model.mode == "optimize" {
+                }.frame(maxWidth: 400)
+                if model.mode == "summary" || model.mode == "optimize" || model.mode == "desktop" {
                     Picker("Target", selection: $model.budget) {
                         Text("800 tokens").tag(800)
-                        Text("1,500 tokens").tag(1500)
+                        Text("2,000 tokens").tag(2000)
                         Text("3,000 tokens").tag(3000)
                     }.frame(width: 195)
                 }
@@ -103,17 +121,25 @@ struct PrepareView: View {
             }
             Text(model.mode == "summary"
                  ? "A heuristic summary can miss goals or decisions. Compare both versions before using it. The target is approximate."
+                 : model.mode == "desktop"
+                 ? "Claude Desktop / Codex Desktop: folds tracebacks and HMR spam, stabilizes cache prefixes, then applies the token budget."
                  : model.mode == "optimize"
                  ? "Autonomous self-routing optimizer: converts embedded JSON to TOON, slims diffs and logs, aligns system prompts, and enforces token ceilings."
                  : "Folds recognized log noise and exact repeated lines. Keeps diagnostic tails and unfamiliar text; does not rewrite prose.")
-                .font(.caption).foregroundStyle(model.mode == "summary" ? Color.orange : model.mode == "optimize" ? green : Color.secondary)
+                .font(.caption).foregroundStyle(
+                    model.mode == "summary" ? Color.orange
+                    : (model.mode == "optimize" || model.mode == "desktop") ? green
+                    : Color.secondary
+                )
                 .frame(height: 32, alignment: .topLeading)
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Original").font(.headline)
                         Spacer()
-                        if let result = model.result { Text("\(count(result.before)) tokens").font(.caption).monospacedDigit() }
+                        if let result = model.result {
+                            Text("\(count(result.before)) tokens").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        }
                     }
                     TextEditor(text: $model.input)
                         .font(.system(.body, design: .monospaced))
@@ -126,7 +152,9 @@ struct PrepareView: View {
                     HStack {
                         Text("Preview").font(.headline)
                         Spacer()
-                        if let result = model.result { Text("\(count(result.after)) tokens").font(.caption).monospacedDigit() }
+                        if let result = model.result {
+                            Text("\(count(result.after)) tokens").font(.caption.monospacedDigit()).foregroundStyle(green)
+                        }
                     }
                     ScrollView {
                         Text(model.result?.text ?? "Your preview appears here. Nothing is sent automatically.")
@@ -142,8 +170,9 @@ struct PrepareView: View {
             HStack {
                 if model.busy { ProgressView().controlSize(.small) }
                 if let result = model.result {
-                    Text(result.difference > 0 ? "\(count(result.difference)) fewer tokens in this draft" : "No token reduction for this draft")
-                        .font(.callout.bold()).foregroundStyle(green)
+                    Text(prepareCountsLabel(result))
+                        .font(.callout.bold().monospacedDigit()).foregroundStyle(green)
+                        .accessibilityLabel("Token counts before and after prepare")
                 } else {
                     Text("Local tokenizer estimate · no model calls").font(.caption).foregroundStyle(.secondary)
                 }

@@ -6,9 +6,29 @@ from tokencut.core.safe_filter import safe_compact_output
 from tokencut.metrics.tokenizer import count_tokens
 
 MAX_INPUT_BYTES = 128 * 1024
+# Desktop-friendly summary/optimize ceiling (Claude Desktop / Codex paste targets).
+DEFAULT_PREPARE_BUDGET = 2000
+DEFAULT_PREPARE_MODE = "conservative"
 
 
-def prepare_text(text: str, *, mode: str = "conservative", budget: int = 1500) -> dict:
+def format_prepare_counts(before: int, after: int) -> str:
+    """Human-readable before → after with signed delta and percent for CLI/pet."""
+    delta = after - before
+    if before == 0:
+        percent = 0 if after == 0 else 100
+    else:
+        percent = round(delta / before * 100)
+    if delta == 0:
+        delta_text = "0"
+        percent_text = "0%"
+    else:
+        sign = "−" if delta < 0 else "+"
+        delta_text = f"{sign}{abs(delta):,}"
+        percent_text = f"{sign}{abs(percent)}%"
+    return f"{before:,} → {after:,} ({delta_text} · {percent_text})"
+
+
+def prepare_text(text: str, *, mode: str = DEFAULT_PREPARE_MODE, budget: int = DEFAULT_PREPARE_BUDGET) -> dict:
     if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_INPUT_BYTES:
         raise ValueError("text must be UTF-8 text of at most 128 KiB")
     if mode not in {"conservative", "summary", "optimize", "desktop"}:
@@ -39,11 +59,18 @@ def prepare_text(text: str, *, mode: str = "conservative", budget: int = 1500) -
         candidate = redacted
     before = count_tokens(text).openai
     after = count_tokens(candidate).openai
+    difference = before - after
+    if before == 0:
+        percent = 0 if after == 0 else 100
+    else:
+        percent = round((after - before) / before * 100)
     return {
         "text": candidate,
         "before": before,
         "after": after,
-        "difference": before - after,
+        "difference": difference,
+        "percent": percent,
+        "counts": format_prepare_counts(before, after),
         "changed": candidate != text,
         "redacted": redacted != text,
         "mode": mode,

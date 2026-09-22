@@ -116,15 +116,17 @@ is kept after credential redaction, rather than expanded with summary scaffoldin
 
 ```sh
 tokencut prepare --file draft.txt
-tokencut prepare --file supplied-transcript.md --mode summary --budget 1500 --json
+tokencut prepare --file supplied-transcript.md --mode summary --budget 2000 --json
 ```
 
 CLI input comes from the selected file or stdin, never an implicit clipboard
 read. Both interfaces accept up to 128 KiB of UTF-8 text and make no AI calls.
-Preview counts use `o200k_base`; they do not enter the savings ledger because
-TokenCut does not know whether you use the result. Original drafts stay in app
-memory until cleared or quit; compaction may store a redacted recovery copy in
-the existing cache. No draft text is written to telemetry or statistics exports.
+Preview counts use `o200k_base` and print as `before → after (Δ · %)` on stderr
+and in the pet window; they do not enter the savings ledger because TokenCut
+does not know whether you use the result. The default summary/optimize budget
+is 2,000 tokens. Original drafts stay in app memory until cleared or quit;
+compaction may store a redacted recovery copy in the existing cache. No draft
+text is written to telemetry or statistics exports.
 
 This works **before** sending input to Codex, Claude Desktop (including Chat),
 Claude Code or other CLI clients. Existing chat history stays under the client's
