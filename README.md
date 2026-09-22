@@ -46,7 +46,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 
 ## See it cut
 
-`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, and Ruff / Docker / tsc / ESLint frames compact.
+`tokencut demo` runs offline, makes **no model calls**, and checks that the failure is preserved, the original recovers exactly, unknown output stays unchanged, lockfile diffs fold, Ruff/mypy frames compact, Docker BuildKit progress collapses, and ESLint/tsc diagnostics densify.
 
 ```
                  TokenCut: verify your installation
@@ -59,6 +59,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 │ docker build (BuildKit progress)         │ 18,360 -> 107 (99.4%) │
 │ tsc (pretty frames)                      │ 369 -> 77 (79.1%)  │
 │ eslint (codeframe + stacks)              │ 293 -> 61 (79.2%)  │
+│ mypy --pretty (frames)                   │ 522 -> 259 (50.4%) │
 │ complete failure tail preserved          │ PASS               │
 │ original recovered exactly               │ PASS               │
 │ unknown output unchanged                 │ PASS               │
@@ -67,6 +68,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 │ docker keeps failure drops layer progress│ PASS               │
 │ tsc keeps codes drops frames             │ PASS               │
 │ eslint keeps rules drops frames          │ PASS               │
+│ mypy keeps codes drops frames            │ PASS               │
 │ smaller including recovery notice        │ PASS               │
 └──────────────────────────────────────────┴────────────────────┘
 ```
@@ -79,6 +81,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 | `docker build` BuildKit progress | 18,360 → **107** |
 | `tsc` pretty frames | 369 → **77** |
 | `eslint` codeframe + stacks | 293 → **61** |
+| `mypy` --pretty frames | 522 → **259** |
 
 **88.9% less tool text on the pytest fixture; ~79.1% / 79.2% on noisy tsc / ESLint dumps.** Reproduce with `tokencut demo --json`.
 Local `o200k_base` estimate — not a billing, quality, or subscription-limit claim.
@@ -92,6 +95,7 @@ tokencut run -- ruff check .
 tokencut run -- docker build -t app .
 tokencut run -- npx tsc --noEmit
 tokencut run -- npx eslint . --format codeframe
+tokencut run -- mypy src
 ```
 
 ## What you get
