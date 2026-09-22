@@ -51,14 +51,10 @@ from tokencut.core.rules_linter import (
 from tokencut.core.safe_filter import safe_compact_output
 from tokencut.core.skeleton import extract_symbol_or_range
 from tokencut.core.specialized import (
-<<<<<<< HEAD
-    auto_specialize_command_output,
-    filter_gh_command_output,
-=======
     author_kubectl_describe_fixture,
     author_terraform_plan_fixture,
     auto_specialize_command_output,
->>>>>>> 7b226f2 (feat(specialized): compact kubectl describe/get and terraform plan)
+    filter_gh_command_output,
 )
 from tokencut.core.spill import spill_large_output
 from tokencut.core.telemetry import TelemetryStore, record_text, recovery_engine
