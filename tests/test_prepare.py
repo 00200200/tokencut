@@ -130,3 +130,47 @@ Any observations?
     payload = json.loads(result.stdout)
     assert payload["mode"] == "optimize"
     assert "[id | status]" in payload["text"]
+
+
+def test_format_prepare_counts_shows_before_after_delta_and_percent():
+    from tokencut.core.prepare import format_prepare_counts
+
+    assert format_prepare_counts(4512, 1203) == "4,512 → 1,203 (−3,309 · −73%)"
+    assert format_prepare_counts(100, 100) == "100 → 100 (0 · 0%)"
+    assert format_prepare_counts(0, 0) == "0 → 0 (0 · 0%)"
+    assert format_prepare_counts(50, 80) == "50 → 80 (+30 · +60%)"
+
+
+def test_prepare_text_includes_counts_summary_and_percent():
+    from tokencut.core.prepare import format_prepare_counts
+
+    text = "Downloading unchanged dependency\n" * 250 + "ERROR: installation failed\n"
+    result = prepare_text(text)
+    assert result["difference"] > 0
+    assert result["percent"] == round((result["after"] - result["before"]) / result["before"] * 100)
+    assert result["counts"] == format_prepare_counts(result["before"], result["after"])
+
+
+def test_cli_prepare_stderr_shows_arrow_counts(tmp_path):
+    from tokencut.core.prepare import DEFAULT_PREPARE_BUDGET, format_prepare_counts
+
+    runner = CliRunner()
+    file = tmp_path / "noisy.txt"
+    file.write_text("Downloading unchanged dependency\n" * 250 + "ERROR: keep me\n")
+    result = runner.invoke(app, ["prepare", "--file", str(file)])
+    assert result.exit_code == 0, result.output
+    payload = prepare_text(file.read_text())
+    assert format_prepare_counts(payload["before"], payload["after"]) in result.stderr
+    assert "o200k" in result.stderr
+    assert "usage" in result.stderr.lower()
+    assert DEFAULT_PREPARE_BUDGET == 2000
+
+
+def test_cli_prepare_defaults_use_desktop_budget():
+    import inspect
+
+    from tokencut.cli import prepare_command
+
+    params = inspect.signature(prepare_command).parameters
+    assert params["budget"].default == 2000
+    assert params["mode"].default == "conservative"

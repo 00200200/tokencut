@@ -296,7 +296,7 @@ def prepare_command(
     ] = False,
     budget: Annotated[
         int, typer.Option(min=128, max=8000, help="Summary or optimize target budget")
-    ] = 1500,
+    ] = 2000,
     json_output: Annotated[
         bool, typer.Option("--json", help="Include local preview measurements")
     ] = False,
@@ -325,9 +325,9 @@ def prepare_command(
     else:
         sys.stdout.write(result["text"])
         err_console.print(
-            f"Preview: {result['before']} → {result['after']} local o200k tokens. "
-            "Review before pasting; not counted as usage savings. "
-            "Recognized credentials are redacted; compaction may cache a redacted original."
+            f"Tokens: {result['counts']}  ·  local o200k estimate · not usage savings. "
+            "Review before pasting into Claude Desktop / Codex. "
+            "Credentials are redacted; compaction may cache a redacted original."
         )
         if selected_mode == "summary":
             err_console.print(

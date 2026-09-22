@@ -324,12 +324,16 @@ class Monitor:
     def dispatch(self, request: dict) -> Any:
         operation = request.get("method")
         if operation == "prepare":
-            from tokencut.core.prepare import prepare_text
+            from tokencut.core.prepare import (
+                DEFAULT_PREPARE_BUDGET,
+                DEFAULT_PREPARE_MODE,
+                prepare_text,
+            )
 
             return prepare_text(
                 request.get("text"),
-                mode=request.get("mode", "conservative"),
-                budget=request.get("budget", 1500),
+                mode=request.get("mode", DEFAULT_PREPARE_MODE),
+                budget=request.get("budget", DEFAULT_PREPARE_BUDGET),
             )
         if operation in {"usage", "usage-refresh"}:
             return {"providers": self.usage.snapshot(force=operation == "usage-refresh")}
