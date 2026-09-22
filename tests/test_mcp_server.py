@@ -163,6 +163,23 @@ def test_handle_tokencut_read_auto_skeleton(tmp_path):
     assert "def task_14" in skel_res
 
 
+def test_handle_tokencut_read_session_dedups_identical_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    path = tmp_path / "shared.py"
+    body = "class Shared:\n" + ("    member = 1\n" * 100)
+    path.write_text(body)
+    first = handle_tokencut_read({"path": str(path)})
+    second = handle_tokencut_read({"path": str(path)})
+    assert "class Shared:" in first
+    assert "class Shared:" not in second
+    assert "identical" in second.lower() or "retrieve" in second.lower()
+    assert "tc_" in second
+    assert count_tokens(second).openai < count_tokens(first).openai // 5
+    ref = re.search(r"tc_[a-f0-9]+", second).group()
+    assert ContextCache().retrieve(ref) == body
+
+
+
 def test_handle_tokencut_retrieve():
     res = handle_tokencut_retrieve({"ref_id": "tc_nonexistent"})
     assert "not found" in res

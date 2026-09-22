@@ -114,3 +114,44 @@ def test_cli_run_records_operation_family(tmp_path, monkeypatch):
     with store.connect() as conn:
         ops = [row[0] for row in conn.execute("SELECT operation FROM events").fetchall()]
     assert any(op.startswith("exec:") for op in ops)
+
+
+def test_session_view_remembers_then_returns_short_ref(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    cache = ContextCache(db_path=tmp_path / "cache.db")
+    blob = "module payload\n" + ("line with detail\n" * 80)
+    first = cache.session_view(blob, source="read")
+    assert first == blob
+    second = cache.session_view(blob, source="read")
+    assert second != blob
+    assert "retrieve" in second.lower()
+    assert "tc_" in second
+    assert len(second) < len(blob) // 10
+    # Small payloads stay inline — no forced retrieve round-trip.
+    tiny = "short\n"
+    assert cache.session_view(tiny, source="read") == tiny
+
+
+def test_cli_cat_session_dedups_identical_file_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    path = tmp_path / "big.py"
+    body = "def heavy():\n" + ("    x = 1  # detail\n" * 120)
+    path.write_text(body)
+    runner = CliRunner()
+    first = runner.invoke(app, ["cat", str(path)])
+    second = runner.invoke(app, ["cat", str(path)])
+    assert first.exit_code == 0
+    assert second.exit_code == 0
+    assert "def heavy():" in first.stdout
+    assert "def heavy():" not in second.stdout
+    assert "retrieve" in second.stdout.lower() or "identical" in second.stdout.lower()
+    assert "tc_" in second.stdout
+    from tokencut.metrics.tokenizer import count_tokens
+
+    saved = count_tokens(first.stdout).openai - count_tokens(second.stdout).openai
+    assert saved > 200
+    # Ref still recovers the original extract.
+    import re
+
+    ref = re.search(r"tc_[a-f0-9]+", second.stdout).group()
+    assert ContextCache().retrieve(ref) == body

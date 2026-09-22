@@ -178,6 +178,23 @@ class ContextCache:
             return None
         return f"[TokenCut: identical output already cached — tokencut retrieve {ref_id}]\n"
 
+    def session_view(self, content: str, *, source: str = "read", min_chars: int = 512) -> str:
+        """Return a short ref if this payload was already emitted; else remember and pass through.
+
+        Used by ``tokencut cat`` and MCP ``tokencut_read`` so identical file views in
+        the same session do not re-spend context. Store failures never block the read.
+        """
+        if not content or len(content) < min_chars:
+            return content
+        notice = self.dedup_notice(content, min_chars=min_chars)
+        if notice is not None:
+            return notice
+        try:
+            self.store(content, source=source)
+        except Exception:
+            pass
+        return content
+
     def clear(self):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM output_cache")

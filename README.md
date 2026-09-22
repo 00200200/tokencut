@@ -87,7 +87,7 @@ tokencut run -- npx eslint . --format codeframe
 ## What you get
 
 - **Cut noise, keep the failure.** Specialized filters for pytest, Docker, cargo, go, vitest, eslint, tsc, mypy, pyright, git diff, ruff…
-- **Session dedup + spill.** Same output within ~15 minutes → short cache ref. Payloads over ~20 KiB → file + preview (`TOKENCUT_SPILL_BYTES`).
+- **Session dedup + spill.** Same `run` output *or* identical `cat` / MCP `tokencut_read` view within ~15 minutes → short cache ref. Payloads over ~20 KiB → file + preview (`TOKENCUT_SPILL_BYTES`).
 - **Recover by reference.** Omitted text stays in a local CCR cache: `tokencut retrieve tc_…`
 - **Measure it.** `tokencut gain` — per-tool-family savings and passthrough candidates (not account quotas).
 - **Desktop-ready.** MCP for Claude Code / Codex / Cursor / Claude Desktop; Prepare-for-chat clipboard flow; optional macOS pet.
