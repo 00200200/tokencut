@@ -1601,7 +1601,7 @@ def mcp(
         typer.Option(
             "--profile",
             envvar="TOKENCUT_MCP_PROFILE",
-            help="desktop: 10 tools with optimized schemas for Claude & Codex Desktop; coding: 8 core tools; full: all tools (default)",
+            help="desktop: 11 tools with optimized schemas for Claude & Codex Desktop; coding: 9 core tools; full: all tools (default)",
         ),
     ] = "full",
 ):

@@ -24,10 +24,10 @@ sessions after upgrading. Configuration checks do not prove live-client use.
 
 ### MCP profiles
 
-`tokencut mcp --profile desktop` is optimized for Claude Desktop and Codex Desktop: 10 essential tools with minified schemas (~39% smaller, 3,198 → 1,948 tokens), concise descriptions, traceback internal frame folding, and auto-skeleton large file folding.
+`tokencut mcp --profile desktop` is optimized for Claude Desktop and Codex Desktop: 11 essential tools with minified schemas, concise descriptions, traceback internal frame folding, and auto-skeleton large file folding.
 `tokencut mcp --profile coding` exposes code navigation, guarded edits, command
-execution, targeted reads, recovery, diffs, task memory and statistics: 8 tools.
-`tokencut mcp --profile full` exposes all 15 tools, including tree, JSON, clip,
+execution, targeted reads, recovery, diffs, task memory, statistics and local gain: 9 tools.
+`tokencut mcp --profile full` exposes all tools, including tree, JSON, clip,
 pack, distill, table and optimize. The default remains `full` for existing configurations.
 `TOKENCUT_MCP_PROFILE=desktop` or `coding` is equivalent; an explicit flag takes precedence.
 Profiles affect discovery and dispatch, not CLI availability or command output.

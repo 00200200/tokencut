@@ -7,10 +7,12 @@ import pytest
 from typer.testing import CliRunner
 
 from tokencut.core.cache import ContextCache
+from tokencut.core.telemetry import TelemetryStore
 from tokencut.mcp import server
 from tokencut.mcp.server import (
     handle_tokencut_diff,
     handle_tokencut_exec,
+    handle_tokencut_gain,
     handle_tokencut_json,
     handle_tokencut_read,
     handle_tokencut_retrieve,
@@ -52,10 +54,10 @@ def test_profile_stdio_and_environment_selection(monkeypatch):
     runner = CliRunner()
     for args, env, expected in (
         ([], {}, len(server.TOOLS_DEFINITIONS)),
-        (["--profile", "coding"], {}, 8),
-        ([], {"TOKENCUT_MCP_PROFILE": "coding"}, 8),
-        (["--profile", "desktop"], {}, 10),
-        ([], {"TOKENCUT_MCP_PROFILE": "desktop"}, 10),
+        (["--profile", "coding"], {}, 9),
+        ([], {"TOKENCUT_MCP_PROFILE": "coding"}, 9),
+        (["--profile", "desktop"], {}, 11),
+        ([], {"TOKENCUT_MCP_PROFILE": "desktop"}, 11),
         (["--profile", "full"], {"TOKENCUT_MCP_PROFILE": "coding"}, len(server.TOOLS_DEFINITIONS)),
     ):
         result = runner.invoke(app, ["mcp", *args], input=request, env=env)
@@ -78,7 +80,7 @@ def test_desktop_profile_reduces_schema_text_and_sets_instructions():
     full = count_tokens(json.dumps(server.tool_definitions())).openai
     desktop = count_tokens(json.dumps(server.tool_definitions("desktop"))).openai
     assert desktop < full * 0.70
-    assert len(server.tool_definitions("desktop")) == 10
+    assert len(server.tool_definitions("desktop")) == 11
     instructions = server.server_instructions("desktop")
     assert "Desktop Profile" in instructions
     assert "Claude Desktop & Codex Desktop" in instructions
@@ -300,6 +302,47 @@ def test_handle_tokencut_stats():
     assert "Estimated net text reduction" in stats
 
 
+def test_coding_profile_includes_gain_tool():
+    listed = server._respond({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, profile="coding")
+    names = {tool["name"] for tool in listed["result"]["tools"]}
+    assert "tokencut_gain" in names
+    assert "tokencut_gain" in server.CODING_TOOLS
+    gain_def = next(t for t in listed["result"]["tools"] if t["name"] == "tokencut_gain")
+    assert (
+        "billing" in gain_def["description"].lower() or "quota" in gain_def["description"].lower()
+    )
+    assert gain_def["annotations"]["readOnlyHint"] is True
+
+
+def test_handle_tokencut_gain_json(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    store = TelemetryStore(db_path=tmp_path / "telemetry.db")
+    store.record(1000, 200, 1000, 200, 1000, 200, operation="exec:pytest")
+    store.record(400, 400, 400, 400, 400, 400, operation="exec:echo")
+
+    output = handle_tokencut_gain({"history": True, "limit": 10})
+    data = json.loads(output)
+    assert data["total_events"] == 2
+    assert data["saved_openai"] == 800
+    assert any(row["operation"] == "exec:pytest" for row in data["by_operation"])
+    assert any(row["passthrough"] for row in data["passthrough"])
+    assert "billing" in data["measurement"].lower() or "quota" in data["measurement"].lower()
+    assert len(data["history"]) == 2
+
+    via_rpc = server._respond(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": "tokencut_gain", "arguments": {"passthrough": True}},
+        },
+        profile="coding",
+    )
+    assert via_rpc["result"]["isError"] is False
+    rpc_data = json.loads(via_rpc["result"]["content"][0]["text"])
+    assert any(row["operation"] == "exec:echo" for row in rpc_data["passthrough"])
+
+
 def test_mcp_stdio_protocol_loop(monkeypatch):
     requests = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
@@ -341,6 +384,7 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
         "tokencut_table",
         "tokencut_optimize",
         "tokencut_stats",
+        "tokencut_gain",
     }
     assert responses[2]["id"] == 3
     assert "tokencut Session Savings" in responses[2]["result"]["content"][0]["text"]
