@@ -443,6 +443,95 @@ def filter_ruff(raw_output: str) -> str:
     return "\n".join(result)
 
 
+# BuildKit / docker build print one progress stream per step (`#12 ...`). Collapse
+# routine progress; once a failure or final image tag appears, keep it intact.
+_DOCKER_STEP_RE = re.compile(r"^#\d+\s")
+_DOCKER_KEEP_RE = re.compile(
+    r"(?i)(?:\berror\b|failed to solve|successfully tagged|"
+    r"writing image sha256|naming to\s+\S+)"
+)
+
+
+def filter_docker_build(raw_output: str) -> str:
+    """Collapse BuildKit layer progress while keeping failures and final tags."""
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    if not any(_DOCKER_STEP_RE.match(line) for line in lines):
+        return raw_output
+
+    result: list[str] = []
+    progress = 0
+    collapsed = False
+
+    def flush_progress() -> None:
+        nonlocal progress, collapsed
+        if progress:
+            result.append(f"[TokenCut: {progress} docker build progress lines]")
+            progress = 0
+            collapsed = True
+
+    for index, line in enumerate(lines):
+        if _DOCKER_KEEP_RE.search(line):
+            flush_progress()
+            # Failures and their trailing detail blocks stay verbatim.
+            if re.search(r"(?i)\berror\b|failed to solve", line):
+                result.extend(lines[index:])
+                collapsed = True
+                break
+            result.append(line)
+            continue
+
+        if _DOCKER_STEP_RE.match(line):
+            progress += 1
+            continue
+
+        flush_progress()
+        result.append(line)
+
+    flush_progress()
+    if not collapsed:
+        return raw_output
+    return "\n".join(result)
+
+
+# Pyright/basedpyright print a dense header, then indented path + source + caret.
+_PYRIGHT_DIAG_RE = re.compile(
+    r"^(\S+?:\d+:\d+ - (?:error|warning|information): .+)$",
+    re.IGNORECASE,
+)
+_PYRIGHT_SUMMARY_RE = re.compile(
+    r"^\d+ errors?, \d+ warnings?, \d+ informations?\s*$",
+    re.IGNORECASE,
+)
+
+
+def filter_pyright(raw_output: str) -> str:
+    """Compact Pyright source frames into dense diagnostic headers."""
+    lines = raw_output.splitlines()
+    if not any(_PYRIGHT_DIAG_RE.match(line.strip()) for line in lines):
+        return raw_output
+
+    result: list[str] = []
+    changed = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _PYRIGHT_DIAG_RE.match(stripped) or _PYRIGHT_SUMMARY_RE.match(stripped):
+            result.append(stripped)
+            continue
+        if line[:1].isspace():
+            changed = True
+            continue
+        result.append(stripped)
+
+    if not changed:
+        return raw_output
+    return "\n".join(result)
+
+
 def filter_json_output(raw_output: str, command: str = "") -> str | None:
     """Automatically slim large or verbose JSON output from commands.
 
@@ -722,6 +811,10 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return filter_tsc(raw_output)
     elif _is_ruff_command(cmd_lower):
         return filter_ruff(raw_output)
+    elif _is_docker_build_command(cmd_lower):
+        return filter_docker_build(raw_output)
+    elif _is_pyright_command(cmd_lower):
+        return filter_pyright(raw_output)
 
     # Check for large or verbose JSON output
     json_result = filter_json_output(raw_output, command=command)
@@ -744,3 +837,38 @@ def _is_ruff_command(cmd_lower: str) -> bool:
     if cmd_lower == "ruff" or any(cmd_lower.startswith(prefix) for prefix in prefixes):
         return True
     return False
+
+
+def _is_docker_build_command(cmd_lower: str) -> bool:
+    """Recognize docker/podman build and buildx build forms."""
+    prefixes = (
+        "docker build",
+        "docker buildx build",
+        "docker-compose build",
+        "docker compose build",
+        "podman build",
+        "podman buildx build",
+    )
+    return any(cmd_lower == prefix or cmd_lower.startswith(prefix + " ") for prefix in prefixes)
+
+
+def _is_pyright_command(cmd_lower: str) -> bool:
+    """Recognize Pyright and basedpyright, including npx/pnpm/yarn launchers."""
+    prefixes = (
+        "pyright",
+        "basedpyright",
+        "npx pyright",
+        "npx basedpyright",
+        "pnpm pyright",
+        "pnpm exec pyright",
+        "yarn pyright",
+        "yarn exec pyright",
+        "bunx pyright",
+        "bunx basedpyright",
+    )
+    return any(
+        cmd_lower == prefix
+        or cmd_lower.startswith(prefix + " ")
+        or cmd_lower.startswith(prefix + "\t")
+        for prefix in prefixes
+    )
