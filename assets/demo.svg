@@ -1,90 +1,47 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 500" width="880" height="500">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" width="880" height="420" role="img" aria-labelledby="title">
+  <title id="title">tokencut demo — measured fixture output</title>
   <defs>
     <style>
-      @keyframes pulseBorder {
-        0%, 100% { stroke: #00f5a0; stroke-opacity: 0.9; filter: drop-shadow(0 0 8px rgba(0, 245, 160, 0.4)); }
-        50% { stroke: #00d9f5; stroke-opacity: 0.5; filter: drop-shadow(0 0 2px rgba(0, 217, 245, 0.2)); }
-      }
-      @keyframes cursorBlink {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0; }
-      }
       .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-      .pulsing-box { animation: pulseBorder 3s infinite ease-in-out; }
-      .cursor { animation: cursorBlink 0.9s infinite; }
+      @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+      .cursor { animation: blink 0.9s infinite; }
     </style>
     <linearGradient id="termBg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0a0e17"/>
-      <stop offset="100%" stop-color="#05080f"/>
+      <stop offset="0%" stop-color="#0a1418"/>
+      <stop offset="100%" stop-color="#050b10"/>
     </linearGradient>
-    <linearGradient id="cutGradient" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#092823"/>
-      <stop offset="100%" stop-color="#0d1f30"/>
-    </linearGradient>
-    <linearGradient id="footerBg" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#0d1424"/>
-      <stop offset="100%" stop-color="#09101c"/>
-    </linearGradient>
-    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
-      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.6"/>
-    </filter>
   </defs>
+  <rect x="16" y="12" width="848" height="396" rx="12" fill="url(#termBg)" stroke="#1e3a34" stroke-width="1.5"/>
+  <rect x="16" y="12" width="848" height="36" rx="12" fill="#0d1c20"/>
+  <rect x="16" y="36" width="848" height="12" fill="#0d1c20"/>
+  <circle cx="40" cy="30" r="5" fill="#ff5f56"/>
+  <circle cx="60" cy="30" r="5" fill="#ffbd2e"/>
+  <circle cx="80" cy="30" r="5" fill="#27c93f"/>
+  <text x="440" y="34" text-anchor="middle" class="mono" font-size="12" fill="#6f9588">tokencut demo — offline, no model calls</text>
 
-  <!-- Terminal Window -->
-  <g filter="url(#shadow)">
-    <rect x="20" y="16" width="840" height="468" rx="12" fill="url(#termBg)" stroke="#1a2334" stroke-width="1.5"/>
-    <!-- Titlebar -->
-    <rect x="20" y="16" width="840" height="36" rx="12" fill="#101726"/>
-    <rect x="20" y="40" width="840" height="12" fill="#101726"/>
-    <circle cx="44" cy="34" r="5.5" fill="#ff5f56"/>
-    <circle cx="64" cy="34" r="5.5" fill="#ffbd2e"/>
-    <circle cx="84" cy="34" r="5.5" fill="#27c93f"/>
-    <text x="440" y="38" text-anchor="middle" fill="#5a6a88" font-size="11.5" font-weight="600" class="mono">tokencut run — pytest suite with live compaction</text>
-  </g>
+  <g class="mono" font-size="13" transform="translate(40, 78)">
+    <text x="0" y="0" fill="#2ec79b">$</text>
+    <text x="18" y="0" fill="#eaf7f3">tokencut demo</text>
+    <rect x="148" y="-11" width="7" height="14" fill="#2ec79b" class="cursor"/>
 
-  <!-- Prompt Command Line -->
-  <g transform="translate(45, 84)">
-    <text x="0" y="0" fill="#00f5a0" font-size="13" font-weight="bold" class="mono">michal@macbook</text>
-    <text x="125" y="0" fill="#5a6a88" font-size="13" class="mono">~/Projects/tokencut</text>
-    <text x="300" y="0" fill="#e1e7f5" font-size="13" font-weight="bold" class="mono">$</text>
-    <text x="318" y="0" fill="#ffffff" font-size="13" font-weight="600" class="mono">tokencut run pytest -v tests/</text>
-    <rect x="585" y="-11" width="7" height="15" fill="#00f5a0" class="cursor"/>
-  </g>
+    <text x="0" y="36" fill="#6f9588">TokenCut: verify your installation</text>
+    <text x="0" y="64" fill="#9bb8ae">docker build ……………… </text>
+    <text x="320" y="64" fill="#b3f5cd" font-weight="700">18,360 → 107 (99.4%)</text>
+    <text x="0" y="88" fill="#9bb8ae">go test ……………………… </text>
+    <text x="320" y="88" fill="#b3f5cd" font-weight="700">3,281 → 64 (98.0%)</text>
+    <text x="0" y="112" fill="#9bb8ae">cargo test ………………… </text>
+    <text x="320" y="112" fill="#b3f5cd" font-weight="700">3,795 → 185 (95.1%)</text>
+    <text x="0" y="136" fill="#9bb8ae">pytest noisy ……………… </text>
+    <text x="320" y="136" fill="#b3f5cd" font-weight="700">5,111 → 348 (93.2%)</text>
+    <text x="0" y="160" fill="#9bb8ae">pytest recovery ………… </text>
+    <text x="320" y="160" fill="#b3f5cd" font-weight="700">1,562 → 174 (88.9%)</text>
+    <text x="0" y="184" fill="#9bb8ae">vitest / eslint / tsc …… </text>
+    <text x="320" y="184" fill="#b3f5cd" font-weight="700">up to 98.8% / 79%</text>
 
-  <!-- Step 1: Initial passes -->
-  <g transform="translate(45, 115)">
-    <text x="0" y="0" fill="#38bdf8" font-size="11.5" class="mono">collected 92 items</text>
-    <text x="0" y="20" fill="#718096" font-size="11.5" class="mono">tests/test_auth.py::test_login <tspan fill="#34d399">PASSED</tspan> [  1%]</text>
-    <text x="0" y="38" fill="#718096" font-size="11.5" class="mono">tests/test_auth.py::test_token_expiry <tspan fill="#34d399">PASSED</tspan> [  2%]</text>
-    <text x="0" y="56" fill="#718096" font-size="11.5" class="mono">tests/test_api.py::test_get_user <tspan fill="#34d399">PASSED</tspan> [  3%]</text>
-  </g>
+    <rect x="0" y="210" width="800" height="44" rx="8" fill="#0d2a26" stroke="#2ec79b" stroke-width="1"/>
+    <text x="16" y="237" fill="#7dffb3" font-weight="700">failure preserved · original recoverable · PASS</text>
 
-  <!-- Step 2: tokencut smart omission box -->
-  <g transform="translate(45, 194)">
-    <rect width="785" height="36" rx="6" fill="url(#cutGradient)" stroke="#00f5a0" stroke-width="1.2" class="pulsing-box"/>
-    <circle cx="20" cy="18" r="4" fill="#00f5a0"/>
-    <text x="36" y="23" fill="#6ee7b7" font-size="12" font-weight="bold" class="mono">[... 86 passing tests omitted by tokencut (-82.5% tokens) · Ref: tc_8f2a1b ...]</text>
-  </g>
-
-  <!-- Step 3: Exact Failure & Traceback preserved -->
-  <g transform="translate(45, 252)">
-    <text x="0" y="0" fill="#f87171" font-size="11.5" font-weight="bold" class="mono">=================================== FAILURES ===================================</text>
-    <text x="0" y="18" fill="#fca5a5" font-size="11.5" font-weight="bold" class="mono">________________________________ test_checkout _________________________________</text>
-    <text x="0" y="36" fill="#e2e8f0" font-size="11.5" class="mono">&gt;   assert gateway.charge(amount=100) == 'SUCCESS'</text>
-    <text x="0" y="54" fill="#f87171" font-size="11.5" font-weight="bold" class="mono">E   AssertionError: assert 'TIMEOUT' == 'SUCCESS'</text>
-    <text x="0" y="72" fill="#8ea2c6" font-size="11" class="mono">tests/test_checkout.py:42: AssertionError</text>
-    <text x="0" y="90" fill="#f87171" font-size="11.5" class="mono">FAILED tests/test_checkout.py::test_checkout - AssertionError</text>
-  </g>
-
-  <!-- Step 4: tokencut Telemetry Footer -->
-  <g transform="translate(45, 368)">
-    <rect width="785" height="56" rx="8" fill="url(#footerBg)" stroke="#1c2840" stroke-width="1"/>
-    
-    <!-- Line 1: Main metrics -->
-    <text x="18" y="24" fill="#00f5a0" font-size="13" font-weight="bold" class="mono">tokencut</text>
-    <text x="92" y="24" fill="#e2e8f0" font-size="12" class="mono">saved ~14,280 tokens (-82.5%) | Claude: <tspan fill="#38bdf8">-15,708</tspan> · GPT-4o: <tspan fill="#38bdf8">-14,280</tspan></text>
-    
-    <!-- Line 2: Details & reversibility -->
-    <text x="18" y="44" fill="#8ea2c6" font-size="11.5" class="mono">est. saved: <tspan fill="#facc15" font-weight="bold">$0.047</tspan> · <tspan fill="#34d399">100% Traceback Intact</tspan> · Reversible Ref ID: <tspan fill="#38bdf8">tc_8f2a1b</tspan></text>
+    <text x="0" y="290" fill="#5d7a71" font-size="11">Local o200k_base estimates — not billing, quality, or subscription-limit claims.</text>
+    <text x="0" y="312" fill="#5d7a71" font-size="11">Reproduce: tokencut demo --json</text>
   </g>
 </svg>

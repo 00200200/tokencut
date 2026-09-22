@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="120" viewBox="0 0 960 120" role="img" aria-labelledby="title">
+  <title id="title">Works with Claude Code, Codex, Cursor, Claude Desktop, OpenCode, and common CLIs</title>
+  <defs>
+    <style>
+      .sans { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    </style>
+  </defs>
+  <rect width="960" height="120" rx="16" fill="#07141a" stroke="#1e3a34" stroke-width="1.2"/>
+  <text x="28" y="38" class="sans" font-size="13" font-weight="700" letter-spacing="2" fill="#6f9588">HARNESSES · TOOLS</text>
+  <g class="mono" font-size="13" font-weight="600" fill="#eaf7f3">
+    <rect x="28" y="56" width="108" height="36" rx="8" fill="#0d2a26" stroke="#2ec79b" stroke-width="1"/>
+    <text x="82" y="79" text-anchor="middle">Claude</text>
+    <rect x="146" y="56" width="96" height="36" rx="8" fill="#0d2a26" stroke="#274540"/>
+    <text x="194" y="79" text-anchor="middle">Codex</text>
+    <rect x="252" y="56" width="96" height="36" rx="8" fill="#0d2a26" stroke="#274540"/>
+    <text x="300" y="79" text-anchor="middle">Cursor</text>
+    <rect x="358" y="56" width="118" height="36" rx="8" fill="#0d2a26" stroke="#274540"/>
+    <text x="417" y="79" text-anchor="middle">Desktop</text>
+    <rect x="486" y="56" width="72" height="36" rx="8" fill="#102018" stroke="#274540"/>
+    <text x="522" y="79" text-anchor="middle" fill="#b3f5cd">pytest</text>
+    <rect x="568" y="56" width="72" height="36" rx="8" fill="#102018" stroke="#274540"/>
+    <text x="604" y="79" text-anchor="middle" fill="#b3f5cd">docker</text>
+    <rect x="650" y="56" width="64" height="36" rx="8" fill="#102018" stroke="#274540"/>
+    <text x="682" y="79" text-anchor="middle" fill="#b3f5cd">cargo</text>
+    <rect x="724" y="56" width="52" height="36" rx="8" fill="#102018" stroke="#274540"/>
+    <text x="750" y="79" text-anchor="middle" fill="#b3f5cd">go</text>
+    <rect x="786" y="56" width="64" height="36" rx="8" fill="#102018" stroke="#274540"/>
+    <text x="818" y="79" text-anchor="middle" fill="#b3f5cd">eslint</text>
+    <rect x="860" y="56" width="72" height="36" rx="8" fill="#102018" stroke="#274540"/>
+    <text x="896" y="79" text-anchor="middle" fill="#b3f5cd">mypy</text>
+  </g>
+</svg>
