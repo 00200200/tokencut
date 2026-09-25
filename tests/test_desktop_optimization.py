@@ -5,6 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from usagetrim.cli import app
+from usagetrim.core import native_hooks
 from usagetrim.core.doctor import (
     configure_codex_mcp,
 )
@@ -394,14 +395,25 @@ def test_version_flag_matches_package_and_release_metadata():
     assert claude_plugin["version"] == codex_plugin["version"] == __version__
     assert {p["version"] for p in claude_market["plugins"]} == {__version__}
     bundle = tomllib.loads((root / "extensions/claude-desktop/pyproject.toml").read_text())
-    assert bundle["project"]["dependencies"] == [f"usagetrim=={__version__}"]
+    assert bundle["project"]["dependencies"] == [f"usagetrim @ {_release_wheel()}"]
 
 
-def test_app_plugins_launch_the_published_mcp_server():
+def _release_wheel():
+    from usagetrim import __version__
+
+    # Pinned GitHub release wheel: no PyPI account or git checkout needed, cached by uv.
+    return (
+        "https://github.com/00200200/usagetrim/releases/download/"
+        f"v{__version__}/usagetrim-{__version__}-py3-none-any.whl"
+    )
+
+
+def test_app_plugins_launch_the_released_mcp_server():
     root = Path(__file__).resolve().parents[1]
     plugin = root / "plugins/usagetrim"
     servers = json.loads((plugin / ".mcp.json").read_text())["mcpServers"]
-    assert servers == {"usagetrim": {"command": "uvx", "args": ["usagetrim", "mcp"]}}
+    launch = ["--from", _release_wheel(), "usagetrim", "mcp"]
+    assert servers == {"usagetrim": {"command": "uvx", "args": launch}}
     codex = json.loads((plugin / ".codex-plugin/plugin.json").read_text())
     assert (plugin / codex["interface"]["logo"]).is_file()
     for market in (".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"):
@@ -411,7 +423,9 @@ def test_app_plugins_launch_the_published_mcp_server():
         ]
         assert all((root / path).resolve() == plugin for path in paths)
     hooks = json.loads((plugin / ".claude-plugin/plugin.json").read_text())["hooks"]
-    assert hooks["PostToolUse"][0]["hooks"][0]["command"].startswith("uvx usagetrim hook-filter")
+    expected = f"uvx --from {_release_wheel()} usagetrim hook-filter --client claude"
+    assert [e["matcher"] for e in hooks["PostToolUse"]] == list(native_hooks.HOOK_MATCHERS)
+    assert {e["hooks"][0]["command"] for e in hooks["PostToolUse"]} == {expected}
 
 
 def test_desktop_extension_lists_the_desktop_profile_tools():
@@ -431,3 +445,27 @@ def test_install_mcpb_copies_a_packable_bundle(tmp_path):
     ok, msg = write_claude_desktop_extension(tmp_path)
     assert ok, msg
     assert all((tmp_path / name).is_file() for name in EXTENSION_FILES)
+
+
+def test_cheap_explore_overrides_explore_once_and_never_clobbers(tmp_path):
+    from usagetrim.core.doctor import install_cheap_explore
+
+    ok, path = install_cheap_explore(tmp_path)
+    assert ok
+    text = Path(path).read_text()
+    assert "name: Explore\n" in text and "model: haiku\n" in text
+    assert install_cheap_explore(tmp_path) == (True, path)  # idempotent
+    Path(path).write_text("---\nname: Explore\nmodel: sonnet\n---\nmine\n")
+    ok, msg = install_cheap_explore(tmp_path)
+    assert not ok and "leaving your Explore agent unchanged" in msg
+    assert Path(path).read_text().endswith("mine\n")
+
+
+def test_plugin_agents_run_on_haiku_and_stay_read_only():
+    root = Path(__file__).resolve().parents[1] / "plugins/usagetrim"
+    for name in ("scout", "runner"):
+        front = (root / f"agents/{name}.md").read_text().split("---")[1]
+        assert f"name: {name}" in front and "model: haiku" in front
+        assert "Edit" not in front and "Write" not in front
+    style = (root / "output-styles/lean.md").read_text()
+    assert "keep-coding-instructions: true" in style

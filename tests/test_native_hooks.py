@@ -163,7 +163,12 @@ def test_install_preserves_hooks_permissions_and_original_backup(tmp_path, execu
     assert installed["permissions"] == original["permissions"]
     assert installed["env"] == original["env"]
     assert installed["hooks"]["PreToolUse"] == original["hooks"]["PreToolUse"]
-    assert installed["hooks"]["PostToolUse"][:-1] == original["hooks"]["PostToolUse"]
+    added = len(native_hooks.HOOK_MATCHERS)
+    assert installed["hooks"]["PostToolUse"][:-added] == original["hooks"]["PostToolUse"]
+    assert [e["matcher"] for e in installed["hooks"]["PostToolUse"][-added:]] == [
+        "^Bash$",
+        "^mcp__",
+    ]
     assert stat.S_IMODE(settings.stat().st_mode) == 0o640
     backups = list(tmp_path.glob("settings.json.pre-usagetrim-*"))
     assert len(backups) == 1

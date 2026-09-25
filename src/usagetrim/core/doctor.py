@@ -335,7 +335,9 @@ def check_codex_mcp(config_file: Path | None = None) -> DiagnosticItem:
             "usagetrim"
         ]:
             raise ValueError(
-                "uvx usagetrim resolves an unrelated PyPI package; use your local installation"
+                "uvx usagetrim needs a PyPI release, which does not exist yet; use "
+                "`uvx --from git+https://github.com/00200200/usagetrim usagetrim` "
+                "or your local installation"
             )
         return DiagnosticItem(
             name="Codex MCP Config",
@@ -551,16 +553,42 @@ EXTENSION_FILES = (
 )
 
 
-def _extension_source() -> Path | None:
+def _resource(wheel_rel: str, repo_rel: str) -> Path | None:
     here = Path(__file__).resolve()
-    # Wheel installs carry the bundle inside the package; a checkout keeps it at the root.
-    for candidate in (
-        here.parents[1] / "extensions" / "claude-desktop",
-        here.parents[3] / "extensions" / "claude-desktop",
-    ):
-        if (candidate / "manifest.json").is_file():
+    # Wheel installs carry resources inside the package; a checkout keeps them at the root.
+    for candidate in (here.parents[1] / wheel_rel, here.parents[3] / repo_rel):
+        if candidate.exists():
             return candidate
     return None
+
+
+def _extension_source() -> Path | None:
+    source = _resource("extensions/claude-desktop", "extensions/claude-desktop")
+    return source if source and (source / "manifest.json").is_file() else None
+
+
+def install_cheap_explore(agents_dir: Path | None = None) -> tuple[bool, str]:
+    """Run Claude Code's Explore subagent on Haiku via a user-scope override.
+
+    Since Claude Code v2.1.198 the built-in Explore inherits the main model, so
+    exploration on Opus costs Opus usage. A user agent named ``Explore`` takes
+    precedence over the built-in; an existing file is never overwritten.
+    """
+    source = _resource("agents/scout.md", "plugins/usagetrim/agents/scout.md")
+    if source is None:
+        return False, "The scout agent definition is missing from this install."
+    text = source.read_text(encoding="utf-8").replace("name: scout\n", "name: Explore\n", 1)
+    dest = (agents_dir or Path.home() / ".claude" / "agents") / "Explore.md"
+    try:
+        if dest.exists():
+            if dest.read_text(encoding="utf-8") == text:
+                return True, str(dest)
+            return False, f"{dest} already exists; leaving your Explore agent unchanged."
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding="utf-8")
+        return True, str(dest)
+    except OSError as exc:
+        return False, f"Could not write {dest}: {exc}"
 
 
 def write_claude_desktop_extension(target_dir: Path | None = None) -> tuple[bool, str]:

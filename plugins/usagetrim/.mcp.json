@@ -2,7 +2,12 @@
   "mcpServers": {
     "usagetrim": {
       "command": "uvx",
-      "args": ["usagetrim", "mcp"]
+      "args": [
+        "--from",
+        "https://github.com/00200200/usagetrim/releases/download/v0.4.0/usagetrim-0.4.0-py3-none-any.whl",
+        "usagetrim",
+        "mcp"
+      ]
     }
   }
 }

@@ -13,8 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from usagetrim.core.companion_state import already_wrapped, paused
+from usagetrim.core.mcp_output import compact_mcp_response
 from usagetrim.core.safe_filter import safe_compact_output
 from usagetrim.core.telemetry import record_text
+
+# Bash output, and results of other MCP servers (compacted losslessly).
+HOOK_MATCHERS = ("^Bash$", "^mcp__")
 
 
 def claude_post_tool_use(payload: Any) -> dict[str, Any]:
@@ -27,7 +31,17 @@ def claude_post_tool_use(payload: Any) -> dict[str, Any]:
     start = time.perf_counter()
     if paused() or not isinstance(payload, dict):
         return {}
-    if payload.get("hook_event_name") != "PostToolUse" or payload.get("tool_name") != "Bash":
+    if payload.get("hook_event_name") != "PostToolUse":
+        return {}
+    tool = payload.get("tool_name")
+    # Plugin installs name servers "plugin_usagetrim_usagetrim"; their output is already compact.
+    if (
+        isinstance(tool, str)
+        and tool.startswith("mcp__")
+        and "usagetrim" not in tool.split("__")[1]
+    ):
+        return _claude_mcp_output(payload, tool, start)
+    if tool != "Bash":
         return {}
     original = payload.get("tool_response")
     tool_input = payload.get("tool_input")
@@ -47,13 +61,7 @@ def claude_post_tool_use(payload: Any) -> dict[str, Any]:
             result[stream] = safe_compact_output(text, command=command)
     if result == original:
         return {}
-    identity = payload.get("tool_use_id")
-    session = payload.get("session_id")
-    event_id = (
-        "hook:" + hashlib.sha256(f"{session}:{identity}".encode()).hexdigest()
-        if isinstance(identity, str) and isinstance(session, str)
-        else None
-    )
+    event_id = _event_id(payload)
     record_text(
         "".join(original.get(k) or "" for k in ("stdout", "stderr")),
         "".join(result.get(k) or "" for k in ("stdout", "stderr")),
@@ -62,6 +70,46 @@ def claude_post_tool_use(payload: Any) -> dict[str, Any]:
         delivery="prepared",
         event_id=event_id,
         duration_s=time.perf_counter() - start,
+    )
+    return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "updatedToolOutput": result}}
+
+
+def _event_id(payload: dict[str, Any]) -> str | None:
+    identity = payload.get("tool_use_id")
+    session = payload.get("session_id")
+    if isinstance(identity, str) and isinstance(session, str):
+        return "hook:" + hashlib.sha256(f"{session}:{identity}".encode()).hexdigest()
+    return None
+
+
+def _texts(response: Any) -> str:
+    if isinstance(response, str):
+        return response
+    if isinstance(response, list):
+        return "".join(_texts(block) for block in response)
+    if isinstance(response, dict):
+        if response.get("type") == "text" and isinstance(response.get("text"), str):
+            return response["text"]
+        return _texts(response.get("content"))
+    return ""
+
+
+def _claude_mcp_output(payload: dict[str, Any], tool: str, start: float) -> dict[str, Any]:
+    """Losslessly compact another MCP server's result; never touch UsageTrim's own."""
+    original = payload.get("tool_response")
+    result = compact_mcp_response(original)
+    if result == original:
+        return {}
+    server = tool.split("__")[1] if tool.count("__") >= 2 else "mcp"
+    record_text(
+        _texts(original),
+        _texts(result),
+        client="claude-code",
+        project=payload.get("cwd"),
+        delivery="prepared",
+        event_id=_event_id(payload),
+        duration_s=time.perf_counter() - start,
+        operation=f"mcp:{server}",
     )
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "updatedToolOutput": result}}
 
@@ -97,16 +145,24 @@ def install_claude_hook(executable: Path, settings_path: Path | None = None) -> 
     ):
         raise ValueError("Each Claude PostToolUse entry must contain a list of hook objects")
     command = shlex.join([str(executable), "hook-filter", "--client", "claude"])
-    if any(
-        isinstance(entry, dict)
-        and entry.get("matcher") == "^Bash$"
-        and any(isinstance(h, dict) and h.get("command") == command for h in entry.get("hooks", []))
-        for entry in entries
-    ):
+    missing = [
+        matcher
+        for matcher in HOOK_MATCHERS
+        if not any(
+            isinstance(entry, dict)
+            and entry.get("matcher") == matcher
+            and any(
+                isinstance(h, dict) and h.get("command") == command for h in entry.get("hooks", [])
+            )
+            for entry in entries
+        )
+    ]
+    if not missing:
         return settings
-    entries.append(
-        {"matcher": "^Bash$", "hooks": [{"type": "command", "command": command, "timeout": 5}]}
-    )
+    for matcher in missing:
+        entries.append(
+            {"matcher": matcher, "hooks": [{"type": "command", "command": command, "timeout": 5}]}
+        )
     settings.parent.mkdir(parents=True, exist_ok=True)
     if settings.exists():
         # One unique backup per actual change; never overwrite an earlier backup.

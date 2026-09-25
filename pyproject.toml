@@ -60,6 +60,7 @@ packages = ["src/usagetrim"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "extensions/claude-desktop" = "usagetrim/extensions/claude-desktop"
+"plugins/usagetrim/agents" = "usagetrim/agents"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

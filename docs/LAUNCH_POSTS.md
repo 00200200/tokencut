@@ -1,142 +1,56 @@
-# usagetrim — Launch & Promotion Strategy (Star-Magnet Playbook)
+# Launch posts
 
-Here are the ready-to-post announcements crafted to drive maximum traction, Reddit upvotes, and GitHub stars.
+Paste-ready drafts. Every number links back to "Measured on real sessions" in the README
+and can be reproduced with `scripts/replay_mcp_transcripts.py`. Do not round them up.
 
----
+## Show HN
 
-## 1. Reddit: `r/ClaudeAI` (Target: Claude Code Rate Limits)
+**Title** (80 chars max):
 
-**Title:**
-> I got tired of Claude Code hitting the 5-hour rate limit in 45 minutes, so I built an open-source context compactor (and MCP server) that cuts token burn by 80% without losing error tracebacks.
-
-**Post Body:**
-```markdown
-Hey everyone,
-
-Like many of you using **Claude Code** and Cursor on active dev projects, I kept hitting the dreaded **5-hour wall** within 45–60 minutes of starting work.
-
-The root cause isn’t Claude itself—it’s **tool output bloat**:
-1. Running `pytest`, `npm test`, or `cargo build` dumps thousands of lines of ANSI color escapes, progress bars, and routine passes.
-2. Because multi-turn agents resend previous tool outputs on **every single prompt**, that 4,000-token test run in turn 2 gets billed 25 times by turn 25 (100,000+ ghost tokens!).
-3. A single change to `uv.lock` or `package-lock.json` dumps 10,000 lines into your context window.
-
-I built **usagetrim** — an open-source CLI and universal MCP server designed to solve this with **Zero Quality Loss**:
-
-### What it does:
-- **Semantic Error & Traceback Preserver:** Scans output for `Traceback`, `FAILURES`, `AssertionError`, `panic:`, and keeps 100% of the error and stack frames while omitting the bloated repetitive build steps.
-- **100% Reversible CCR Architecture:** Every omitted log is cached locally in SQLite. The truncated notice includes a `[ref: tc_xxxx]` tag. If Claude ever needs the omitted lines, it can retrieve them on demand via MCP!
-- **Repository Token Tree (`usagetrim tree`):** Scans your repo and shows exactly which files are hogging tokens (we caught `uv.lock` taking 148,000 tokens / 87% of a repo!).
-- **AST Skeletonizer:** Inspects Python, TS/JS, Go, and Rust signatures without dumping thousands of implementation lines.
-- **Secret Sanitizer:** Automatically scrubs OpenAI, Anthropic, Gemini, and GitHub API keys from model history.
-
-### Real Benchmark on our suite:
-- Pytest (120 tests, 1 fail): 2,108 tokens -> 441 tokens (**-79.1%**)
-- Vite / Webpack build: 4,272 tokens -> 1,012 tokens (**-76.3%**)
-- Git diff with lockfile: 4,165 tokens -> 101 tokens (**-97.6%**)
-
-### Quickstart (Zero Install via uvx):
-```bash
-# In Claude Code:
-claude mcp add usagetrim uvx usagetrim mcp
-
-# In terminal:
-uvx usagetrim run -- pytest -v tests/
-uvx usagetrim tree .
-```
-
-GitHub: https://github.com/00200200/usagetrim
-
-It’s 100% open source (MIT), zero telemetry, local-first. Would love your feedback and feature requests!
-```
-
----
-
-## 2. Reddit: `r/Cursor` & `r/LocalLLaMA`
-
-**Title:**
-> We built usagetrim: An open-source tool + MCP that stops AI coding agents from burning 150k tokens on lockfiles, test logs, and whole-file dumps
-
-**Post Body:**
-```markdown
-AI coding agents are amazing until they read a lockfile or run a test suite, blowing 30% of your context window and causing the model to get "lost in the middle".
-
-We built **usagetrim** to solve this at the root. It acts as both a CLI wrapper and an MCP server that compresses tool outputs and file reads by 60–85%:
-
-Key features:
-- **Compress-Cache-Retrieve (CCR):** Never worry about aggressive truncation. Every omitted block gets an ID you or the agent can retrieve on demand.
-- **AST Skeletons:** Inspect architecture outlines (`usagetrim cat src/core.py -s`) with methods replaced by `...`.
-- **Lockfile Slimmer:** Automatically folds `package-lock.json` and `uv.lock` in git diffs (-97% tokens).
-- **Prompt Cache Protector:** Lints `CLAUDE.md` and `.cursorrules` for cache-busting dynamic timestamps.
-
-Run without installing:
-`uvx usagetrim demo`
-
-Repo: https://github.com/00200200/usagetrim (⭐ Star if it saves you tokens!)
-```
-
----
-
-## 3. Hacker News: Show HN
-
-**Title:**
-> Show HN: Usagetrim – Context compression engine and MCP for AI coding agents
+> Show HN: UsageTrim – lossless compaction of MCP tool output for Claude Code
 
 **Text:**
-```text
-Hey HN,
 
-When developing with agentic coding CLI tools (Claude Code, Cursor, Codex, Gemini CLI), context windows burn out quickly due to the quadratic accumulation of tool outputs.
+> I replayed 14 days of my Claude Code transcripts to see where tool-output tokens go. Third-party MCP servers were about 30% of it: Supabase `execute_sql` alone returned 5M tokens of JSON rows that repeat every key on every row, wrapped in a `{"result": "..."}` string that escapes every quote.
+>
+> UsageTrim is a local CLI + MCP server. Its new PostToolUse hook rewrites *other* MCP servers' results without losing anything: uniform rows become TSV with the keys once (a cell that parses as JSON is JSON, so `51`, `"51"` and `null` stay distinct), wrappers are unescaped, and indentation goes. Prompt-injection boundaries such as Supabase's `<untrusted-data-…>` tags stay verbatim.
+>
+> On those transcripts: 11,058 MCP results, 7.17M → 5.85M tokens (−18.3%). Search Console analytics −38%, Supabase −19%. All 3,144 SQL results rewritten as tables decoded back to the original rows. Counts are local tokenizer estimates, not billing.
+>
+> What did not help: my Bash output was mostly ad-hoc scripts, where the Bash filters saved under 1%. They pay off on test and build logs. I'd rather publish that than a "90%" headline.
+>
+> It also ships Haiku subagents for searching and running tests, so the main model gets conclusions instead of files. There is also an opt-in override that moves Claude Code's built-in Explore (which now inherits the main model) back to Haiku.
+>
+> Install inside Claude Code: `/plugin marketplace add 00200200/usagetrim`. It also works as a Codex plugin and as a Claude Desktop extension. MIT, no model calls, nothing leaves the machine.
+>
+> You can run the replay script on your own transcripts, and I'd like to hear what numbers you get.
 
-A test suite that outputs 2,000 tokens of passing test names will be resent on every conversation turn, burning tens of thousands of tokens and degrading reasoning performance.
+## r/ClaudeAI and r/ClaudeCode
 
-Usagetrim (MIT licensed, Python 3.11+, uv) is an open-source tool and stdio MCP server that implements:
-1. Reversible Compress-Cache-Retrieve (CCR): Raw outputs are stored in a local SQLite cache. Compressed outputs include reference markers (e.g. `Ref: tc_8f2a1b`) allowing the model or user to retrieve any slice of raw text if needed.
-2. Error-Preserving Log Sanitization: Detects tracebacks, assertion errors, and panics; isolates failing frames and compresses routine progress output.
-3. Code Skeletonization: Uses Python AST and tree parsers to extract signatures and docstrings, eliding method bodies with `...`.
-4. Lockfile & Diff Folding: Suppresses generated files and lockfiles in git diffs (-97.6% tokens).
-5. Token Tree Scanner: Visualizes directory-level token weight to pinpoint context hogs.
+**Title:**
 
-Benchmarks across real workloads demonstrate 60%–85% token reduction with zero loss of traceback accuracy.
+> I measured where my Claude Code tokens go: ~30% was other MCP servers' JSON. Built a lossless fix (−18% on 11k real results)
 
-Repo: https://github.com/00200200/usagetrim
-Quick demo: `uvx usagetrim demo`
+**Body:** reuse the Show HN text. Add a screenshot of the README results table and the one-line plugin install.
 
-Happy to answer any technical questions about the architecture!
-```
+## r/mcp
 
----
+**Title:**
 
-## 4. X (Twitter) Thread
+> PostToolUse hook that losslessly compacts MCP results (JSON rows → TSV, unescaped wrappers), keeps untrusted-data boundaries
 
-**Tweet 1 (Hook):**
-> Claude Code and Cursor burning through your 5-hour rate limits in 45 minutes?
-> 
-> The problem isn’t the AI—it’s tool output bloat. 
-> 
-> We built usagetrim: an open-source context compactor & MCP server that cuts token burn by 60–85% with ZERO quality loss. 🧵👇
-> [Attach assets/demo.svg or GIF]
+**Body:** lead with the format rules and the round-trip check. Ask server authors which output shapes they want covered next.
 
-**Tweet 2:**
-> Why do tokens burn so fast?
-> In multi-turn chat, previous bash outputs are resent on EVERY prompt.
-> 
-> A single 3,000-token `pytest` or `npm test` run at turn 2 gets resent 25 times = 75,000 tokens wasted on routine logs!
+## X / Bluesky thread
 
-**Tweet 3:**
-> usagetrim preserves 100% of errors & tracebacks, but squashes the repetitive passing noise into a clean 1-liner.
-> 
-> Plus: 100% Reversible. Every omitted line is cached in SQLite and can be retrieved by the model anytime using a ref ID (`tc_xxxx`).
+1. Replayed 14 days of my Claude Code sessions: ~30% of tool-output tokens came from other MCP servers' JSON. UsageTrim now compacts those losslessly. 11,058 results: −18.3%. 🧵
+2. Supabase returns rows as `[{"id":1,"name":…},…]` inside an escaped `{"result": "…"}` string. As TSV with the keys once, every value and type survives, and the `<untrusted-data>` safety tags stay put.
+3. Honest part: my Bash output saved <1%, because it was mostly ad-hoc scripts. Filters shine on test and build logs. Measure your own: `scripts/replay_mcp_transcripts.py`.
+4. Also: Haiku subagents for search and test runs, and an opt-in to move Claude Code's Explore back to Haiku.
+5. `/plugin marketplace add 00200200/usagetrim` · Codex plugin · Claude Desktop .mcpb · MIT · github.com/00200200/usagetrim
 
-**Tweet 4:**
-> Real benchmarks:
-> 📊 Pytest Suite: 2,108 ➔ 441 tokens (-79%)
-> 📊 Webpack Build: 4,272 ➔ 1,012 tokens (-76%)
-> 📊 Git Diff with lockfiles: 4,165 ➔ 101 tokens (-97%)
+## Where else
 
-**Tweet 5 (CTA):**
-> Add to Claude Code in 5 seconds:
-> `claude mcp add usagetrim uvx usagetrim mcp`
-> 
-> 🌟 100% Open Source (MIT):
-> https://github.com/00200200/usagetrim
-```
+- Lists: awesome-claude-code, awesome-mcp-servers (one focused PR each, no bulk submissions).
+- Registries: the official MCP registry (`mcp-publisher publish`), Glama and mcp.so pick up GitHub repos.
+- Reply where people ask about Claude Code limits or MCP output size, with the measured table and no hype.

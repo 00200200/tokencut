@@ -1,6 +1,6 @@
 {
   "name": "usagetrim",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Fold verbose tool output locally and recover the original by reference.",
   "author": {
     "name": "00200200",
@@ -9,7 +9,14 @@
   "homepage": "https://github.com/00200200/usagetrim",
   "repository": "https://github.com/00200200/usagetrim",
   "license": "MIT",
-  "keywords": ["mcp", "tokens", "context", "compaction", "codex", "developer-tools"],
+  "keywords": [
+    "mcp",
+    "tokens",
+    "context",
+    "compaction",
+    "codex",
+    "developer-tools"
+  ],
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "UsageTrim",
@@ -17,7 +24,10 @@
     "longDescription": "UsageTrim runs a local MCP server that folds passing tests, build progress, runner setup and bulky JSON while keeping failures, assertions and stack traces verbatim. Every cut stays recoverable by reference. It makes no model calls and sends nothing off this machine; savings it reports are local estimates, not billing figures.",
     "developerName": "00200200",
     "category": "Developer Tools",
-    "capabilities": ["Read", "Write"],
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
     "websiteURL": "https://github.com/00200200/usagetrim",
     "logo": "./assets/icon.png",
     "defaultPrompt": [

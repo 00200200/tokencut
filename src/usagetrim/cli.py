@@ -33,6 +33,7 @@ from usagetrim.core.doctor import (
     configure_cursor_mcp,
     configure_shell_alias,
     configure_windsurf_mcp,
+    install_cheap_explore,
     run_all_diagnostics,
     write_claude_desktop_extension,
 )
@@ -1346,13 +1347,41 @@ def install(
     alias: Annotated[
         bool, typer.Option("--alias", help="Add 'alias cc=usagetrim run --' to shell rc")
     ] = False,
+    cheap_explore: Annotated[
+        bool,
+        typer.Option(
+            "--cheap-explore",
+            help="Run Claude Code's Explore subagent on Haiku (~/.claude/agents/Explore.md)",
+        ),
+    ] = False,
 ):
     """Configure local MCP integrations and optional shell aliases."""
-    if not (all_targets or cursor or windsurf or claude_desktop or codex or mcpb or alias):
+    if not (
+        all_targets
+        or cursor
+        or windsurf
+        or claude_desktop
+        or codex
+        or mcpb
+        or alias
+        or cheap_explore
+    ):
         console.print(
-            "[yellow]Specify --all, --claude-desktop, --codex, --mcpb, --cursor, --windsurf, or --alias.[/yellow]"
+            "[yellow]Specify --all, --claude-desktop, --codex, --mcpb, --cursor, --windsurf, "
+            "--alias, or --cheap-explore.[/yellow]"
         )
         raise typer.Exit(code=1)
+
+    # Opt-in only: it changes which model explores, so --all never implies it.
+    if cheap_explore:
+        ok, msg = install_cheap_explore()
+        if not ok:
+            err_console.print(msg, markup=False)
+            raise typer.Exit(code=1)
+        console.print(
+            f"Explore subagent now runs on Haiku ({msg}). Delete that file to restore the default.",
+            markup=False,
+        )
 
     if all_targets or cursor:
         cursor_profile = profile if profile in {"coding", "full"} else "coding"
@@ -1426,7 +1455,7 @@ def hook(
             executable = Path(shutil.which("usagetrim") or sys.argv[0])
             settings = install_claude_hook(executable)
             console.print(
-                f"Installed Claude Bash output hook in {settings}. Restart Claude Code to activate.",
+                f"Installed Claude Bash and MCP output hooks in {settings}. Restart Claude Code to activate.",
                 markup=False,
             )
             return

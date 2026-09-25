@@ -13,7 +13,6 @@
 <p align="center">
   <a href="https://github.com/00200200/usagetrim/actions/workflows/ci.yml"><img src="https://github.com/00200200/usagetrim/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/00200200/usagetrim/releases"><img src="https://img.shields.io/github/v/release/00200200/usagetrim?include_prereleases&amp;color=b3f5cd&amp;label=release" alt="Release"></a>
-  <a href="https://pypi.org/project/usagetrim/"><img src="https://img.shields.io/pypi/v/usagetrim?color=b3f5cd&amp;label=PyPI" alt="PyPI"></a>
   <a href="https://github.com/00200200/usagetrim/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-b3f5cd" alt="MIT license"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-compatible-2ec79b" alt="MCP Compatible"></a>
   <img src="https://img.shields.io/badge/runs%20in-Claude%20Code%20·%20Codex%20·%20Cursor%20·%20Desktop-1a3330" alt="Runs in Claude Code, Codex, Cursor, Desktop">
@@ -21,6 +20,7 @@
 </p>
 
 <p align="center">
+  <a href="https://00200200.github.io/usagetrim/">Website</a> ·
   <a href="#install">Install</a> ·
   <a href="#see-it-cut">Demo</a> ·
   <a href="#what-you-get">Features</a> ·
@@ -37,26 +37,25 @@
 
 ## Install
 
-Requires Python 3.11+. Uses [uv](https://docs.astral.sh/uv/getting-started/installation/) below; pipx works too.
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/) (pipx works too).
 
 ```sh
-uv tool install usagetrim
+uv tool install git+https://github.com/00200200/usagetrim
 usagetrim demo
 ```
 
-Also works: `pipx install usagetrim`, or one-off `uvx usagetrim demo`. Latest `main`:
-`uv tool install 'git+https://github.com/00200200/usagetrim.git'`.
+Try without installing: `uvx --from git+https://github.com/00200200/usagetrim usagetrim demo`.
 
 ### Add it inside your app
 
 | App | Install |
 |---|---|
-| **Claude Code** | `/plugin marketplace add 00200200/usagetrim`, then `/plugin install usagetrim@usagetrim` — MCP tools plus the Bash output hook |
+| **Claude Code** | `/plugin marketplace add 00200200/usagetrim`, then `/plugin install usagetrim@usagetrim` — MCP tools, Bash and MCP output hooks, Haiku agents |
 | **Claude Desktop** | Customize → Plugins → add the marketplace `00200200/usagetrim`, or double-click `usagetrim-<version>.mcpb` from [Releases](https://github.com/00200200/usagetrim/releases) (Settings → Extensions) |
 | **Codex app & CLI** | `codex plugin marketplace add 00200200/usagetrim`, then `codex plugin add usagetrim@usagetrim` (or pick it under Plugins in the app) |
 | **Cursor, Windsurf** | `usagetrim install --cursor` or `usagetrim install --windsurf` |
 
-Plugins start `uvx usagetrim mcp`, so they need [uv](https://docs.astral.sh/uv/getting-started/installation/) on `PATH`. The `.mcpb` extension installs its own copy through Claude Desktop.
+Plugins run the pinned release wheel through `uvx`, so they need [uv](https://docs.astral.sh/uv/getting-started/installation/) on `PATH`. The `.mcpb` extension installs its own copy through Claude Desktop.
 
 ```
 verbose tool text  →  keep the failure  →  recover the rest by reference
@@ -103,6 +102,8 @@ usagetrim run -- npx eslint . --format codeframe
 
 ## What you get
 
+- **Compact other MCP servers, losslessly.** The Claude Code hook rewrites results from *other* MCP servers: uniform JSON rows become TSV with the keys once, `{"result": "…"}` wrappers lose their escaping, and indentation goes. Every value and type survives, and prompt-injection boundaries such as Supabase's `<untrusted-data-…>` stay verbatim. [Measured below](#measured-on-real-sessions).
+- **Spend Haiku, not Opus, on reading.** The plugin adds `scout` (read-only search) and `runner` (tests and builds, failures only) agents on Haiku, so the main model gets conclusions instead of files and logs. `usagetrim install --cheap-explore` moves Claude Code's built-in Explore, which now inherits the main model, back to Haiku. `/output-style usagetrim:lean` trims reply preambles and recaps.
 - **Cut noise, keep the failure.** Specialized filters for pytest, Docker, cargo, go, vitest, eslint, tsc, mypy, pyright, kubectl, terraform, GitHub Actions logs (`gh run view --log-failed`), `uv sync`/`uv add`, git diff, ruff…
 - **Session dedup + spill.** Same `run` output *or* identical `cat` / MCP `usagetrim_read` view within ~15 minutes → short cache ref. Payloads over ~20 KiB → file + preview (`USAGETRIM_SPILL_BYTES`).
 - **Recover by reference.** Omitted text stays in a local CCR cache: `usagetrim retrieve tc_…`
@@ -117,6 +118,19 @@ usagetrim prepare --file draft.txt
 ```
 
 [Details and tradeoffs →](https://github.com/00200200/usagetrim/blob/main/docs/guide.md)
+
+### Measured on real sessions
+
+14 days of the maintainer's Claude Code transcripts, replayed offline through the same functions the hook runs. Token counts are local `o200k_base` estimates, not billing.
+
+| Tool results | Count | Tokens before → after | Cut |
+|---|---:|---:|---:|
+| All third-party MCP results | 11,058 | 7.17M → 5.85M | **18.3%** |
+| Supabase `execute_sql` | 6,571 | 4.97M → 4.03M | 18.9% |
+| Google Search Console analytics | 223 | 702k → 434k | 38.2% |
+| Vercel `list_deployments` | 43 | 250k → 210k | 16.1% |
+
+All 3,144 SQL results rewritten as TSV decoded back to the original rows ([reproduce on your own transcripts](https://github.com/00200200/usagetrim/blob/main/scripts/replay_mcp_transcripts.py): `uv run python scripts/replay_mcp_transcripts.py`). Browser and page-text tools return prose and were left alone. Bash output in the same sessions was mostly ad-hoc scripts, where the filters saved under 1%. Test and build logs are where the Bash filters pay off, so results depend on what your tools print.
 
 ---
 
@@ -150,7 +164,7 @@ For Claude Code CLI:
 ```sh
 claude mcp add --scope user usagetrim -- usagetrim mcp --profile coding
 # or, without installing first:
-claude mcp add --scope user usagetrim -- uvx usagetrim mcp
+claude mcp add --scope user usagetrim -- uvx --from git+https://github.com/00200200/usagetrim usagetrim mcp
 ```
 
 Manual MCP configuration for Claude Desktop, Cursor, Codex, Windsurf:
@@ -199,6 +213,15 @@ Mint robot on your Mac — draggable pet or menu-bar mode. Local measurements, t
 **macOS 13+ · ad-hoc signed, not notarized.** CLI and MCP work without the pet. [Build →](https://github.com/00200200/usagetrim/blob/main/docs/guide.md#macos-companion)
 
 ---
+
+## Roadmap
+
+Ideas from the strongest tools in this space, adopted only with a measurement behind them:
+
+- Ranked repo map (Aider-style PageRank over the symbol graph) fitted to a token budget.
+- LSP-backed references and rename (Serena-style), falling back to the ast-grep index.
+- Lossless log templating (Drain-style) for dev-server, Docker and CI logs.
+- A paired A/B harness on provider-reported tokens and task pass rate, because output-size savings alone can hide extra turns.
 
 ## Make it better with us
 
