@@ -69,7 +69,7 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 | `go test` + goroutine dump | 3,281 → **64** (98.0%) |
 | `terraform plan` refresh/read | 5,885 → **236** (96.0%) |
 | `cargo test` + backtrace | 3,795 → **185** (95.1%) |
-| pytest noisy (xdist + I/O) | 5,111 → **348** (93.2%) |
+| pytest noisy (xdist + I/O) | 5,111 → **349** (93.2%) |
 | `kubectl describe` pod | 8,049 → **601** (92.5%) |
 | pytest recovery demo | 1,562 → **174** (88.9%) |
 | `vitest` / `eslint` / `tsc` | up to **98.8%** / **79%** |
@@ -90,7 +90,7 @@ usagetrim run -- npx eslint . --format codeframe
 
 ## What you get
 
-- **Cut noise, keep the failure.** Specialized filters for pytest, Docker, cargo, go, vitest, eslint, tsc, mypy, pyright, kubectl, terraform, `uv sync`/`uv add`, git diff, ruff…
+- **Cut noise, keep the failure.** Specialized filters for pytest, Docker, cargo, go, vitest, eslint, tsc, mypy, pyright, kubectl, terraform, GitHub Actions logs (`gh run view --log-failed`), `uv sync`/`uv add`, git diff, ruff…
 - **Session dedup + spill.** Same `run` output *or* identical `cat` / MCP `usagetrim_read` view within ~15 minutes → short cache ref. Payloads over ~20 KiB → file + preview (`USAGETRIM_SPILL_BYTES`).
 - **Recover by reference.** Omitted text stays in a local CCR cache: `usagetrim retrieve tc_…`
 - **Measure it.** `usagetrim gain` / MCP `usagetrim_gain` — per-tool-family savings and passthrough candidates (local estimates, not account quotas).

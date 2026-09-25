@@ -270,3 +270,103 @@ def test_cli_install_codex(tmp_path, monkeypatch):
     codex_file = tmp_path / ".codex" / "config.toml"
     assert codex_file.exists()
     assert "[mcp_servers.usagetrim]" in codex_file.read_text()
+
+
+def test_prompt_cache_threshold_and_lint(tmp_path):
+    from usagetrim.core.rules_linter import lint_rule_content, optimize_rules
+
+    # Test small rules (under 1024 tokens)
+    short_content = "# Short Project Rules\n- Follow standard style.\n"
+    res_short = lint_rule_content(short_content)
+    assert res_short.exceeds_cache_threshold is False
+    assert res_short.tokens_to_cache_threshold > 0
+    assert "usagetrim MCP desktop profile" in res_short.cache_advice
+
+    # Test large rules (over 1024 tokens)
+    long_content = "# Big Rules\n" + ("- Rule item with details and explanations.\n" * 250)
+    res_long = lint_rule_content(long_content)
+    assert res_long.exceeds_cache_threshold is True
+    assert res_long.tokens_to_cache_threshold == 0
+    assert "standalone" in res_long.cache_advice.lower()
+
+    # Test optimize_rules returns cache threshold data
+    opt_res = optimize_rules(short_content)
+    assert "exceeds_cache_threshold" in opt_res
+    assert "cache_advice" in opt_res
+
+    # Test CLI lint output
+    test_file = tmp_path / "CLAUDE.md"
+    test_file.write_text(short_content, encoding="utf-8")
+    runner = CliRunner()
+    lint_cli = runner.invoke(app, ["lint", str(test_file)])
+    assert lint_cli.exit_code == 0
+    assert "Cache Threshold" in lint_cli.stdout
+
+    # Test CLI rules --optimize --stats output
+    rules_cli = runner.invoke(app, ["rules", "--optimize", "--stats", "--file", str(test_file)])
+    assert rules_cli.exit_code == 0
+    assert "UsageTrim Rules Optimization:" in rules_cli.stdout
+
+
+def test_prepare_cli_clipboard_and_copy(tmp_path, monkeypatch):
+    mock_clipboard = {
+        "content": "Traceback (most recent call last):\n  File 'app.py', line 10, in run\nValueError: test error\n"
+    }
+    copied = []
+
+    monkeypatch.setattr("usagetrim.core.clip.get_clipboard", lambda: mock_clipboard["content"])
+    monkeypatch.setattr("usagetrim.core.clip.set_clipboard", lambda text: copied.append(text))
+
+    runner = CliRunner()
+    res = runner.invoke(app, ["prepare", "--desktop", "--clipboard", "--copy"])
+    assert res.exit_code == 0
+    assert len(copied) == 1
+    assert "ValueError: test error" in copied[0]
+
+
+def test_distill_conversation_desktop_roles():
+    from usagetrim.core.distill import _parse_messages
+
+    chat = """You:
+Can you check the database schema?
+
+Codex:
+I inspected the SQLite schema and found 3 migrations.
+
+ChatGPT:
+All tables have primary keys.
+
+Gemini:
+Index on user_id looks optimal.
+"""
+    messages = _parse_messages(chat)
+    roles = [role for role, _ in messages]
+    assert "User" in roles
+    assert "Codex" in roles
+    assert "Chatgpt" in roles
+    assert "Gemini" in roles
+
+
+def test_usagetrim_diff_with_path(monkeypatch):
+    from usagetrim.mcp.server import handle_usagetrim_diff
+
+    executed_cmd = []
+
+    def mock_run(cmd, **kwargs):
+        executed_cmd.extend(cmd)
+
+        class MockRes:
+            returncode = 0
+            stdout = "diff --git a/foo.py b/foo.py\n+print('hello')\n"
+            stderr = ""
+
+        return MockRes()
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+
+    out = handle_usagetrim_diff({"path": "src/usagetrim/core", "staged": True})
+    assert "git" in executed_cmd
+    assert "--cached" in executed_cmd
+    assert "--" in executed_cmd
+    assert "src/usagetrim/core" in executed_cmd
+    assert "+print('hello')" in out

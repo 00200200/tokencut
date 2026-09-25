@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -82,8 +83,18 @@ def _parse_tabular_input(raw: str) -> tuple[list[str], list[list[str]]]:
         except Exception:
             pass
 
-    # 2. Try parsing CSV / TSV
-    delimiter = "\t" if "\t" in trimmed and "," not in trimmed else ","
+    # 2. Try parsing SQL / ASCII grid table
+    sql_headers, sql_rows = _parse_sql_ascii_table(trimmed)
+    if sql_headers and sql_rows:
+        return sql_headers, sql_rows
+
+    # 3. Try parsing CSV / TSV / PSV
+    delimiter = ","
+    if "\t" in trimmed and "," not in trimmed:
+        delimiter = "\t"
+    elif "|" in trimmed and "," not in trimmed and not trimmed.startswith("+"):
+        delimiter = "|"
+
     try:
         reader = csv.reader(io.StringIO(trimmed), delimiter=delimiter)
         csv_rows = list(reader)
@@ -93,6 +104,70 @@ def _parse_tabular_input(raw: str) -> tuple[list[str], list[list[str]]]:
             return headers, data_rows
     except Exception:
         pass
+
+    return [], []
+
+
+def _parse_sql_ascii_table(trimmed: str) -> tuple[list[str], list[list[str]]]:
+    """Parse ASCII/Unicode grid tables from MySQL, PostgreSQL, SQLite, DuckDB, etc."""
+    lines = [line.rstrip() for line in trimmed.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return [], []
+
+    # Format 1: Bordered box table (+----+----+ or | id | name |)
+    if any(line.startswith("+") and line.endswith("+") and "-" in line for line in lines[:3]):
+        table_lines = [
+            line
+            for line in lines
+            if not (line.startswith("+") and line.endswith("+") and "-" in line)
+        ]
+        if table_lines:
+            header_line = table_lines[0]
+            if header_line.startswith("|") and header_line.endswith("|"):
+                headers = [c.strip() for c in header_line.split("|")[1:-1]]
+                data_rows: list[list[str]] = []
+                for row_line in table_lines[1:]:
+                    if row_line.startswith("|") and row_line.endswith("|"):
+                        cells = [c.strip() for c in row_line.split("|")[1:-1]]
+                        if len(cells) == len(headers):
+                            data_rows.append(cells)
+                if headers and data_rows:
+                    return headers, data_rows
+
+    # Format 2: PostgreSQL / psql style (id | name \n----+----)
+    for i in range(min(4, len(lines) - 1)):
+        sep = lines[i + 1].strip()
+        if re.match(r"^[-+\s]+$", sep) and "+" in sep and "-" in sep:
+            header_line = lines[i]
+            if "|" in header_line:
+                headers = [c.strip() for c in header_line.split("|")]
+                data_rows: list[list[str]] = []
+                for row_line in lines[i + 2 :]:
+                    if re.match(r"^\(\d+\s+rows?\)", row_line.strip(), re.IGNORECASE):
+                        break
+                    if "|" in row_line:
+                        cells = [c.strip() for c in row_line.split("|")]
+                        if len(cells) == len(headers):
+                            data_rows.append(cells)
+                if headers and data_rows:
+                    return headers, data_rows
+
+    # Format 3: SQLite / CLI columnar dashes (----------  ----------)
+    for i in range(min(4, len(lines) - 1)):
+        sep = lines[i + 1].strip()
+        if re.match(r"^-+(?:\s+-+)+$", sep):
+            spans = [m.span() for m in re.finditer(r"-+", sep)]
+            if len(spans) >= 2:
+                header_line = lines[i]
+                headers = [header_line[s:e].strip() for s, e in spans]
+                data_rows: list[list[str]] = []
+                for row_line in lines[i + 2 :]:
+                    if not row_line.strip() or row_line.startswith("("):
+                        continue
+                    cells = [row_line[s:e].strip() if s < len(row_line) else "" for s, e in spans]
+                    data_rows.append(cells)
+                if headers and data_rows:
+                    return headers, data_rows
 
     return [], []
 

@@ -1539,3 +1539,148 @@ def test_auto_specialize_routes_find_and_tree():
     assert res is not None
     assert "./src/main.py" in res
     assert "node_modules/ [... 20 items omitted by usagetrim" in res
+
+
+def test_filter_git_branch():
+    from usagetrim.core.specialized import filter_git_branch
+
+    raw = """* main
+  feature/my-local-feature
+  remotes/origin/HEAD -> origin/main
+  remotes/origin/main
+  remotes/origin/dependabot/npm_and_yarn/foo-1.0
+  remotes/origin/dependabot/npm_and_yarn/bar-2.0
+  remotes/origin/dependabot/npm_and_yarn/baz-3.0
+  remotes/origin/dependabot/npm_and_yarn/qux-4.0
+  remotes/origin/pr/100
+  remotes/origin/pr/101
+  remotes/origin/pr/102
+"""
+    compact = filter_git_branch(raw)
+    assert "* main" in compact
+    assert "feature/my-local-feature" in compact
+    assert "remotes/origin/HEAD -> origin/main" in compact
+    assert "remotes/origin/dependabot/* [... 4 branches collapsed ...]" in compact
+    assert "remotes/origin/pr/* [... 3 branches collapsed ...]" in compact
+
+
+def test_filter_curl_http():
+    from usagetrim.core.specialized import filter_curl_http
+
+    raw = """*   Trying 127.0.0.1:8000...
+* Connected to localhost (127.0.0.1) port 8000 (#0)
+> GET /api/v1/health HTTP/1.1
+> Host: localhost:8000
+> 
+< HTTP/1.1 200 OK
+< date: Tue, 22 Sep 2026 19:40:00 GMT
+< server: uvicorn
+< content-type: application/json
+< access-control-allow-origin: *
+< access-control-allow-credentials: true
+< x-process-time: 0.0012
+< etag: W/"15-abc"
+< keep-alive: timeout=5
+< connection: keep-alive
+< 
+{"status":"ok"}
+"""
+    compact = filter_curl_http(raw)
+    assert "< HTTP/1.1 200 OK" in compact
+    assert "content-type: application/json" in compact
+    assert '{"status":"ok"}' in compact
+    assert "routine response headers collapsed" in compact
+    assert "server: uvicorn" not in compact
+
+
+def _gh_log(job: str, step: str, lines: list[str]) -> str:
+    return "\n".join(f"{job}\t{step}\t2026-09-24T12:00:00.0000000Z {line}" for line in lines)
+
+
+_GH_RUN_LOG = "\n".join(
+    [
+        _gh_log(
+            "lint",
+            "Set up job",
+            [
+                "Current runner version: '2.337.0'",
+                "##[group]Runner Image",
+                "Image: ubuntu-24.04",
+                "Version: 20260907.300",
+                "##[endgroup]",
+                "Download action repository 'actions/checkout@v4'",
+                "Complete job name: lint",
+            ],
+        ),
+        _gh_log(
+            "lint",
+            "Restore cache",
+            [
+                "##[group]Run actions/cache/restore@v4",
+                "with:",
+                "  fail-on-cache-miss: false",
+                "  lookup-only: false",
+                "env:",
+                "  PYTHONPATH: /home/runner/work",
+                "##[endgroup]",
+                "Cache not found for input keys: uv-",
+            ],
+        ),
+        _gh_log(
+            "lint",
+            "Check type discipline",
+            [f"checked module {n}" for n in range(30)]
+            + [
+                "FAIL: LIT-rule totals exceed their limit (base c6c3881):",
+                "  LIT002: total 26719 over limit 26715 (this change added 10)",
+                "    handler.py:30",
+                "##[error]Process completed with exit code 1.",
+            ],
+        ),
+        _gh_log(
+            "lint",
+            "Post job cleanup",
+            [
+                "[command]/usr/bin/git config --local --unset-all http.extraheader",
+                "Removing SSH command configuration",
+                "Cleaning up orphan processes",
+            ],
+        ),
+    ]
+)
+
+
+def test_filter_gh_run_log_keeps_failure_details_and_drops_runner_noise(tmp_path, monkeypatch):
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
+    from usagetrim.core.cache import ContextCache
+    from usagetrim.core.specialized import filter_gh_run_log
+
+    compact = filter_gh_run_log(_GH_RUN_LOG)
+
+    assert compact is not None
+    assert "── lint › Check type discipline" in compact
+    assert "FAIL: LIT-rule totals exceed their limit" in compact
+    assert "LIT002: total 26719 over limit 26715" in compact
+    assert "ERROR: Process completed with exit code 1." in compact
+    for noise in (
+        "Current runner version",
+        "fail-on-cache-miss",
+        "PYTHONPATH",
+        "[command]/usr/bin/git",
+        "Removing SSH",
+        "2026-09-24T12:00:00",
+    ):
+        assert noise not in compact
+    assert "lines omitted" in compact
+    ref_id = compact.split("Ref: ", 1)[1].split("]", 1)[0]
+    assert ContextCache().retrieve(ref_id) == _GH_RUN_LOG
+
+
+def test_gh_run_log_filter_only_applies_to_log_views(tmp_path, monkeypatch):
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
+    from usagetrim.core.specialized import auto_specialize_command_output, filter_gh_run_log
+
+    compact = auto_specialize_command_output("gh run view 123 --log-failed", _GH_RUN_LOG)
+    assert compact is not None and "LIT002" in compact and "Runner Image" not in compact
+    assert auto_specialize_command_output("gh run view 123", _GH_RUN_LOG) is None
+    assert filter_gh_run_log("plain text\nwithout any tab-separated gh log prefixes\n" * 20) is None

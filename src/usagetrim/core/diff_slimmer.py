@@ -41,18 +41,38 @@ def slim_git_diff(
     current_file = ""
     is_collapsing_file = False
     collapsed_lines_count = 0
+    collapsed_file_lines: list[str] = []
 
     hunk_context_count = 0
+
+    def flush_collapsed():
+        nonlocal is_collapsing_file, collapsed_lines_count, collapsed_file_lines
+        if not is_collapsing_file:
+            return
+        from usagetrim.core.lockfile import extract_lockfile_diff_delta, is_lockfile
+
+        if is_lockfile(current_file):
+            delta = extract_lockfile_diff_delta(collapsed_file_lines, current_file)
+            if delta:
+                output_lines.append(
+                    f"  [lockfile delta: {delta} ({collapsed_lines_count} lines folded by usagetrim)]\n"
+                )
+            else:
+                output_lines.append(
+                    f"  [... {collapsed_lines_count} lines of lockfile/generated diff omitted by usagetrim ...]\n"
+                )
+        else:
+            output_lines.append(
+                f"  [... {collapsed_lines_count} lines of lockfile/generated diff omitted by usagetrim ...]\n"
+            )
+        is_collapsing_file = False
+        collapsed_lines_count = 0
+        collapsed_file_lines = []
 
     for line in lines:
         if line.startswith("diff --git"):
             # Flush previous collapsed file notice
-            if is_collapsing_file:
-                output_lines.append(
-                    f"  [... {collapsed_lines_count} lines of lockfile/generated diff omitted by usagetrim ...]\n"
-                )
-                is_collapsing_file = False
-                collapsed_lines_count = 0
+            flush_collapsed()
 
             # Extract filename (e.g. diff --git a/foo/bar.py b/foo/bar.py)
             parts = line.split()
@@ -64,6 +84,7 @@ def slim_git_diff(
 
         if is_collapsing_file:
             collapsed_lines_count += 1
+            collapsed_file_lines.append(line)
             continue
 
         if line.startswith("@@"):
@@ -88,9 +109,6 @@ def slim_git_diff(
         elif hunk_context_count == max_context_lines + 1:
             output_lines.append("  ...")
 
-    if is_collapsing_file:
-        output_lines.append(
-            f"  [... {collapsed_lines_count} lines of lockfile/generated diff omitted by usagetrim ...]\n"
-        )
+    flush_collapsed()
 
     return "\n".join(output_lines)

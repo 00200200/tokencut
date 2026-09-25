@@ -40,10 +40,16 @@ def test_coding_profile_keeps_coding_and_recovery_tools_without_hidden_dispatch(
         profile="coding",
     )
     assert response["error"]["code"] == -32602
+    # Coding tools use compact descriptions, but must accept exactly the same arguments.
     for name in {"usagetrim_code", "usagetrim_edit_symbol", "usagetrim_read", "usagetrim_retrieve"}:
-        assert next(tool for tool in listed["result"]["tools"] if tool["name"] == name) == next(
-            tool for tool in server.TOOLS_DEFINITIONS if tool["name"] == name
+        compact = next(tool for tool in listed["result"]["tools"] if tool["name"] == name)
+        full = next(tool for tool in server.TOOLS_DEFINITIONS if tool["name"] == name)
+        assert (
+            compact["inputSchema"]["properties"].keys() == full["inputSchema"]["properties"].keys()
         )
+        assert compact["inputSchema"].get("required") == full["inputSchema"].get("required")
+        assert compact.get("annotations") == full.get("annotations")
+        assert len(compact["description"]) <= len(full["description"])
 
 
 def test_profile_stdio_and_environment_selection(monkeypatch):
@@ -53,7 +59,7 @@ def test_profile_stdio_and_environment_selection(monkeypatch):
     request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n"
     runner = CliRunner()
     for args, env, expected in (
-        ([], {}, len(server.TOOLS_DEFINITIONS)),
+        ([], {}, 9),
         (["--profile", "coding"], {}, 9),
         ([], {"USAGETRIM_MCP_PROFILE": "coding"}, 9),
         (["--profile", "desktop"], {}, 11),

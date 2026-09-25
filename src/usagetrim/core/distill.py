@@ -77,13 +77,14 @@ def _parse_messages(text: str) -> list[tuple[str, str]]:
 
     # Parse role-based markdown dialogue
     role_pattern = re.compile(
-        r"^(?:#{1,4}\s*)?(User|Assistant|Human|System|Claude|GPT|Antigravity|Agent):\s*",
+        r"^(?:#{1,4}\s*)?(User|Assistant|Human|System|Claude|GPT|Antigravity|Agent|You|Codex|ChatGPT|Gemini):\s*",
         re.MULTILINE | re.IGNORECASE,
     )
     splits = list(role_pattern.finditer(text))
     if splits:
         for idx, match in enumerate(splits):
-            role = match.group(1).capitalize()
+            raw_role = match.group(1).capitalize()
+            role = "User" if raw_role.lower() == "you" else raw_role
             start = match.end()
             end = splits[idx + 1].start() if idx + 1 < len(splits) else len(text)
             chunk = text[start:end].strip()

@@ -147,9 +147,11 @@ def test_mcp_install_preserves_settings_and_backs_up_once(tmp_path, local_instal
     changed = json.loads(target.read_text())
     assert changed["theme"] == "dark"
     assert changed["mcpServers"]["other"] == original["mcpServers"]["other"]
+    # Cursor gets the compact coding profile; Claude Desktop keeps the plain server.
+    expected_args = ["mcp"] if client == "claude" else ["mcp", "--profile", "coding"]
     assert changed["mcpServers"]["usagetrim"] == {
         "command": str(local_install),
-        "args": ["mcp"],
+        "args": expected_args,
         "env": {"LOCAL": "kept"},
         "disabled": False,
     }
@@ -302,13 +304,18 @@ def test_configure_windsurf_mcp(tmp_path, monkeypatch):
     target = tmp_path / "mcp_config.json"
     monkeypatch.setattr(doctor, "get_windsurf_mcp_config_path", lambda: target)
     monkeypatch.setattr(
-        doctor, "_local_mcp_command", lambda: {"command": "/bin/usagetrim", "args": ["mcp"]}
+        doctor,
+        "_local_mcp_command",
+        lambda profile=None: {
+            "command": "/bin/usagetrim",
+            "args": ["mcp", "--profile", profile] if profile else ["mcp"],
+        },
     )
     ok, path_str = configure_windsurf_mcp(target)
     assert ok is True
     assert target.exists()
     data = json.loads(target.read_text(encoding="utf-8"))
-    assert "usagetrim" in data["mcpServers"]
+    assert data["mcpServers"]["usagetrim"]["args"] == ["mcp", "--profile", "coding"]
 
 
 def test_configure_codex_mcp(tmp_path, monkeypatch):

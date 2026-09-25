@@ -601,12 +601,18 @@ def run_all_diagnostics() -> list[DiagnosticItem]:
     ]
 
 
-def configure_cursor_mcp(target_file: Path | None = None) -> tuple[bool, str]:
-    return _configure_local_mcp(target_file or (Path.home() / ".cursor" / "mcp.json"))
+def configure_cursor_mcp(
+    target_file: Path | None = None, profile: str = "coding"
+) -> tuple[bool, str]:
+    return _configure_local_mcp(
+        target_file or (Path.home() / ".cursor" / "mcp.json"), profile=profile
+    )
 
 
-def configure_windsurf_mcp(target_file: Path | None = None) -> tuple[bool, str]:
-    return _configure_local_mcp(target_file or get_windsurf_mcp_config_path())
+def configure_windsurf_mcp(
+    target_file: Path | None = None, profile: str = "coding"
+) -> tuple[bool, str]:
+    return _configure_local_mcp(target_file or get_windsurf_mcp_config_path(), profile=profile)
 
 
 def configure_shell_alias(target_file: Path | None = None) -> tuple[bool, str]:
