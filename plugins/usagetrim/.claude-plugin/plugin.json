@@ -1,7 +1,7 @@
 {
   "name": "usagetrim",
-  "version": "0.3.0",
-  "description": "Keep the signal, cut the noise: fold verbose tool output (tests, builds, logs, JSON) locally and recover the original by reference.",
+  "version": "0.4.0",
+  "description": "Keep the signal, cut the noise: fold verbose Bash and MCP tool output locally, recover originals by reference, and route exploration and test runs to Haiku.",
   "author": {
     "name": "00200200",
     "url": "https://github.com/00200200"
@@ -9,7 +9,14 @@
   "homepage": "https://github.com/00200200/usagetrim",
   "repository": "https://github.com/00200200/usagetrim",
   "license": "MIT",
-  "keywords": ["mcp", "tokens", "context", "compaction", "claude-code", "developer-tools"],
+  "keywords": [
+    "mcp",
+    "tokens",
+    "context",
+    "compaction",
+    "claude-code",
+    "developer-tools"
+  ],
   "mcpServers": "./.mcp.json",
   "hooks": {
     "PostToolUse": [
@@ -18,7 +25,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx usagetrim hook-filter --client claude",
+            "command": "uvx --from https://github.com/00200200/usagetrim/releases/download/v0.4.0/usagetrim-0.4.0-py3-none-any.whl usagetrim hook-filter --client claude",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "^mcp__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx --from https://github.com/00200200/usagetrim/releases/download/v0.4.0/usagetrim-0.4.0-py3-none-any.whl usagetrim hook-filter --client claude",
             "timeout": 5
           }
         ]

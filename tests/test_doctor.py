@@ -277,7 +277,7 @@ def test_codex_registration_is_distinguished_from_runtime_connectivity(
         (
             '[mcp_servers.usagetrim]\ncommand="uvx"\nargs=["usagetrim", "mcp"]',
             "warning",
-            "unrelated PyPI",
+            "needs a PyPI release",
         ),
         ('[mcp_servers.usagetrim]\nurl="https://example.invalid"', "warning", "local server"),
     ],

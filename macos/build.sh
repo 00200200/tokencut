@@ -14,7 +14,7 @@ with open(sys.argv[1], 'wb') as file:
     info = {
         'CFBundleName': 'UsageTrim', 'CFBundleDisplayName': 'UsageTrim',
         'CFBundleIdentifier': 'com.usagetrim.menu', 'CFBundleVersion': '1',
-        'CFBundleShortVersionString': '0.3.0', 'CFBundlePackageType': 'APPL',
+        'CFBundleShortVersionString': '0.4.0', 'CFBundlePackageType': 'APPL',
         'CFBundleExecutable': 'UsageTrimMenu', 'LSUIElement': True,
         'CFBundleDevelopmentRegion': 'en', 'CFBundleLocalizations': ['en'],
         'LSMinimumSystemVersion': '13.0', 'NSHighResolutionCapable': True,

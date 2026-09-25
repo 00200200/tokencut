@@ -9,11 +9,10 @@ particular model's allowance will last. No additional model calls are required.
 ## Install and verify
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/)
-(`pipx install usagetrim` works too). For unreleased `main`, install
-`git+https://github.com/00200200/usagetrim.git` instead.
+(pipx works too).
 
 ```sh
-uv tool install usagetrim
+uv tool install git+https://github.com/00200200/usagetrim
 usagetrim demo
 usagetrim doctor
 ```
