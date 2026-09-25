@@ -171,3 +171,24 @@ def test_cli_run_prefers_gh_json_slim_over_head_tail_spill(tmp_path, monkeypatch
     # should not dominate once structured slim is preferred.
     assert out.count("module_15") <= 1
     assert len(out) < len(raw) * 0.4
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["[]\n", '{"state":"OPEN"}\n', '{\n  "number": 1,\n  "title": "tiny"\n}\n'],
+)
+def test_filter_gh_json_never_expands_small_output(raw, tmp_path, monkeypatch):
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
+    # A recovery header on a few bytes costs more than the payload itself.
+    assert filter_gh_command_output("gh pr list --json number,title,state", raw) is None
+
+
+def test_filter_gh_json_uses_compact_separators(tmp_path, monkeypatch):
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
+    raw = json.dumps(
+        [{"number": i, "title": f"PR {i}", "body": "text " * 60} for i in range(8)], indent=2
+    )
+    compact = filter_gh_command_output("gh pr list --json number,title,body", raw)
+    assert compact is not None
+    assert '"number":0' in compact
+    assert count_tokens(compact).claude < count_tokens(raw).claude

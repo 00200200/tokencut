@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import Literal
 
+from usagetrim import __version__
 from usagetrim.core.cache import DEFAULT_CACHE_DB
 
 
@@ -561,7 +562,7 @@ def write_claude_desktop_extension(target_dir: Path | None = None) -> tuple[bool
                     "manifest_version": "0.2",
                     "name": "usagetrim",
                     "display_name": "UsageTrim",
-                    "version": "0.2.0",
+                    "version": __version__,
                     "description": (
                         "Keep the signal. Cut the noise. Local MCP for Claude Desktop."
                     ),

@@ -97,12 +97,12 @@ We built a local MCP tool and CLI companion called **UsageTrim**:
 ### What it does:
 - **Slims test outputs**: `pytest -v`, `cargo test`, `vitest`, `go test` get reduced by 85–98% while keeping 100% of failure stack traces and errors.
 - **Diff slimming**: Folds lockfiles (`package-lock.json`, `uv.lock`, `Cargo.lock`) and trims diff context lines to save ~95% on git diffs.
-- **Lightweight Coding MCP Profile**: Downsizes the MCP schema footprint by 37% (2,881 → 1,816 tokens) so every agent turn starts leaner.
+- **Lightweight Coding MCP Profile**: Downsizes the MCP schema footprint by 36–38% (3,414 → 2,183 / 2,102 tokens, local o200k_base) so every agent turn starts leaner.
 - **Mac Companion App**: A native macOS app with a "Prepare for chat" clipboard tool to optimize messy logs before pasting them into chat.
 
 Install with uv:
 ```bash
-uv tool install 'git+https://github.com/00200200/usagetrim.git'
+uv tool install usagetrim
 claude mcp add --scope user usagetrim -- usagetrim mcp --profile coding
 ```
 
@@ -161,7 +161,7 @@ Use "Prepare for chat" to clean up terminal logs before pasting them into web ch
 6/ UsageTrim is 100% open source (MIT), written in Python with @astral_sh uv, and makes zero AI calls.
 
 Install in 10 seconds:
-`uv tool install 'git+https://github.com/00200200/usagetrim.git'`
+`uv tool install usagetrim`
 
 Star the repo on GitHub:
 ⭐ https://github.com/00200200/usagetrim

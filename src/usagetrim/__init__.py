@@ -1,6 +1,6 @@
 """usagetrim — Context compression engine and MCP server for Claude Code, Cursor, and Gemini CLI."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from usagetrim.core.cache import ContextCache
 from usagetrim.core.cleaner import CleanerOptions, compact_terminal_output, strip_ansi

@@ -19,6 +19,8 @@ import threading
 import time
 from pathlib import Path
 
+from usagetrim import __version__
+
 MAX_RESPONSE = 1024 * 1024
 # Claude's adapter can run a 20s usage probe, retry, then enrich with /status.
 # Bound the full cycle without cutting off a valid first-run reading at 30s.
@@ -190,7 +192,7 @@ def fetch_codex() -> list[dict]:
             {
                 "id": 1,
                 "method": "initialize",
-                "params": {"clientInfo": {"name": "usagetrim-usage", "version": "0.2.0"}},
+                "params": {"clientInfo": {"name": "usagetrim-usage", "version": __version__}},
             }
         )
         pipe.response(1)

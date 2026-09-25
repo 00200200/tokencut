@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "usagetrim"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Bound AI coding tool output with local compaction, targeted reads, and recoverable context."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -51,6 +51,9 @@ Issues = "https://github.com/00200200/usagetrim/issues"
 
 [project.scripts]
 usagetrim = "usagetrim.cli:main"
+
+[tool.hatch.version]
+path = "src/usagetrim/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/usagetrim"]
