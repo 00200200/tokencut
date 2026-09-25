@@ -73,6 +73,24 @@ console = Console()
 err_console = Console(stderr=True)
 
 
+def _print_version(value: bool) -> None:
+    if value:
+        from usagetrim import __version__
+
+        sys.stdout.write(f"usagetrim {__version__}\n")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: Annotated[
+        bool,
+        typer.Option("--version", callback=_print_version, is_eager=True, help="Show version."),
+    ] = False,
+):
+    """Local CLI + MCP that folds verbose tool output for AI coding agents."""
+
+
 def _emit(text: str) -> str:
     emitted = text + ("\n" if text and not text.endswith("\n") else "")
     sys.stdout.write(emitted)

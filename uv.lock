@@ -1325,46 +1325,6 @@ wheels = [
 ]
 
 [[package]]
-name = "usagetrim"
-version = "0.2.0"
-source = { editable = "." }
-dependencies = [
-    { name = "ast-grep-py" },
-    { name = "rich" },
-    { name = "tiktoken" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-mcp = [
-    { name = "mcp" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "ast-grep-py", specifier = ">=0.41,<1" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2.0" },
-    { name = "rich", specifier = ">=13.7.0" },
-    { name = "tiktoken", specifier = ">=0.7.0" },
-    { name = "typer", specifier = ">=0.12.0" },
-]
-provides-extras = ["mcp"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
-    { name = "ruff", specifier = ">=0.9.0" },
-]
-
-[[package]]
 name = "tomli"
 version = "2.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1470,6 +1430,45 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz", hash = "sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63", size = 458972, upload-time = "2026-09-15T19:29:36.253Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl", hash = "sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3", size = 135717, upload-time = "2026-09-15T19:29:34.577Z" },
+]
+
+[[package]]
+name = "usagetrim"
+source = { editable = "." }
+dependencies = [
+    { name = "ast-grep-py" },
+    { name = "rich" },
+    { name = "tiktoken" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+mcp = [
+    { name = "mcp" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ast-grep-py", specifier = ">=0.41,<1" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2.0" },
+    { name = "rich", specifier = ">=13.7.0" },
+    { name = "tiktoken", specifier = ">=0.7.0" },
+    { name = "typer", specifier = ">=0.12.0" },
+]
+provides-extras = ["mcp"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "ruff", specifier = ">=0.9.0" },
 ]
 
 [[package]]

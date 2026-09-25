@@ -10,6 +10,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from usagetrim import __version__
 from usagetrim.core.adaptive import compress_to_budget
 from usagetrim.core.cache import ContextCache
 from usagetrim.core.cleaner import CleanerOptions, compact_terminal_output
@@ -1081,7 +1082,7 @@ def _respond(req: Any, *, profile: str = "full") -> dict[str, Any] | None:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "usagetrim", "version": "0.2.0"},
+                "serverInfo": {"name": "usagetrim", "version": __version__},
                 "instructions": server_instructions(profile),
             },
         }

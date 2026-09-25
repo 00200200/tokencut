@@ -370,3 +370,17 @@ def test_usagetrim_diff_with_path(monkeypatch):
     assert "--" in executed_cmd
     assert "src/usagetrim/core" in executed_cmd
     assert "+print('hello')" in out
+
+
+def test_version_flag_matches_package_and_release_metadata():
+    from usagetrim import __version__
+
+    result = CliRunner().invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert result.output.strip() == f"usagetrim {__version__}"
+    root = Path(__file__).resolve().parents[1]
+    manifest = json.loads((root / "extensions/claude-desktop/manifest.json").read_text())
+    registry = json.loads((root / "server.json").read_text())
+    # Registry and extension metadata must not drift from the published package.
+    assert manifest["version"] == registry["version"] == __version__
+    assert {p["version"] for p in registry["packages"]} == {__version__}

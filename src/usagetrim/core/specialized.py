@@ -1082,9 +1082,13 @@ def filter_gh_command_output(command: str, raw_output: str) -> str | None:
             slimmed_data = slim_json_data(
                 slimmed_data, max_array_items=3, max_string_len=120, max_depth=6
             )
-            slimmed = json.dumps(slimmed_data, indent=2)
+            # Indentation costs ~35% more tokens than the same data without it.
+            slimmed = json.dumps(slimmed_data, separators=(",", ":"), ensure_ascii=False)
             explicit = _is_gh_json_command(command)
-            if not explicit and len(slimmed) > len(raw_output) * 0.85:
+            # A recovery header on tiny or unslimmable output only adds tokens.
+            if len(slimmed) >= len(raw_output) or (
+                not explicit and len(slimmed) > len(raw_output) * 0.85
+            ):
                 return None
 
             spilled = spill_large_output(raw_output, source="gh-json")
@@ -1100,7 +1104,8 @@ def filter_gh_command_output(command: str, raw_output: str) -> str | None:
                     f"// [usagetrim: raw JSON ({len(raw_output):,} bytes) compacted. "
                     f"Ref: {ref_id}]\n"
                 )
-            return header + slimmed
+            compact = header + slimmed
+            return compact if len(compact) < len(raw_output) else None
 
     if _is_gh_run_log_command(command):
         return filter_gh_run_log(raw_output)

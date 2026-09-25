@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="assets/readme-hero.png">
-    <img src="assets/readme-hero.gif" width="100%" alt="UsageTrim: keep the signal, cut the noise. Authored fixtures cut docker 18,360→107, cargo 3,795→185, pytest 1,562→174.">
+    <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/00200200/usagetrim/main/assets/readme-hero.png">
+    <img src="https://raw.githubusercontent.com/00200200/usagetrim/main/assets/readme-hero.gif" width="100%" alt="UsageTrim: keep the signal, cut the noise. Authored fixtures cut docker 18,360→107, cargo 3,795→185, pytest 1,562→174.">
   </picture>
 </p>
 
@@ -13,7 +13,8 @@
 <p align="center">
   <a href="https://github.com/00200200/usagetrim/actions/workflows/ci.yml"><img src="https://github.com/00200200/usagetrim/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/00200200/usagetrim/releases"><img src="https://img.shields.io/github/v/release/00200200/usagetrim?color=b3f5cd&amp;label=release" alt="Release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-b3f5cd" alt="MIT license"></a>
+  <a href="https://pypi.org/project/usagetrim/"><img src="https://img.shields.io/pypi/v/usagetrim?color=b3f5cd&amp;label=PyPI" alt="PyPI"></a>
+  <a href="https://github.com/00200200/usagetrim/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-b3f5cd" alt="MIT license"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-compatible-2ec79b" alt="MCP Compatible"></a>
   <img src="https://img.shields.io/badge/runs%20in-Claude%20Code%20·%20Codex%20·%20Cursor%20·%20Desktop-1a3330" alt="Runs in Claude Code, Codex, Cursor, Desktop">
   <a href="https://github.com/00200200/usagetrim/stargazers"><img src="https://img.shields.io/github/stars/00200200/usagetrim?style=social" alt="GitHub stars"></a>
@@ -25,25 +26,26 @@
   <a href="#what-you-get">Features</a> ·
   <a href="#connect-your-agent">Connect</a> ·
   <a href="#desktop-companion">Pet</a> ·
-  <a href="docs/guide.md">Guide</a>
+  <a href="https://github.com/00200200/usagetrim/blob/main/docs/guide.md">Guide</a>
 </p>
 
 <p align="center">
-  <img src="assets/harnesses.svg" width="920" alt="Harnesses and tools: Claude, Codex, Cursor, Desktop, pytest, docker, cargo, go, eslint, mypy">
+  <img src="https://raw.githubusercontent.com/00200200/usagetrim/main/assets/harnesses.svg" width="920" alt="Harnesses and tools: Claude, Codex, Cursor, Desktop, pytest, docker, cargo, go, eslint, mypy">
 </p>
 
 ---
 
 ## Install
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Requires Python 3.11+. Uses [uv](https://docs.astral.sh/uv/getting-started/installation/) below; pipx works too.
 
 ```sh
-uv tool install 'git+https://github.com/00200200/usagetrim.git'
+uv tool install usagetrim
 usagetrim demo
 ```
 
-> **Install from this GitHub repo.** The PyPI package named `usagetrim` is a different project.
+Also works: `pipx install usagetrim`, or one-off `uvx usagetrim demo`. Latest `main`:
+`uv tool install 'git+https://github.com/00200200/usagetrim.git'`.
 
 ```
 verbose tool text  →  keep the failure  →  recover the rest by reference
@@ -56,11 +58,11 @@ verbose tool text  →  keep the failure  →  recover the rest by reference
 `usagetrim demo` is offline — **no model calls**. Failures stay; originals recover exactly.
 
 <p align="center">
-  <img src="assets/cuts.svg" width="920" alt="Measured savings: docker 99.4%, go 98%, terraform 96%, cargo 95.1%, kubectl 92.5%">
+  <img src="https://raw.githubusercontent.com/00200200/usagetrim/main/assets/cuts.svg" width="920" alt="Measured savings: docker 99.4%, go 98%, terraform 96%, cargo 95.1%, kubectl 92.5%">
 </p>
 
 <p align="center">
-  <img src="assets/demo.svg" width="860" alt="Terminal showing usagetrim demo measured fixture results">
+  <img src="https://raw.githubusercontent.com/00200200/usagetrim/main/assets/demo.svg" width="860" alt="Terminal showing usagetrim demo measured fixture results">
 </p>
 
 | Fixture | Tokens |
@@ -103,7 +105,7 @@ usagetrim gain --passthrough   # near-zero cuts only (specializer candidates)
 usagetrim prepare --file draft.txt
 ```
 
-[Details and tradeoffs →](docs/guide.md)
+[Details and tradeoffs →](https://github.com/00200200/usagetrim/blob/main/docs/guide.md)
 
 ---
 
@@ -136,6 +138,8 @@ usagetrim install --all              # configures all at once
 For Claude Code CLI:
 ```sh
 claude mcp add --scope user usagetrim -- usagetrim mcp --profile coding
+# or, without installing first:
+claude mcp add --scope user usagetrim -- uvx usagetrim mcp
 ```
 
 Manual MCP configuration for Claude Desktop, Cursor, Codex, Windsurf:
@@ -151,7 +155,7 @@ Manual MCP configuration for Claude Desktop, Cursor, Codex, Windsurf:
 }
 ```
 
-Path: `command -v usagetrim`. Use `--profile full` for every tool, `--profile coding` for core terminal tools, or `--profile desktop` for chat apps. [Client setup →](docs/guide.md#connect-clients)
+Path: `command -v usagetrim`. Use `--profile full` for every tool, `--profile coding` for core terminal tools, or `--profile desktop` for chat apps. [Client setup →](https://github.com/00200200/usagetrim/blob/main/docs/guide.md#connect-clients)
 
 ```sh
 # Prepare messy logs or stack traces with prompt-cache prefix stabilization:
@@ -170,18 +174,18 @@ usagetrim rules --optimize --write -f CLAUDE.md # strips filler, aligns prompt c
 Mint robot on your Mac — draggable pet or menu-bar mode. Local measurements, task memory, optional account-limit readings. English UI. No extra AI calls.
 
 <p align="center">
-  <img src="assets/macos-pet.png" width="640" alt="UsageTrim macOS pet with example five-hour balances: Codex 68% left, Claude 42% left.">
+  <img src="https://raw.githubusercontent.com/00200200/usagetrim/main/assets/macos-pet.png" width="640" alt="UsageTrim macOS pet with example five-hour balances: Codex 68% left, Claude 42% left.">
 </p>
 
 *Example balances are remaining allowance — not savings caused by UsageTrim.*
 
 <p align="center">
-  <img src="assets/macos-conversation.png" width="720" alt="Prepare for chat window comparing an authored conversation with a local preview">
+  <img src="https://raw.githubusercontent.com/00200200/usagetrim/main/assets/macos-conversation.png" width="720" alt="Prepare for chat window comparing an authored conversation with a local preview">
 </p>
 
-*Prepare for chat — paste a log, preview the cut, copy into Codex / Claude Desktop. [Log prep →](assets/macos-prepare.png)*
+*Prepare for chat — paste a log, preview the cut, copy into Codex / Claude Desktop. [Log prep →](https://raw.githubusercontent.com/00200200/usagetrim/main/assets/macos-prepare.png)*
 
-**macOS 13+ · ad-hoc signed, not notarized.** CLI and MCP work without the pet. [Build →](docs/guide.md#macos-companion)
+**macOS 13+ · ad-hoc signed, not notarized.** CLI and MCP work without the pet. [Build →](https://github.com/00200200/usagetrim/blob/main/docs/guide.md#macos-companion)
 
 ---
 
@@ -199,4 +203,6 @@ If UsageTrim earns a place in your workflow, **[star the repo](https://github.co
   </a>
 </p>
 
-[Guide](docs/guide.md) · [Measurements](docs/guide.md#measurements-and-development) · [MIT](LICENSE)
+[Guide](https://github.com/00200200/usagetrim/blob/main/docs/guide.md) · [Measurements](https://github.com/00200200/usagetrim/blob/main/docs/guide.md#measurements-and-development) · [MIT](https://github.com/00200200/usagetrim/blob/main/LICENSE)
+
+<!-- mcp-name: io.github.00200200/usagetrim -->

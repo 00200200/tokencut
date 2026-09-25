@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "usagetrim",
   "display_name": "UsageTrim",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Keep the signal. Cut the noise. Fold verbose tool output and recover originals by reference — local MCP for Claude Desktop.",
   "long_description": "UsageTrim exposes compact code navigation, command runners, and recoverable cache tools so Claude Desktop does not pull raw pytest, docker, or git dumps into context. No cloud relay. Local estimates only — not billing claims.",
   "author": {
