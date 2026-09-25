@@ -20,6 +20,7 @@
 </p>
 
 <p align="center">
+  <a href="https://00200200.github.io/usagetrim/">Website</a> ·
   <a href="#install">Install</a> ·
   <a href="#see-it-cut">Demo</a> ·
   <a href="#what-you-get">Features</a> ·
