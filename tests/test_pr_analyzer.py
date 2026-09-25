@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tokencut.core.pr_analyzer import (
+from usagetrim.core.pr_analyzer import (
     FileTokenDelta,
     PRTokenReport,
     _get_category,

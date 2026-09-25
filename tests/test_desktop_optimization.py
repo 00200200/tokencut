@@ -4,19 +4,19 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from tokencut.cli import app
-from tokencut.core.doctor import (
+from usagetrim.cli import app
+from usagetrim.core.doctor import (
     configure_codex_mcp,
 )
-from tokencut.core.prepare import prepare_text
-from tokencut.core.rules_linter import generate_desktop_rules
-from tokencut.core.specialized import (
+from usagetrim.core.prepare import prepare_text
+from usagetrim.core.rules_linter import generate_desktop_rules
+from usagetrim.core.specialized import (
     auto_specialize_command_output,
     filter_dev_server_logs,
     filter_traceback,
 )
-from tokencut.mcp import server
-from tokencut.metrics.tokenizer import count_tokens
+from usagetrim.mcp import server
+from usagetrim.metrics.tokenizer import count_tokens
 
 
 def test_desktop_mcp_profile_tools_and_schema_reduction():
@@ -26,14 +26,14 @@ def test_desktop_mcp_profile_tools_and_schema_reduction():
     # Desktop profile must expose exactly the DESKTOP_TOOLS set
     tool_names = {t["name"] for t in desktop_tools}
     assert tool_names == server.DESKTOP_TOOLS
-    assert "tokencut_code" in tool_names
-    assert "tokencut_read" in tool_names
-    assert "tokencut_edit_symbol" in tool_names
-    assert "tokencut_exec" in tool_names
-    assert "tokencut_optimize" in tool_names
-    assert "tokencut_clip" in tool_names
-    assert "tokencut_retrieve" in tool_names
-    assert "tokencut_gain" in tool_names
+    assert "usagetrim_code" in tool_names
+    assert "usagetrim_read" in tool_names
+    assert "usagetrim_edit_symbol" in tool_names
+    assert "usagetrim_exec" in tool_names
+    assert "usagetrim_optimize" in tool_names
+    assert "usagetrim_clip" in tool_names
+    assert "usagetrim_retrieve" in tool_names
+    assert "usagetrim_gain" in tool_names
 
     # Schema descriptions should be minimized for desktop context
     full_tokens = count_tokens(json.dumps(full_tools)).openai
@@ -48,7 +48,7 @@ def test_desktop_mcp_profile_tools_and_schema_reduction():
 def test_configure_codex_mcp_new_file(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(
-        "tokencut.core.doctor.shutil.which", lambda _: str(tmp_path / "bin" / "tokencut")
+        "usagetrim.core.doctor.shutil.which", lambda _: str(tmp_path / "bin" / "usagetrim")
     )
 
     target_cfg = tmp_path / ".codex" / "config.toml"
@@ -60,15 +60,15 @@ def test_configure_codex_mcp_new_file(tmp_path, monkeypatch):
     content = target_cfg.read_text(encoding="utf-8")
     parsed = tomllib.loads(content)
     assert "mcp_servers" in parsed
-    assert "tokencut" in parsed["mcp_servers"]
-    tokencut_cfg = parsed["mcp_servers"]["tokencut"]
-    assert tokencut_cfg["command"] == str(tmp_path / "bin" / "tokencut")
-    assert tokencut_cfg["args"] == ["mcp", "--profile", "desktop"]
+    assert "usagetrim" in parsed["mcp_servers"]
+    usagetrim_cfg = parsed["mcp_servers"]["usagetrim"]
+    assert usagetrim_cfg["command"] == str(tmp_path / "bin" / "usagetrim")
+    assert usagetrim_cfg["args"] == ["mcp", "--profile", "desktop"]
 
 
 def test_configure_codex_mcp_preserves_existing_tables_and_comments(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "tokencut.core.doctor.shutil.which", lambda _: str(tmp_path / "bin" / "tokencut")
+        "usagetrim.core.doctor.shutil.which", lambda _: str(tmp_path / "bin" / "usagetrim")
     )
 
     target_cfg = tmp_path / "config.toml"
@@ -78,10 +78,10 @@ def test_configure_codex_mcp_preserves_existing_tables_and_comments(tmp_path, mo
         "[mcp_servers.other]\n"
         'command = "other-tool"\n'
         'args = ["serve"]\n\n'
-        "[mcp_servers.tokencut]\n"
+        "[mcp_servers.usagetrim]\n"
         'command = "old-path"\n'
         'args = ["mcp", "--profile", "coding"]\n\n'
-        "[mcp_servers.tokencut.env]\n"
+        "[mcp_servers.usagetrim.env]\n"
         'CUSTOM_KEY = "custom_val"\n'
     )
     target_cfg.write_text(initial_toml, encoding="utf-8")
@@ -96,20 +96,20 @@ def test_configure_codex_mcp_preserves_existing_tables_and_comments(tmp_path, mo
     parsed = tomllib.loads(updated_content)
     assert parsed["model"] == "gpt-4o"
     assert parsed["mcp_servers"]["other"]["command"] == "other-tool"
-    assert parsed["mcp_servers"]["tokencut"]["command"] == str(tmp_path / "bin" / "tokencut")
-    assert parsed["mcp_servers"]["tokencut"]["args"] == ["mcp", "--profile", "desktop"]
+    assert parsed["mcp_servers"]["usagetrim"]["command"] == str(tmp_path / "bin" / "usagetrim")
+    assert parsed["mcp_servers"]["usagetrim"]["args"] == ["mcp", "--profile", "desktop"]
     # Existing env table should be preserved
-    assert parsed["mcp_servers"]["tokencut"]["env"]["CUSTOM_KEY"] == "custom_val"
+    assert parsed["mcp_servers"]["usagetrim"]["env"]["CUSTOM_KEY"] == "custom_val"
 
     # Verify backup was created
-    backups = list(tmp_path.glob("*.pre-tokencut-*"))
+    backups = list(tmp_path.glob("*.pre-usagetrim-*"))
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == initial_toml
 
     # Idempotent call should not create second backup
     ok2, _ = configure_codex_mcp(target_file=target_cfg, profile="desktop")
     assert ok2 is True
-    assert len(list(tmp_path.glob("*.pre-tokencut-*"))) == 1
+    assert len(list(tmp_path.glob("*.pre-usagetrim-*"))) == 1
 
 
 def test_filter_python_traceback_collapses_library_frames():
@@ -228,15 +228,15 @@ def test_prepare_text_desktop_mode():
 
 def test_generate_desktop_rules():
     claude_rules = generate_desktop_rules("claude")
-    assert "TokenCut Claude Rules" in claude_rules
-    assert "tokencut_code" in claude_rules
-    assert "tokencut_read" in claude_rules
-    assert "tokencut_edit_symbol" in claude_rules
+    assert "UsageTrim Claude Rules" in claude_rules
+    assert "usagetrim_code" in claude_rules
+    assert "usagetrim_read" in claude_rules
+    assert "usagetrim_edit_symbol" in claude_rules
 
     codex_rules = generate_desktop_rules("codex")
-    assert "TokenCut Codex Rules" in codex_rules
-    assert "tokencut_code" in codex_rules
-    assert "tokencut_read" in codex_rules
+    assert "UsageTrim Codex Rules" in codex_rules
+    assert "usagetrim_code" in codex_rules
+    assert "usagetrim_read" in codex_rules
 
 
 def test_cli_rules_command(tmp_path):
@@ -247,7 +247,7 @@ def test_cli_rules_command(tmp_path):
     )
     assert res.exit_code == 0
     assert target_claude.exists()
-    assert "TokenCut Claude Rules" in target_claude.read_text(encoding="utf-8")
+    assert "UsageTrim Claude Rules" in target_claude.read_text(encoding="utf-8")
 
     target_codex = tmp_path / "AGENTS.md"
     res_codex = runner.invoke(
@@ -255,13 +255,13 @@ def test_cli_rules_command(tmp_path):
     )
     assert res_codex.exit_code == 0
     assert target_codex.exists()
-    assert "TokenCut Codex Rules" in target_codex.read_text(encoding="utf-8")
+    assert "UsageTrim Codex Rules" in target_codex.read_text(encoding="utf-8")
 
 
 def test_cli_install_codex(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(
-        "tokencut.core.doctor.shutil.which", lambda _: str(tmp_path / "bin" / "tokencut")
+        "usagetrim.core.doctor.shutil.which", lambda _: str(tmp_path / "bin" / "usagetrim")
     )
 
     runner = CliRunner()
@@ -269,4 +269,4 @@ def test_cli_install_codex(tmp_path, monkeypatch):
     assert res.exit_code == 0
     codex_file = tmp_path / ".codex" / "config.toml"
     assert codex_file.exists()
-    assert "[mcp_servers.tokencut]" in codex_file.read_text()
+    assert "[mcp_servers.usagetrim]" in codex_file.read_text()

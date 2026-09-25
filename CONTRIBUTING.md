@@ -1,6 +1,6 @@
-# Contributing to tokencut ⚡
+# Contributing to usagetrim ⚡
 
-Thank you for your interest in contributing to **tokencut**! We are building the undisputed state-of-the-art token optimization engine and universal MCP server for AI coding assistants (Claude Code, Cursor, Codex, Gemini CLI).
+Thank you for your interest in contributing to **usagetrim**! We are building the undisputed state-of-the-art token optimization engine and universal MCP server for AI coding assistants (Claude Code, Cursor, Codex, Gemini CLI).
 
 Whether you want to add a new compression heuristic, add an AST skeletonizer for a new programming language, improve prompt cache protection, or optimize algorithms, you are very welcome!
 
@@ -12,8 +12,8 @@ We use [`uv`](https://docs.astral.sh/uv/) for blazing-fast Python dependency man
 
 ### 1. Clone & Install
 ```bash
-git clone https://github.com/00200200/tokencut.git
-cd tokencut
+git clone https://github.com/00200200/usagetrim.git
+cd usagetrim
 
 # Sync dependencies and virtual environment
 uv sync --all-extras
@@ -25,7 +25,7 @@ uv sync --all-extras
 uv run pytest -v
 
 # Run with test coverage
-uv run pytest --cov=tokencut
+uv run pytest --cov=usagetrim
 ```
 
 ### 3. Lint & Format
@@ -41,10 +41,10 @@ uv run ruff format .
 
 ## 🗺️ Codebase Architecture
 
-Before writing code, here is where things live in `src/tokencut/`:
+Before writing code, here is where things live in `src/usagetrim/`:
 
 ```
-src/tokencut/
+src/usagetrim/
 ├── cli.py                     # CLI commands (run, cat, retrieve, tree, diff, lint, hook, demo)
 ├── core/
 │   ├── cleaner.py             # Log compactor, ANSI stripper, error & stacktrace preserver
@@ -70,20 +70,20 @@ src/tokencut/
 
 ### Adding a New Specialized Command Filter
 If you want to optimize a specific command (e.g. `docker ps`, `cargo test`, `kubectl`):
-1. Open `src/tokencut/core/specialized.py`.
+1. Open `src/usagetrim/core/specialized.py`.
 2. Add a specialized filter function: `def filter_my_command(raw: str) -> str`.
 3. Wire it into `auto_specialize_command_output(command, raw_output)`.
 4. Add unit tests in `tests/test_adaptive_and_specialized.py`.
 
 ### Adding AST Skeletonizer for a New Language
 If you want to add language support (e.g. C++, Java, Kotlin, Swift):
-1. Open `src/tokencut/core/skeleton.py`.
+1. Open `src/usagetrim/core/skeleton.py`.
 2. Update `_skeletonize_by_regex` or add a specialized parser for the extension.
 3. Test that method bodies `{ ... }` are collapsed while signatures and docstrings are preserved.
 4. Add unit test in `tests/test_skeleton.py`.
 
 ### Adding a New MCP Tool
-1. Open `src/tokencut/mcp/server.py`.
+1. Open `src/usagetrim/mcp/server.py`.
 2. Add tool specification to `TOOLS_DEFINITIONS`.
 3. Add handler function: `handle_my_tool(arguments)`.
 4. Wire it into `tools/call` dispatcher in `run_mcp_stdio_server()`.

@@ -7,8 +7,8 @@ import subprocess
 import pytest
 from typer.testing import CliRunner
 
-from tokencut.cli import app
-from tokencut.core import native_hooks
+from usagetrim.cli import app
+from usagetrim.core import native_hooks
 
 
 def _event():
@@ -54,7 +54,7 @@ def test_claude_compacts_stdout_without_changing_failure_or_metadata():
         ("hook_event_name", "PreToolUse"),
         ("hook_event_name", "PostToolUseFailure"),
         ("tool_name", "Read"),
-        ("tool_name", "mcp__tokencut__exec"),
+        ("tool_name", "mcp__usagetrim__exec"),
         ("tool_response", "raw response"),
         ("tool_response", None),
         ("tool_input", []),
@@ -135,7 +135,7 @@ def test_cli_hook_filter_outputs_one_valid_protocol_object():
 
 @pytest.fixture
 def executable(tmp_path):
-    path = tmp_path / "bin" / "tokencut"
+    path = tmp_path / "bin" / "usagetrim"
     path.parent.mkdir()
     path.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\n")
     path.chmod(0o755)
@@ -165,7 +165,7 @@ def test_install_preserves_hooks_permissions_and_original_backup(tmp_path, execu
     assert installed["hooks"]["PreToolUse"] == original["hooks"]["PreToolUse"]
     assert installed["hooks"]["PostToolUse"][:-1] == original["hooks"]["PostToolUse"]
     assert stat.S_IMODE(settings.stat().st_mode) == 0o640
-    backups = list(tmp_path.glob("settings.json.pre-tokencut-*"))
+    backups = list(tmp_path.glob("settings.json.pre-usagetrim-*"))
     assert len(backups) == 1
     assert backups[0].read_text() == raw
     assert stat.S_IMODE(backups[0].stat().st_mode) == 0o640
@@ -174,7 +174,7 @@ def test_install_preserves_hooks_permissions_and_original_backup(tmp_path, execu
     native_hooks.install_claude_hook(executable, settings)
     assert settings.read_bytes() == first_bytes
     assert settings.stat().st_mtime_ns == first_mtime
-    assert list(tmp_path.glob("settings.json.pre-tokencut-*")) == backups
+    assert list(tmp_path.glob("settings.json.pre-usagetrim-*")) == backups
 
 
 @pytest.mark.parametrize(
@@ -199,11 +199,11 @@ def test_malformed_settings_are_never_overwritten(tmp_path, executable, raw):
     with pytest.raises((ValueError, TypeError)):
         native_hooks.install_claude_hook(executable, settings)
     assert settings.read_text() == raw
-    assert list(tmp_path.glob("settings.json.pre-tokencut-*")) == []
+    assert list(tmp_path.glob("settings.json.pre-usagetrim-*")) == []
 
 
 def test_new_install_is_private_and_shell_quotes_executable(tmp_path):
-    executable = tmp_path / "space's $(touch PWNED) bin" / "tokencut"
+    executable = tmp_path / "space's $(touch PWNED) bin" / "usagetrim"
     executable.parent.mkdir()
     executable.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\n")
     executable.chmod(0o755)
@@ -230,4 +230,4 @@ def test_missing_executable_does_not_change_settings(tmp_path):
     with pytest.raises(FileNotFoundError):
         native_hooks.install_claude_hook(tmp_path / "missing", settings)
     assert settings.read_bytes() == before
-    assert list(tmp_path.glob("settings.json.pre-tokencut-*")) == []
+    assert list(tmp_path.glob("settings.json.pre-usagetrim-*")) == []

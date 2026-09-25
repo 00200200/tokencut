@@ -6,21 +6,21 @@ import sys
 import pytest
 from typer.testing import CliRunner
 
-from tokencut.core.cache import ContextCache
-from tokencut.core.telemetry import TelemetryStore
-from tokencut.mcp import server
-from tokencut.mcp.server import (
-    handle_tokencut_diff,
-    handle_tokencut_exec,
-    handle_tokencut_gain,
-    handle_tokencut_json,
-    handle_tokencut_read,
-    handle_tokencut_retrieve,
-    handle_tokencut_stats,
-    handle_tokencut_tree,
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.telemetry import TelemetryStore
+from usagetrim.mcp import server
+from usagetrim.mcp.server import (
+    handle_usagetrim_diff,
+    handle_usagetrim_exec,
+    handle_usagetrim_gain,
+    handle_usagetrim_json,
+    handle_usagetrim_read,
+    handle_usagetrim_retrieve,
+    handle_usagetrim_stats,
+    handle_usagetrim_tree,
     run_mcp_stdio_server,
 )
-from tokencut.metrics.tokenizer import count_tokens
+from usagetrim.metrics.tokenizer import count_tokens
 
 
 def test_coding_profile_keeps_coding_and_recovery_tools_without_hidden_dispatch(monkeypatch):
@@ -28,37 +28,37 @@ def test_coding_profile_keeps_coding_and_recovery_tools_without_hidden_dispatch(
     assert {tool["name"] for tool in listed["result"]["tools"]} == server.CODING_TOOLS
     assert len(server.TOOLS_DEFINITIONS) > len(server.CODING_TOOLS)
     monkeypatch.setattr(
-        server, "handle_tokencut_clip", lambda _: pytest.fail("Hidden tool executed")
+        server, "handle_usagetrim_clip", lambda _: pytest.fail("Hidden tool executed")
     )
     response = server._respond(
         {
             "jsonrpc": "2.0",
             "id": 2,
             "method": "tools/call",
-            "params": {"name": "tokencut_clip", "arguments": {"text": "input"}},
+            "params": {"name": "usagetrim_clip", "arguments": {"text": "input"}},
         },
         profile="coding",
     )
     assert response["error"]["code"] == -32602
-    for name in {"tokencut_code", "tokencut_edit_symbol", "tokencut_read", "tokencut_retrieve"}:
+    for name in {"usagetrim_code", "usagetrim_edit_symbol", "usagetrim_read", "usagetrim_retrieve"}:
         assert next(tool for tool in listed["result"]["tools"] if tool["name"] == name) == next(
             tool for tool in server.TOOLS_DEFINITIONS if tool["name"] == name
         )
 
 
 def test_profile_stdio_and_environment_selection(monkeypatch):
-    monkeypatch.delenv("TOKENCUT_MCP_PROFILE", raising=False)
-    from tokencut.cli import app
+    monkeypatch.delenv("USAGETRIM_MCP_PROFILE", raising=False)
+    from usagetrim.cli import app
 
     request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n"
     runner = CliRunner()
     for args, env, expected in (
         ([], {}, len(server.TOOLS_DEFINITIONS)),
         (["--profile", "coding"], {}, 9),
-        ([], {"TOKENCUT_MCP_PROFILE": "coding"}, 9),
+        ([], {"USAGETRIM_MCP_PROFILE": "coding"}, 9),
         (["--profile", "desktop"], {}, 11),
-        ([], {"TOKENCUT_MCP_PROFILE": "desktop"}, 11),
-        (["--profile", "full"], {"TOKENCUT_MCP_PROFILE": "coding"}, len(server.TOOLS_DEFINITIONS)),
+        ([], {"USAGETRIM_MCP_PROFILE": "desktop"}, 11),
+        (["--profile", "full"], {"USAGETRIM_MCP_PROFILE": "coding"}, len(server.TOOLS_DEFINITIONS)),
     ):
         result = runner.invoke(app, ["mcp", *args], input=request, env=env)
         assert result.exit_code == 0, result.output
@@ -72,8 +72,8 @@ def test_coding_profile_reduces_schema_text_and_does_not_advertise_hidden_tools(
     full = count_tokens(json.dumps(server.tool_definitions())).openai
     coding = count_tokens(json.dumps(server.tool_definitions("coding"))).openai
     assert coding < full * 0.75
-    assert "tokencut_pack" not in server.server_instructions("coding")
-    assert "tokencut_pack" in server.server_instructions("full")
+    assert "usagetrim_pack" not in server.server_instructions("coding")
+    assert "usagetrim_pack" in server.server_instructions("full")
 
 
 def test_desktop_profile_reduces_schema_text_and_sets_instructions():
@@ -86,29 +86,29 @@ def test_desktop_profile_reduces_schema_text_and_sets_instructions():
     assert "Claude Desktop & Codex Desktop" in instructions
 
 
-def test_handle_tokencut_exec():
-    res = handle_tokencut_exec({"command": "echo 'Hello tokencut!'"})
-    assert "Hello tokencut!" in res
+def test_handle_usagetrim_exec():
+    res = handle_usagetrim_exec({"command": "echo 'Hello usagetrim!'"})
+    assert "Hello usagetrim!" in res
     assert "exit code: 0" in res
 
 
-def test_handle_tokencut_exec_budget():
-    res = handle_tokencut_exec({"command": "printf '%10000s' x; exit 7", "budget": 100})
+def test_handle_usagetrim_exec_budget():
+    res = handle_usagetrim_exec({"command": "printf '%10000s' x; exit 7", "budget": 100})
     assert count_tokens(res).claude <= 100
     assert "exit code: 7" in res
     ref = re.search(r"tc_[a-f0-9]+", res).group()
     assert ContextCache().retrieve(ref).endswith("x")
 
 
-def test_handle_tokencut_read(tmp_path):
+def test_handle_usagetrim_read(tmp_path):
     f = tmp_path / "sample.py"
     f.write_text("def foo():\n    return 42\n")
-    res = handle_tokencut_read({"path": str(f), "skeleton": True})
+    res = handle_usagetrim_read({"path": str(f), "skeleton": True})
     assert "def foo():" in res
     assert "..." in res
 
 
-def test_handle_tokencut_read_if_modified_since(tmp_path):
+def test_handle_usagetrim_read_if_modified_since(tmp_path):
     import hashlib
 
     f = tmp_path / "data.py"
@@ -116,33 +116,33 @@ def test_handle_tokencut_read_if_modified_since(tmp_path):
     content_hash = hashlib.sha256(f.read_bytes()).hexdigest()
 
     # When hash matches, returns 304 Not Modified notice
-    cached_res = handle_tokencut_read({"path": str(f), "if_modified_since_hash": content_hash})
+    cached_res = handle_usagetrim_read({"path": str(f), "if_modified_since_hash": content_hash})
     assert "304 Not Modified" in cached_res
     assert "data.py" in cached_res
 
     # When hash does not match, returns fresh file content
     diff_hash = "0" * 64
-    fresh_res = handle_tokencut_read({"path": str(f), "if_modified_since_hash": diff_hash})
+    fresh_res = handle_usagetrim_read({"path": str(f), "if_modified_since_hash": diff_hash})
     assert "304 Not Modified" not in fresh_res
     assert "x = 100" in fresh_res
 
 
-def test_handle_tokencut_read_include_hash_and_strip_comments(tmp_path):
+def test_handle_usagetrim_read_include_hash_and_strip_comments(tmp_path):
     f = tmp_path / "code.py"
     f.write_text("# verbose commentary\nval = 42\n# trailing note\n")
 
     # With include_hash
-    hash_res = handle_tokencut_read({"path": str(f), "include_hash": True})
+    hash_res = handle_usagetrim_read({"path": str(f), "include_hash": True})
     assert "# [sha256:" in hash_res
     assert "val = 42" in hash_res
 
     # With strip_comments
-    clean_res = handle_tokencut_read({"path": str(f), "strip_comments": True})
+    clean_res = handle_usagetrim_read({"path": str(f), "strip_comments": True})
     assert "# verbose commentary" not in clean_res
     assert "val = 42" in clean_res
 
 
-def test_handle_tokencut_read_auto_skeleton(tmp_path):
+def test_handle_usagetrim_read_auto_skeleton(tmp_path):
     f = tmp_path / "large_module.py"
     lines = ["import os", "import sys", "class Worker:"]
     for i in range(15):
@@ -154,24 +154,24 @@ def test_handle_tokencut_read_auto_skeleton(tmp_path):
     f.write_text("\n".join(lines), encoding="utf-8")
 
     # Regular read with low budget
-    raw_res = handle_tokencut_read({"path": str(f), "budget": 80, "auto_skeleton": False})
+    raw_res = handle_usagetrim_read({"path": str(f), "budget": 80, "auto_skeleton": False})
     assert "lines omitted" in raw_res  # truncated
 
     # Auto skeleton read
-    skel_res = handle_tokencut_read({"path": str(f), "budget": 300, "auto_skeleton": True})
+    skel_res = handle_usagetrim_read({"path": str(f), "budget": 300, "auto_skeleton": True})
     assert "structural outline" in skel_res
     assert "class Worker:" in skel_res
     assert "def task_0" in skel_res
     assert "def task_14" in skel_res
 
 
-def test_handle_tokencut_read_session_dedups_identical_content(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+def test_handle_usagetrim_read_session_dedups_identical_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     path = tmp_path / "shared.py"
     body = "class Shared:\n" + ("    member = 1\n" * 100)
     path.write_text(body)
-    first = handle_tokencut_read({"path": str(path)})
-    second = handle_tokencut_read({"path": str(path)})
+    first = handle_usagetrim_read({"path": str(path)})
+    second = handle_usagetrim_read({"path": str(path)})
     assert "class Shared:" in first
     assert "class Shared:" not in second
     assert "identical" in second.lower() or "retrieve" in second.lower()
@@ -181,35 +181,35 @@ def test_handle_tokencut_read_session_dedups_identical_content(tmp_path, monkeyp
     assert ContextCache().retrieve(ref) == body
 
 
-def test_handle_tokencut_retrieve():
-    res = handle_tokencut_retrieve({"ref_id": "tc_nonexistent"})
+def test_handle_usagetrim_retrieve():
+    res = handle_usagetrim_retrieve({"ref_id": "tc_nonexistent"})
     assert "not found" in res
 
 
-def test_handle_tokencut_diff():
-    res = handle_tokencut_diff({})
+def test_handle_usagetrim_diff():
+    res = handle_usagetrim_diff({})
     assert isinstance(res, str)
 
-    res_ignore = handle_tokencut_diff({"ignore_patterns": [r"\.tmp$"]})
+    res_ignore = handle_usagetrim_diff({"ignore_patterns": [r"\.tmp$"]})
     assert isinstance(res_ignore, str)
 
 
-def test_handle_tokencut_tree(tmp_path):
+def test_handle_usagetrim_tree(tmp_path):
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "a.py").write_text("print(1)")
-    res = handle_tokencut_tree({"path": str(tmp_path), "max_depth": 2})
+    res = handle_usagetrim_tree({"path": str(tmp_path), "max_depth": 2})
     assert "a.py" in res
 
 
-def test_handle_tokencut_json():
+def test_handle_usagetrim_json():
     raw = '[{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]'
-    res = handle_tokencut_json({"json_str": raw, "max_items": 2})
-    assert "omitted by tokencut" in res
+    res = handle_usagetrim_json({"json_str": raw, "max_items": 2})
+    assert "omitted by usagetrim" in res
 
 
 def test_json_small_lossy_preview_still_has_recoverable_original():
     raw = '[{"id":1},{"id":2},{"unique_schema":true}]'
-    output = handle_tokencut_json({"json_str": raw, "max_items": 2})
+    output = handle_usagetrim_json({"json_str": raw, "max_items": 2})
     ref = re.search(r"tc_[a-f0-9]+", output).group()
     assert ContextCache().retrieve(ref) == raw
 
@@ -230,7 +230,7 @@ def test_json_protocol_bounds_redacts_and_accounts_for_returned_text(tmp_path, m
             "id": 1,
             "method": "tools/call",
             "params": {
-                "name": "tokencut_json",
+                "name": "usagetrim_json",
                 "arguments": {"path": str(path), "max_tokens": 100},
             },
         }
@@ -257,7 +257,7 @@ def test_tree_protocol_budget_and_recovery_do_not_claim_file_content_savings(tmp
             "id": 1,
             "method": "tools/call",
             "params": {
-                "name": "tokencut_tree",
+                "name": "usagetrim_tree",
                 "arguments": {
                     "path": str(tmp_path),
                     "max_depth": 2,
@@ -277,11 +277,11 @@ def test_tree_protocol_budget_and_recovery_do_not_claim_file_content_savings(tmp
 @pytest.mark.parametrize(
     "name,arguments",
     [
-        ("tokencut_json", {"json_str": "[1,2,3]", "max_items": -1}),
-        ("tokencut_json", {"json_str": "[1,2,3]", "max_tokens": 0}),
-        ("tokencut_tree", {"max_depth": -1}),
-        ("tokencut_tree", {"max_depth": True}),
-        ("tokencut_tree", {"max_tokens": 0}),
+        ("usagetrim_json", {"json_str": "[1,2,3]", "max_items": -1}),
+        ("usagetrim_json", {"json_str": "[1,2,3]", "max_tokens": 0}),
+        ("usagetrim_tree", {"max_depth": -1}),
+        ("usagetrim_tree", {"max_depth": True}),
+        ("usagetrim_tree", {"max_tokens": 0}),
     ],
 )
 def test_new_tools_reject_invalid_limits(name, arguments):
@@ -296,31 +296,31 @@ def test_new_tools_reject_invalid_limits(name, arguments):
     assert response["result"]["isError"]
 
 
-def test_handle_tokencut_stats():
-    stats = handle_tokencut_stats()
-    assert "tokencut Session Savings:" in stats
+def test_handle_usagetrim_stats():
+    stats = handle_usagetrim_stats()
+    assert "usagetrim Session Savings:" in stats
     assert "Estimated net text reduction" in stats
 
 
 def test_coding_profile_includes_gain_tool():
     listed = server._respond({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, profile="coding")
     names = {tool["name"] for tool in listed["result"]["tools"]}
-    assert "tokencut_gain" in names
-    assert "tokencut_gain" in server.CODING_TOOLS
-    gain_def = next(t for t in listed["result"]["tools"] if t["name"] == "tokencut_gain")
+    assert "usagetrim_gain" in names
+    assert "usagetrim_gain" in server.CODING_TOOLS
+    gain_def = next(t for t in listed["result"]["tools"] if t["name"] == "usagetrim_gain")
     assert (
         "billing" in gain_def["description"].lower() or "quota" in gain_def["description"].lower()
     )
     assert gain_def["annotations"]["readOnlyHint"] is True
 
 
-def test_handle_tokencut_gain_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+def test_handle_usagetrim_gain_json(tmp_path, monkeypatch):
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     store = TelemetryStore(db_path=tmp_path / "telemetry.db")
     store.record(1000, 200, 1000, 200, 1000, 200, operation="exec:pytest")
     store.record(400, 400, 400, 400, 400, 400, operation="exec:echo")
 
-    output = handle_tokencut_gain({"history": True, "limit": 10})
+    output = handle_usagetrim_gain({"history": True, "limit": 10})
     data = json.loads(output)
     assert data["total_events"] == 2
     assert data["saved_openai"] == 800
@@ -334,7 +334,7 @@ def test_handle_tokencut_gain_json(tmp_path, monkeypatch):
             "jsonrpc": "2.0",
             "id": 9,
             "method": "tools/call",
-            "params": {"name": "tokencut_gain", "arguments": {"passthrough": True}},
+            "params": {"name": "usagetrim_gain", "arguments": {"passthrough": True}},
         },
         profile="coding",
     )
@@ -351,7 +351,7 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
-            "params": {"name": "tokencut_stats", "arguments": {}},
+            "params": {"name": "usagetrim_stats", "arguments": {}},
         },
         {"jsonrpc": "2.0", "id": 4, "method": "ping", "params": {}},
     ]
@@ -366,35 +366,35 @@ def test_mcp_stdio_protocol_loop(monkeypatch):
     responses = [json.loads(line) for line in output_stream.getvalue().splitlines() if line.strip()]
     assert len(responses) == 4
     assert responses[0]["id"] == 1
-    assert responses[0]["result"]["serverInfo"]["name"] == "tokencut"
+    assert responses[0]["result"]["serverInfo"]["name"] == "usagetrim"
     assert responses[1]["id"] == 2
     assert {tool["name"] for tool in responses[1]["result"]["tools"]} == {
-        "tokencut_context",
-        "tokencut_code",
-        "tokencut_edit_symbol",
-        "tokencut_exec",
-        "tokencut_read",
-        "tokencut_retrieve",
-        "tokencut_diff",
-        "tokencut_tree",
-        "tokencut_json",
-        "tokencut_clip",
-        "tokencut_pack",
-        "tokencut_distill",
-        "tokencut_table",
-        "tokencut_optimize",
-        "tokencut_stats",
-        "tokencut_gain",
+        "usagetrim_context",
+        "usagetrim_code",
+        "usagetrim_edit_symbol",
+        "usagetrim_exec",
+        "usagetrim_read",
+        "usagetrim_retrieve",
+        "usagetrim_diff",
+        "usagetrim_tree",
+        "usagetrim_json",
+        "usagetrim_clip",
+        "usagetrim_pack",
+        "usagetrim_distill",
+        "usagetrim_table",
+        "usagetrim_optimize",
+        "usagetrim_stats",
+        "usagetrim_gain",
     }
     assert responses[2]["id"] == 3
-    assert "tokencut Session Savings" in responses[2]["result"]["content"][0]["text"]
+    assert "usagetrim Session Savings" in responses[2]["result"]["content"][0]["text"]
 
 
 def test_mcp_read_bounds_single_huge_line_and_recovers(tmp_path):
     path = tmp_path / "huge.txt"
     raw = "payload with details " * 4000
     path.write_text(raw)
-    output = handle_tokencut_read({"path": str(path), "max_tokens": 100})
+    output = handle_usagetrim_read({"path": str(path), "max_tokens": 100})
     assert count_tokens(output).claude <= 100
     import re
 
@@ -403,7 +403,7 @@ def test_mcp_read_bounds_single_huge_line_and_recovers(tmp_path):
 
 
 def test_exec_budget_includes_exit_status_and_recovers_deduplication():
-    output = handle_tokencut_exec(
+    output = handle_usagetrim_exec(
         {
             "command": "printf 'same line\\nsame line\\nsame line\\nsame line\\n'; exit 7",
             "max_tokens": 64,
@@ -416,7 +416,7 @@ def test_exec_budget_includes_exit_status_and_recovers_deduplication():
 
 def test_exec_explicit_cwd(tmp_path):
     (tmp_path / "project.txt").write_text("correct project")
-    output = handle_tokencut_exec({"command": "cat project.txt", "cwd": str(tmp_path)})
+    output = handle_usagetrim_exec({"command": "cat project.txt", "cwd": str(tmp_path)})
     assert "correct project" in output
 
 
@@ -428,7 +428,7 @@ def test_exec_default_preserves_unknown_long_output_and_full_diagnostics(monkeyp
         "Traceback (most recent call last):\n" + "stack frame\n" * 300 + "AssertionError: failure\n"
     )
     monkeypatch.setattr(server.subprocess, "run", lambda *a, **kw: CompletedProcess(a, 9, raw))
-    output = handle_tokencut_exec({"command": "custom-command"})
+    output = handle_usagetrim_exec({"command": "custom-command"})
     assert output == raw + "\n[exit code: 9]"
 
 
@@ -441,24 +441,24 @@ def test_exec_timeout_keeps_all_partial_diagnostics(monkeypatch):
         raise TimeoutExpired("custom-command", 120, output=raw)
 
     monkeypatch.setattr(server.subprocess, "run", timeout)
-    output = handle_tokencut_exec({"command": "custom-command"})
+    output = handle_usagetrim_exec({"command": "custom-command"})
     assert output.startswith(raw.decode())
     assert "timed out" in output
 
 
 def test_diff_outside_repository_is_an_error(tmp_path):
     with pytest.raises(ValueError, match="git diff failed"):
-        handle_tokencut_diff({"cwd": str(tmp_path)})
+        handle_usagetrim_diff({"cwd": str(tmp_path)})
 
 
 def test_short_output_overhead_and_retrieval_are_counted(monkeypatch):
     for name in ("_SESSION_SAVED_CLAUDE", "_SESSION_SAVED_OPENAI", "_SESSION_SAVED_GEMINI"):
         monkeypatch.setattr(server, name, 0)
-    output = handle_tokencut_exec({"command": "printf hi"})
+    output = handle_usagetrim_exec({"command": "printf hi"})
     expected = count_tokens("hi").claude - count_tokens(output).claude
     assert server._SESSION_SAVED_CLAUDE == expected < 0
     ref = ContextCache().store("previous output")
-    retrieved = handle_tokencut_retrieve({"ref_id": ref})
+    retrieved = handle_usagetrim_retrieve({"ref_id": ref})
     assert server._SESSION_SAVED_CLAUDE == expected - count_tokens(retrieved).claude
 
 
@@ -483,7 +483,7 @@ def test_invalid_call_does_not_run_command(arguments, monkeypatch):
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
-            "params": {"name": "tokencut_exec", "arguments": arguments},
+            "params": {"name": "usagetrim_exec", "arguments": arguments},
         }
     )
     assert response["result"]["isError"]
@@ -510,12 +510,12 @@ def test_protocol_survives_bad_messages(monkeypatch):
 def test_mcp_edit_symbol_preview_and_apply(tmp_path):
     f = tmp_path / "calc.py"
     f.write_text("class Calculator:\n    def add(self, a, b):\n        return a + b\n")
-    read_out = server.handle_tokencut_read({"path": str(f), "symbol": "Calculator.add"})
+    read_out = server.handle_usagetrim_read({"path": str(f), "symbol": "Calculator.add"})
     assert "sha256=" in read_out
     hash_val = read_out.split("sha256=")[1].strip().split()[0]
 
     # Preview diff
-    preview = server.handle_tokencut_edit_symbol(
+    preview = server.handle_usagetrim_edit_symbol(
         {
             "path": str(f),
             "selector": "Calculator.add",
@@ -529,7 +529,7 @@ def test_mcp_edit_symbol_preview_and_apply(tmp_path):
     assert "# updated" not in f.read_text()
 
     # Apply diff
-    applied = server.handle_tokencut_edit_symbol(
+    applied = server.handle_usagetrim_edit_symbol(
         {
             "path": str(f),
             "selector": "Calculator.add",
@@ -550,7 +550,7 @@ def test_mcp_clip():
             "id": 100,
             "method": "tools/call",
             "params": {
-                "name": "tokencut_clip",
+                "name": "usagetrim_clip",
                 "arguments": {"text": noisy, "budget": 500},
             },
         }
@@ -569,14 +569,14 @@ def test_mcp_pack(tmp_path):
             "id": 101,
             "method": "tools/call",
             "params": {
-                "name": "tokencut_pack",
+                "name": "usagetrim_pack",
                 "arguments": {"root": str(tmp_path), "budget": 1000},
             },
         }
     )
     assert not res["result"]["isError"]
     text = res["result"]["content"][0]["text"]
-    assert "TokenCut Context Bundle" in text
+    assert "UsageTrim Context Bundle" in text
     assert "main.py" in text
 
 
@@ -588,7 +588,7 @@ def test_mcp_distill():
             "id": 102,
             "method": "tools/call",
             "params": {
-                "name": "tokencut_distill",
+                "name": "usagetrim_distill",
                 "arguments": {"transcript": transcript, "budget": 500},
             },
         }
@@ -607,7 +607,7 @@ def test_mcp_table():
             "id": 103,
             "method": "tools/call",
             "params": {
-                "name": "tokencut_table",
+                "name": "usagetrim_table",
                 "arguments": {"data": data, "budget": 500, "format": "toon"},
             },
         }
@@ -635,7 +635,7 @@ Let me know if you see any issues.
             "id": 104,
             "method": "tools/call",
             "params": {
-                "name": "tokencut_optimize",
+                "name": "usagetrim_optimize",
                 "arguments": {"content": prompt, "budget": 1000},
             },
         }

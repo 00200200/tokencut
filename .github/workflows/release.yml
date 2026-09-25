@@ -46,17 +46,17 @@ jobs:
       - name: Build portable app and verify signature
         run: |
           bash macos/build.sh
-          codesign --verify --deep --strict macos/build/TokenCut.app
+          codesign --verify --deep --strict macos/build/UsageTrim.app
           python3 - <<'PY'
           import plistlib
           from pathlib import Path
-          app = Path('macos/build/TokenCut.app')
+          app = Path('macos/build/UsageTrim.app')
           info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
-          assert 'TokenCutExecutable' not in info, 'Release must resolve the current user backend'
+          assert 'UsageTrimExecutable' not in info, 'Release must resolve the current user backend'
           assert (app / 'Contents/Resources/pet-3d.png').is_file()
           PY
           mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent macos/build/TokenCut.app "dist/TokenCut-macos-$(uname -m).zip"
+          ditto -c -k --sequesterRsrc --keepParent macos/build/UsageTrim.app "dist/UsageTrim-macos-$(uname -m).zip"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-app

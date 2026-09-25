@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from tokencut.cli import app
-from tokencut.core.cache import ContextCache
-from tokencut.core.command_family import command_family
-from tokencut.core.gain import GainReport, build_gain_report
-from tokencut.core.spill import DEFAULT_SPILL_BYTES, spill_large_output
-from tokencut.core.telemetry import TelemetryStore
+from usagetrim.cli import app
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.command_family import command_family
+from usagetrim.core.gain import GainReport, build_gain_report
+from usagetrim.core.spill import DEFAULT_SPILL_BYTES, spill_large_output
+from usagetrim.core.telemetry import TelemetryStore
 
 
 def test_command_family_normalizes_common_invocations():
@@ -22,7 +22,7 @@ def test_command_family_normalizes_common_invocations():
 
 
 def test_gain_report_groups_by_operation_and_flags_passthrough(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     store = TelemetryStore(db_path=tmp_path / "telemetry.db")
     store.record(
         1000,
@@ -67,7 +67,7 @@ def test_gain_report_groups_by_operation_and_flags_passthrough(tmp_path, monkeyp
 
 
 def test_session_dedup_returns_short_ref_for_identical_content(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     cache = ContextCache(db_path=tmp_path / "cache.db")
     blob = "error: boom\n" + ("line\n" * 200)
     first = cache.store(blob, source="run")
@@ -81,7 +81,7 @@ def test_session_dedup_returns_short_ref_for_identical_content(tmp_path, monkeyp
 
 
 def test_spill_writes_file_and_preview(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     huge = ("LAYER progress " + ("x" * 80) + "\n") * 400
     assert len(huge.encode()) > DEFAULT_SPILL_BYTES
     result = spill_large_output(huge, spill_dir=tmp_path / "spill")
@@ -95,7 +95,7 @@ def test_spill_writes_file_and_preview(tmp_path, monkeypatch):
 
 
 def test_cli_gain_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     store = TelemetryStore(db_path=tmp_path / "telemetry.db")
     store.record(200, 40, 200, 40, 200, 40, operation="exec:ruff")
     runner = CliRunner()
@@ -113,7 +113,7 @@ def _seed_gain_events(tmp_path):
 
 
 def test_cli_gain_default_shows_by_op_and_passthrough(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     _seed_gain_events(tmp_path)
     result = CliRunner().invoke(app, ["gain"])
     assert result.exit_code == 0
@@ -124,11 +124,11 @@ def test_cli_gain_default_shows_by_op_and_passthrough(tmp_path, monkeypatch):
     assert "exec:echo" in out
     assert "passthrough" in out.lower()
     assert "Passthrough / near-zero cut" in out
-    assert "tokencut gain --history" in out
+    assert "usagetrim gain --history" in out
 
 
 def test_cli_gain_history_keeps_by_op_and_shows_saved(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     _seed_gain_events(tmp_path)
     result = CliRunner().invoke(app, ["gain", "--history"])
     assert result.exit_code == 0
@@ -139,22 +139,22 @@ def test_cli_gain_history_keeps_by_op_and_shows_saved(tmp_path, monkeypatch):
     assert "Saved" in out
     # History view stays focused — no passthrough dump, no "also --history" hint.
     assert "Passthrough / near-zero cut" not in out
-    assert "tokencut gain --history" not in out
+    assert "usagetrim gain --history" not in out
 
 
 def test_cli_gain_passthrough_alone_skips_by_op_table(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     _seed_gain_events(tmp_path)
     result = CliRunner().invoke(app, ["gain", "--passthrough"])
     assert result.exit_code == 0
     out = result.stdout
     assert "By tool family" not in out
     assert "exec:echo" in out
-    assert "tokencut gain --by-op" in out
+    assert "usagetrim gain --by-op" in out
 
 
 def test_cli_gain_empty_state(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     TelemetryStore(db_path=tmp_path / "telemetry.db")
     result = CliRunner().invoke(app, ["gain"])
     assert result.exit_code == 0
@@ -162,7 +162,7 @@ def test_cli_gain_empty_state(tmp_path, monkeypatch):
 
 
 def test_cli_run_records_operation_family(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     runner = CliRunner()
     result = runner.invoke(app, ["run", "--", "python", "-c", "print('hi')"])
     assert result.exit_code == 0
@@ -173,7 +173,7 @@ def test_cli_run_records_operation_family(tmp_path, monkeypatch):
 
 
 def test_session_view_remembers_then_returns_short_ref(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     cache = ContextCache(db_path=tmp_path / "cache.db")
     blob = "module payload\n" + ("line with detail\n" * 80)
     first = cache.session_view(blob, source="read")
@@ -189,7 +189,7 @@ def test_session_view_remembers_then_returns_short_ref(tmp_path, monkeypatch):
 
 
 def test_cli_cat_session_dedups_identical_file_content(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     path = tmp_path / "big.py"
     body = "def heavy():\n" + ("    x = 1  # detail\n" * 120)
     path.write_text(body)
@@ -202,7 +202,7 @@ def test_cli_cat_session_dedups_identical_file_content(tmp_path, monkeypatch):
     assert "def heavy():" not in second.stdout
     assert "retrieve" in second.stdout.lower() or "identical" in second.stdout.lower()
     assert "tc_" in second.stdout
-    from tokencut.metrics.tokenizer import count_tokens
+    from usagetrim.metrics.tokenizer import count_tokens
 
     saved = count_tokens(first.stdout).openai - count_tokens(second.stdout).openai
     assert saved > 200

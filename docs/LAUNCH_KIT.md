@@ -1,6 +1,6 @@
-# TokenCut Launch & Community Sharing Kit 🚀
+# UsageTrim Launch & Community Sharing Kit 🚀
 
-This document contains ready-to-publish posts, threads, and submission templates designed to showcase **TokenCut** to developer communities, drive adoption, and earn stars on GitHub.
+This document contains ready-to-publish posts, threads, and submission templates designed to showcase **UsageTrim** to developer communities, drive adoption, and earn stars on GitHub.
 
 ---
 
@@ -8,19 +8,19 @@ This document contains ready-to-publish posts, threads, and submission templates
 
 **Title:**
 ```text
-Show HN: TokenCut – Cut LLM coding context bloat by 40–98% with local MCP and CLI
+Show HN: UsageTrim – Cut LLM coding context bloat by 40–98% with local MCP and CLI
 ```
 
 **Link:**
 ```text
-https://github.com/00200200/tokencut
+https://github.com/00200200/usagetrim
 ```
 
 **Post Text / First Comment:**
 ```markdown
 Hey HN,
 
-We built TokenCut because we kept hitting rate-limit walls and paying for thousands of useless tokens in Claude Code, Cursor, and Codex.
+We built UsageTrim because we kept hitting rate-limit walls and paying for thousands of useless tokens in Claude Code, Cursor, and Codex.
 
 When coding agents run commands like `git diff`, `git log`, `cargo test`, `npm test`, or dump entire files just to read a 10-line function, 70–90% of the context window is burned on boilerplate:
 - A `cargo test` in a medium crate prints 400 lines of `test ... ok` (5,300+ tokens) when only the summary or actual panics matter.
@@ -29,23 +29,23 @@ When coding agents run commands like `git diff`, `git log`, `cargo test`, `npm t
 
 Existing tools often truncate output blindly (dropping stack traces or diff bodies) or rely on extra LLM summarization calls (which add latency, cost, and hallucination risk).
 
-TokenCut is a 100% local CLI and standard Model Context Protocol (MCP) server that operates on two strict principles:
+UsageTrim is a 100% local CLI and standard Model Context Protocol (MCP) server that operates on two strict principles:
 
 1. **Zero Breaking Quality Loss (Strict Safety Guarantee):**
    We never discard diagnostic output. On test suites (`pytest`, `cargo test`, `go test`, `vitest`/`jest`), passing runs collapse into concise records, but the moment an assertion fails, a panic occurs, or a backtrace starts, the rest of the output is reproduced 100% verbatim. On `git log -p`, diffs are compacted via unified context trimming—never omitted.
 
 2. **Compress-Cache-Retrieve (CCR):**
-   Every compacted text payload stores its full, unredacted raw original in a local SQLite database (`~/.tokencut/cache.db`). If an agent ever needs the full unabridged context, it receives a reference ID (e.g. `tc_7f8a12...`) and can retrieve it instantly via `tokencut retrieve <id>` or the MCP tool `tokencut_retrieve`.
+   Every compacted text payload stores its full, unredacted raw original in a local SQLite database (`~/.usagetrim/cache.db`). If an agent ever needs the full unabridged context, it receives a reference ID (e.g. `tc_7f8a12...`) and can retrieve it instantly via `usagetrim retrieve <id>` or the MCP tool `usagetrim_retrieve`.
 
 Key features:
 - **Universal MCP Server:** Integrates with Claude Code (`claude mcp add`), Cursor, Windsurf, Codex, and Gemini CLI. Offers a compact `coding` profile (37% smaller tool schemas) to minimize baseline turn overhead.
-- **Autonomous Context Optimizer:** `tokencut optimize` / MCP `tokencut_optimize` automatically inspects any prompt, detects embedded code blocks (` ```json ` -> TOON table, ` ```diff ` -> slim diff, stack traces -> folded), and aligns prompt cache prefixes for Anthropic / OpenAI / Gemini prompt caching.
-- **Multi-Language AST Skeletonization:** Native tree-sitter AST traversal (`ast-grep`) for TypeScript, JavaScript, Go, Rust, Java, and C/C++ to generate outline skeletons (`tokencut cat --skeleton` / `tokencut pack`).
+- **Autonomous Context Optimizer:** `usagetrim optimize` / MCP `usagetrim_optimize` automatically inspects any prompt, detects embedded code blocks (` ```json ` -> TOON table, ` ```diff ` -> slim diff, stack traces -> folded), and aligns prompt cache prefixes for Anthropic / OpenAI / Gemini prompt caching.
+- **Multi-Language AST Skeletonization:** Native tree-sitter AST traversal (`ast-grep`) for TypeScript, JavaScript, Go, Rust, Java, and C/C++ to generate outline skeletons (`usagetrim cat --skeleton` / `usagetrim pack`).
 - **macOS Desktop Companion:** Lightweight native Swift app (menu bar + HUD) with a "Prepare for chat" clipboard optimizer and live usage allowance monitors.
 
 It's open source (MIT), written in Python (managed via `uv`), and makes zero external API calls.
 
-GitHub: https://github.com/00200200/tokencut
+GitHub: https://github.com/00200200/usagetrim
 
 We'd love to hear your feedback, edge cases you encounter with agent tool outputs, and any test runners/commands you'd like specialized filters for!
 ```
@@ -57,7 +57,7 @@ We'd love to hear your feedback, edge cases you encounter with agent tool output
 ### A. `r/LocalLLaMA`
 **Title:**
 ```text
-TokenCut: Open-source local MCP & CLI context optimizer for Claude Code, Codex & local agents (40-98% token reduction, zero data loss)
+UsageTrim: Open-source local MCP & CLI context optimizer for Claude Code, Codex & local agents (40-98% token reduction, zero data loss)
 ```
 **Post Body:**
 ```markdown
@@ -68,31 +68,31 @@ If you use Claude Code, Cursor, Codex, or local agents (Aider, OpenCode), you kn
 - Huge `package-lock.json` or `uv.lock` diffs in git commits
 - Dumping 1,000-line files just to inspect a class structure
 
-We built **TokenCut** (MIT): https://github.com/00200200/tokencut
+We built **UsageTrim** (MIT): https://github.com/00200200/usagetrim
 
 ### How it works without breaking agent reasoning:
 1. **Verbatim Diagnostics**: We never summarize or lose error traces. When `cargo test`, `pytest`, `go test`, or `vitest` pass, progress lines collapse into a 1-line summary. But the instant an assertion error, panic, or traceback appears, everything from that line onward is emitted verbatim.
-2. **Compress-Cache-Retrieve (CCR)**: Everything compacted is stored in a local SQLite store. If an agent needs the original unabridged log, it calls `tokencut_retrieve(ref_id)` and recovers it immediately.
+2. **Compress-Cache-Retrieve (CCR)**: Everything compacted is stored in a local SQLite store. If an agent needs the original unabridged log, it calls `usagetrim_retrieve(ref_id)` and recovers it immediately.
 3. **AST Code Skeletons**: Uses `ast-grep` tree-sitter bindings to extract clean skeletons (functions with collapsed bodies `{ ... }`, preserving types, structs, interfaces) for TS, JS, Go, Rust, Java, and C/C++.
-4. **Autonomous Optimizer**: `tokencut optimize` detects JSON arrays and re-encodes them to TOON / markdown tables, slims unified diffs, and aligns prompt cache boundaries.
+4. **Autonomous Optimizer**: `usagetrim optimize` detects JSON arrays and re-encodes them to TOON / markdown tables, slims unified diffs, and aligns prompt cache boundaries.
 5. **No AI Calls**: 100% deterministic, runs locally, zero cloud telemetry.
 
-Works over stdio MCP (`claude mcp add --scope user tokencut -- tokencut mcp --profile coding`) or CLI (`tokencut run -- ...`).
+Works over stdio MCP (`claude mcp add --scope user usagetrim -- usagetrim mcp --profile coding`) or CLI (`usagetrim run -- ...`).
 
-Check it out on GitHub: https://github.com/00200200/tokencut
+Check it out on GitHub: https://github.com/00200200/usagetrim
 ```
 
 ### B. `r/ClaudeAI` & `r/Cursor`
 **Title:**
 ```text
-How to stop hitting the 5-hour Claude Code rate limit: TokenCut (free, open source MCP context trimmer)
+How to stop hitting the 5-hour Claude Code rate limit: UsageTrim (free, open source MCP context trimmer)
 ```
 **Post Body:**
 ```markdown
 Claude 3.7 / 3.5 Sonnet is amazing for coding, but Claude Code burns tokens crazy fast—mostly due to verbose CLI outputs (`git log`, `git diff`, test runners) and repeated whole-file reads.
 
-We built a local MCP tool and CLI companion called **TokenCut**:
-👉 https://github.com/00200200/tokencut
+We built a local MCP tool and CLI companion called **UsageTrim**:
+👉 https://github.com/00200200/usagetrim
 
 ### What it does:
 - **Slims test outputs**: `pytest -v`, `cargo test`, `vitest`, `go test` get reduced by 85–98% while keeping 100% of failure stack traces and errors.
@@ -102,8 +102,8 @@ We built a local MCP tool and CLI companion called **TokenCut**:
 
 Install with uv:
 ```bash
-uv tool install 'git+https://github.com/00200200/tokencut.git'
-claude mcp add --scope user tokencut -- tokencut mcp --profile coding
+uv tool install 'git+https://github.com/00200200/usagetrim.git'
+claude mcp add --scope user usagetrim -- usagetrim mcp --profile coding
 ```
 
 Zero telemetry, open source MIT. If you find it useful, leave a ⭐ on GitHub!
@@ -120,16 +120,16 @@ Coding agents like Claude Code, Cursor, and Codex waste 40–90% of their contex
 - 10,000-line lockfile diffs
 - full file dumps for 1 method
 
-Introducing TokenCut ⚡: a local MCP server & CLI that keeps the signal and cuts the bloat. 🧵👇
+Introducing UsageTrim ⚡: a local MCP server & CLI that keeps the signal and cuts the bloat. 🧵👇
 
-🔗 https://github.com/00200200/tokencut
+🔗 https://github.com/00200200/usagetrim
 ```
 
 **Tweet 2 (Safety Guarantee):**
 ```text
 2/ Most context compressors break agent reasoning by truncating errors or guessing with another LLM.
 
-TokenCut is deterministic:
+UsageTrim is deterministic:
 When tests pass, output collapses into dense progress records.
 The instant an error, panic, or traceback appears? Emitted 100% verbatim.
 ```
@@ -138,33 +138,33 @@ The instant an error, panic, or traceback appears? Emitted 100% verbatim.
 ```text
 3/ What if the model actually needs the full raw output?
 
-TokenCut uses Compress-Cache-Retrieve (CCR).
+UsageTrim uses Compress-Cache-Retrieve (CCR).
 Every compacted log is cached in local SQLite. The model gets a reference hash (`[ref: tc_7f8a...]`) and can retrieve the byte-for-byte original anytime via MCP.
 ```
 
 **Tweet 4 (AST Skeletons & Prompts):**
 ```text
 4/ Need repo context without dumping 5,000 lines?
-`tokencut pack --skeleton` uses tree-sitter AST parsing for TS, Go, Rust, Java, and C/C++ to collapse function bodies while keeping full type definitions intact.
+`usagetrim pack --skeleton` uses tree-sitter AST parsing for TS, Go, Rust, Java, and C/C++ to collapse function bodies while keeping full type definitions intact.
 
-Plus `tokencut optimize` for autonomous prompt caching alignment.
+Plus `usagetrim optimize` for autonomous prompt caching alignment.
 ```
 
 **Tweet 5 (macOS Pet & HUD):**
 ```text
-5/ On macOS, TokenCut includes a native companion HUD.
+5/ On macOS, UsageTrim includes a native companion HUD.
 Use "Prepare for chat" to clean up terminal logs before pasting them into web chat, and monitor your Claude / Codex usage windows in real-time.
 ```
 
 **Tweet 6 (Call to action):**
 ```text
-6/ TokenCut is 100% open source (MIT), written in Python with @astral_sh uv, and makes zero AI calls.
+6/ UsageTrim is 100% open source (MIT), written in Python with @astral_sh uv, and makes zero AI calls.
 
 Install in 10 seconds:
-`uv tool install 'git+https://github.com/00200200/tokencut.git'`
+`uv tool install 'git+https://github.com/00200200/usagetrim.git'`
 
 Star the repo on GitHub:
-⭐ https://github.com/00200200/tokencut
+⭐ https://github.com/00200200/usagetrim
 ```
 
 ---
@@ -174,14 +174,14 @@ Star the repo on GitHub:
 Submit a PR to `punkpeye/awesome-mcp-servers` and `modelcontextprotocol/servers`:
 
 ```markdown
-- [TokenCut](https://github.com/00200200/tokencut) - Local context optimization engine and MCP companion for Claude Code, Cursor, and Codex. Compresses test logs, diffs, JSON, and AST code outlines by 40-98% with recoverable SQLite caching and zero data loss.
+- [UsageTrim](https://github.com/00200200/usagetrim) - Local context optimization engine and MCP companion for Claude Code, Cursor, and Codex. Compresses test logs, diffs, JSON, and AST code outlines by 40-98% with recoverable SQLite caching and zero data loss.
 ```
 
 ---
 
 ## 5. Product Hunt Submission
 
-- **Product Name:** TokenCut
+- **Product Name:** UsageTrim
 - **Tagline:** Cut LLM coding context bloat by 40–98% with local MCP & CLI
 - **Topics:** Developer Tools, Artificial Intelligence, Open Source, Productivity, Command Line
-- **Description:** TokenCut is an open-source local CLI and MCP server for Claude Code, Cursor, and Codex. It safely compacts test logs, diffs, and AST code outlines with a strict zero-loss guarantee: passing noise collapses, while all failures, stack traces, and diagnostics are preserved verbatim. Includes Compress-Cache-Retrieve SQLite recovery and a native macOS companion.
+- **Description:** UsageTrim is an open-source local CLI and MCP server for Claude Code, Cursor, and Codex. It safely compacts test logs, diffs, and AST code outlines with a strict zero-loss guarantee: passing noise collapses, while all failures, stack traces, and diagnostics are preserved verbatim. Includes Compress-Cache-Retrieve SQLite recovery and a native macOS companion.

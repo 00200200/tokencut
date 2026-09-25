@@ -8,14 +8,14 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from tokencut.cli import app
-from tokencut.core.specialized import (
+from usagetrim.cli import app
+from usagetrim.core.specialized import (
     auto_specialize_command_output,
     filter_gh_command_output,
     filter_json_output,
 )
-from tokencut.core.spill import DEFAULT_SPILL_BYTES
-from tokencut.metrics.tokenizer import count_tokens
+from usagetrim.core.spill import DEFAULT_SPILL_BYTES
+from usagetrim.metrics.tokenizer import count_tokens
 
 
 def _sample_pr_json(*, body_chars: int = 4000, files: int = 30, commits: int = 12) -> str:
@@ -70,13 +70,13 @@ def _sample_pr_json(*, body_chars: int = 4000, files: int = 30, commits: int = 1
     ],
 )
 def test_filter_gh_json_spills_and_slims(command, tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     raw = _sample_pr_json()
     assert len(raw.encode()) > DEFAULT_SPILL_BYTES
 
     compact = filter_gh_command_output(command, raw)
     assert compact is not None
-    assert "Ref: tc_" in compact or "tokencut retrieve" in compact
+    assert "Ref: tc_" in compact or "usagetrim retrieve" in compact
     assert "spill" in compact.lower()
     assert "feat: cut gh JSON noise" in compact
     assert '"number": 42' in compact or '"number":42' in compact
@@ -95,7 +95,7 @@ def test_filter_gh_json_spills_and_slims(command, tmp_path, monkeypatch):
 
 
 def test_filter_gh_json_routes_via_auto_specialize(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     raw = _sample_pr_json()
     compact = auto_specialize_command_output(
         "gh pr view 42 --json body,files,commits",
@@ -107,7 +107,7 @@ def test_filter_gh_json_routes_via_auto_specialize(tmp_path, monkeypatch):
 
 
 def test_filter_json_output_treats_gh_pr_json_as_explicit(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     # Small object — previously skipped unless command contained ``gh api``.
     raw = json.dumps(
         {
@@ -133,7 +133,7 @@ def test_filter_gh_text_pr_view_folds_long_body():
     assert compact is not None
     assert "title:\tfeat: something big" in compact
     assert "state:\tOPEN" in compact
-    assert "TokenCut" in compact
+    assert "UsageTrim" in compact
     assert len(compact) < len(raw) * 0.5
     assert body[:40] in compact  # keep the lead of the body
 
@@ -145,8 +145,8 @@ def test_filter_gh_ignores_unrelated_commands():
 
 
 def test_cli_run_prefers_gh_json_slim_over_head_tail_spill(tmp_path, monkeypatch):
-    """Safe ``tokencut run`` must not replace structured gh JSON with head/tail spill."""
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(tmp_path))
+    """Safe ``usagetrim run`` must not replace structured gh JSON with head/tail spill."""
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     raw = _sample_pr_json()
     assert len(raw.encode()) > DEFAULT_SPILL_BYTES
 
@@ -157,7 +157,7 @@ def test_cli_run_prefers_gh_json_slim_over_head_tail_spill(tmp_path, monkeypatch
 
         return Proc()
 
-    monkeypatch.setattr("tokencut.cli.subprocess.run", fake_run)
+    monkeypatch.setattr("usagetrim.cli.subprocess.run", fake_run)
     runner = CliRunner()
     result = runner.invoke(
         app,

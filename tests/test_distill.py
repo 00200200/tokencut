@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from tokencut.core.cache import ContextCache
-from tokencut.core.distill import distill_conversation
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.distill import distill_conversation
 
 
 def test_distill_conversation_markdown_dialogue():

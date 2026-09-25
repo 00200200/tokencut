@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from tokencut.cli import app
-from tokencut.core.cache import ContextCache
-from tokencut.core.monitor import Monitor
-from tokencut.core.prepare import MAX_INPUT_BYTES, prepare_text
-from tokencut.metrics.tokenizer import count_tokens
+from usagetrim.cli import app
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.monitor import Monitor
+from usagetrim.core.prepare import MAX_INPUT_BYTES, prepare_text
+from usagetrim.metrics.tokenizer import count_tokens
 
 
 @pytest.mark.parametrize(
@@ -36,12 +36,12 @@ def test_preview_preserves_diagnostics_recovers_original_and_does_not_record_sav
         + "ERROR: installation failed\n"
         + "detail\n" * 60
     )
-    service = Monitor([Path(os.environ["TOKENCUT_CACHE_DIR"])], tmp_path / "collector")
+    service = Monitor([Path(os.environ["USAGETRIM_CACHE_DIR"])], tmp_path / "collector")
     before = service.snapshot()["today"]
     result = service.dispatch({"method": "prepare", "text": original})
     assert result["difference"] > 0
     assert "ERROR: installation failed\n" + "detail\n" * 60 in result["text"]
-    ref = re.search(r"tokencut retrieve (\S+)", result["text"])[1].rstrip("]")
+    ref = re.search(r"usagetrim retrieve (\S+)", result["text"])[1].rstrip("]")
     assert ContextCache().retrieve(ref) == original
     assert result["after"] == count_tokens(result["text"]).openai
     assert service.snapshot()["today"] == before
@@ -94,7 +94,7 @@ def test_cli_file_and_stdin_prepare_without_usage_events(tmp_path):
         assert json.loads(result.stdout)["text"] == text
     too_large = runner.invoke(app, ["prepare", "--json"], input="a" * (MAX_INPUT_BYTES + 1))
     assert too_large.exit_code != 0
-    assert not (Path(os.environ["TOKENCUT_CACHE_DIR"]) / "telemetry.db").exists()
+    assert not (Path(os.environ["USAGETRIM_CACHE_DIR"]) / "telemetry.db").exists()
 
 
 def test_prepare_optimize_mode():
@@ -133,7 +133,7 @@ Any observations?
 
 
 def test_format_prepare_counts_shows_before_after_delta_and_percent():
-    from tokencut.core.prepare import format_prepare_counts
+    from usagetrim.core.prepare import format_prepare_counts
 
     assert format_prepare_counts(4512, 1203) == "4,512 → 1,203 (−3,309 · −73%)"
     assert format_prepare_counts(100, 100) == "100 → 100 (0 · 0%)"
@@ -142,7 +142,7 @@ def test_format_prepare_counts_shows_before_after_delta_and_percent():
 
 
 def test_prepare_text_includes_counts_summary_and_percent():
-    from tokencut.core.prepare import format_prepare_counts
+    from usagetrim.core.prepare import format_prepare_counts
 
     text = "Downloading unchanged dependency\n" * 250 + "ERROR: installation failed\n"
     result = prepare_text(text)
@@ -152,7 +152,7 @@ def test_prepare_text_includes_counts_summary_and_percent():
 
 
 def test_cli_prepare_stderr_shows_arrow_counts(tmp_path):
-    from tokencut.core.prepare import DEFAULT_PREPARE_BUDGET, format_prepare_counts
+    from usagetrim.core.prepare import DEFAULT_PREPARE_BUDGET, format_prepare_counts
 
     runner = CliRunner()
     file = tmp_path / "noisy.txt"
@@ -169,7 +169,7 @@ def test_cli_prepare_stderr_shows_arrow_counts(tmp_path):
 def test_cli_prepare_defaults_use_desktop_budget():
     import inspect
 
-    from tokencut.cli import prepare_command
+    from usagetrim.cli import prepare_command
 
     params = inspect.signature(prepare_command).parameters
     assert params["budget"].default == 2000

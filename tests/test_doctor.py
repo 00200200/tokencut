@@ -9,9 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from tokencut.core import doctor
-from tokencut.core.cache import ContextCache
-from tokencut.core.doctor import (
+from usagetrim.core import doctor
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.doctor import (
     check_cache_db,
     check_chatgpt_desktop,
     check_claude_desktop_mcp,
@@ -52,7 +52,7 @@ def test_check_cache_counts_actual_entries_without_altering_schema():
 
 
 def test_check_missing_cache_does_not_create_database():
-    path = Path(os.environ["TOKENCUT_CACHE_DIR"]) / "cache.db"
+    path = Path(os.environ["USAGETRIM_CACHE_DIR"]) / "cache.db"
     assert not path.exists()
     result = check_cache_db()
     assert result.status == "ok"
@@ -70,12 +70,12 @@ def test_run_all_diagnostics():
 
 def test_configure_cursor_mcp(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(doctor.shutil, "which", lambda _: str(tmp_path / "bin" / "tokencut"))
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: str(tmp_path / "bin" / "usagetrim"))
     ok, path = configure_cursor_mcp()
     assert ok is True
     cursor_file = tmp_path / ".cursor" / "mcp.json"
     assert cursor_file.exists()
-    assert "tokencut" in cursor_file.read_text()
+    assert "usagetrim" in cursor_file.read_text()
 
 
 def test_configure_shell_alias(tmp_path, monkeypatch):
@@ -102,18 +102,18 @@ def test_check_chatgpt_desktop():
 
 def test_configure_claude_desktop(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(doctor.shutil, "which", lambda _: str(tmp_path / "bin" / "tokencut"))
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: str(tmp_path / "bin" / "usagetrim"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     ok, path_str = configure_claude_desktop_mcp()
     assert ok is True
     cfg_file = Path(path_str)
     assert cfg_file.exists()
-    assert "tokencut" in cfg_file.read_text()
+    assert "usagetrim" in cfg_file.read_text()
 
 
 @pytest.fixture
 def local_install(tmp_path, monkeypatch):
-    executable = tmp_path / "bin" / "tokencut"
+    executable = tmp_path / "bin" / "usagetrim"
     monkeypatch.setattr(doctor.shutil, "which", lambda _: str(executable))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     return executable
@@ -127,9 +127,9 @@ def test_mcp_install_preserves_settings_and_backs_up_once(tmp_path, local_instal
         "theme": "dark",
         "mcpServers": {
             "other": {"command": "other", "env": {"SETTING": "kept"}},
-            "tokencut": {
+            "usagetrim": {
                 "command": "uvx",
-                "args": ["tokencut", "mcp"],
+                "args": ["usagetrim", "mcp"],
                 "env": {"LOCAL": "kept"},
                 "disabled": False,
             },
@@ -147,26 +147,26 @@ def test_mcp_install_preserves_settings_and_backs_up_once(tmp_path, local_instal
     changed = json.loads(target.read_text())
     assert changed["theme"] == "dark"
     assert changed["mcpServers"]["other"] == original["mcpServers"]["other"]
-    assert changed["mcpServers"]["tokencut"] == {
+    assert changed["mcpServers"]["usagetrim"] == {
         "command": str(local_install),
         "args": ["mcp"],
         "env": {"LOCAL": "kept"},
         "disabled": False,
     }
     assert target.stat().st_mode & 0o777 == 0o640
-    backups = list(target.parent.glob(target.name + ".pre-tokencut-*"))
+    backups = list(target.parent.glob(target.name + ".pre-usagetrim-*"))
     assert len(backups) == 1
     assert backups[0].read_bytes() == original_bytes
     installed_bytes, modified_ns = target.read_bytes(), target.stat().st_mtime_ns
     assert configure() == (True, str(target))
     assert target.read_bytes() == installed_bytes
     assert target.stat().st_mtime_ns == modified_ns
-    assert list(target.parent.glob(target.name + ".pre-tokencut-*")) == backups
+    assert list(target.parent.glob(target.name + ".pre-usagetrim-*")) == backups
 
 
 @pytest.mark.parametrize(
     "raw",
-    ["{bad json", "[]", "null", '{"mcpServers": []}', '{"mcpServers": {"tokencut": "broken"}}'],
+    ["{bad json", "[]", "null", '{"mcpServers": []}', '{"mcpServers": {"usagetrim": "broken"}}'],
 )
 @pytest.mark.parametrize("client", ["claude", "cursor"])
 def test_malformed_config_is_untouched(tmp_path, local_install, raw, client):
@@ -187,7 +187,7 @@ def test_malformed_config_is_untouched(tmp_path, local_install, raw, client):
 
 def test_installer_refuses_to_replace_remote_transport(tmp_path, local_install):
     target = tmp_path / "config.json"
-    raw = '{"mcpServers": {"tokencut": {"url": "https://example.invalid/mcp"}}}'
+    raw = '{"mcpServers": {"usagetrim": {"url": "https://example.invalid/mcp"}}}'
     target.write_text(raw)
     ok, message = configure_claude_desktop_mcp(target)
     assert not ok and "another transport" in message
@@ -207,13 +207,13 @@ def test_installer_uses_verified_current_interpreter_when_entrypoint_missing(tmp
     monkeypatch.setattr(doctor.subprocess, "run", probe)
     target = tmp_path / "config.json"
     assert configure_claude_desktop_mcp(target)[0]
-    assert json.loads(target.read_text())["mcpServers"]["tokencut"] == {
+    assert json.loads(target.read_text())["mcpServers"]["usagetrim"] == {
         "command": str(interpreter),
-        "args": ["-m", "tokencut.cli", "mcp"],
+        "args": ["-m", "usagetrim.cli", "mcp"],
     }
     assert probes[0][0][:3] == [str(interpreter), "-I", "-c"]
     assert probes[0][1]["timeout"] == 5
-    assert not list(tmp_path.glob("*.pre-tokencut-*"))
+    assert not list(tmp_path.glob("*.pre-usagetrim-*"))
 
 
 @pytest.mark.parametrize("failure", ["unavailable", "timeout", "nonzero"])
@@ -230,7 +230,7 @@ def test_no_usable_installation_does_not_write_config(tmp_path, monkeypatch, fai
     monkeypatch.setattr(doctor.subprocess, "run", probe)
     target = tmp_path / "new" / "config.json"
     ok, message = configure_claude_desktop_mcp(target)
-    assert not ok and "No usable local TokenCut installation" in message
+    assert not ok and "No usable local UsageTrim installation" in message
     assert not target.parent.exists()
 
 
@@ -249,7 +249,7 @@ def test_atomic_replace_failure_leaves_existing_config_and_backup_intact(
     assert not ok and "atomic replacement denied" in message
     assert target.read_text() == original
     assert not list(tmp_path.glob("*.tmp-*"))
-    assert next(tmp_path.glob("*.pre-tokencut-*")).read_text() == original
+    assert next(tmp_path.glob("*.pre-usagetrim-*")).read_text() == original
 
 
 @pytest.mark.parametrize("installed", [True, False])
@@ -258,7 +258,7 @@ def test_codex_registration_is_distinguished_from_runtime_connectivity(
 ):
     monkeypatch.setattr(doctor, "_codex_available", lambda: installed)
     target = tmp_path / "config.toml"
-    target.write_text('[mcp_servers.tokencut]\ncommand = "/local/bin/tokencut"\nargs = ["mcp"]\n')
+    target.write_text('[mcp_servers.usagetrim]\ncommand = "/local/bin/usagetrim"\nargs = ["mcp"]\n')
     result = check_codex_mcp(target)
     assert result.status == ("ok" if installed else "warning")
     assert "Runtime connectivity is untested" in result.message
@@ -271,13 +271,13 @@ def test_codex_registration_is_distinguished_from_runtime_connectivity(
     [
         (None, "missing", "not registered"),
         ("bad = [", "warning", "cannot validate"),
-        ('[mcp_servers.tokencut]\ncommand="local"\nenabled=false', "warning", "disabled"),
+        ('[mcp_servers.usagetrim]\ncommand="local"\nenabled=false', "warning", "disabled"),
         (
-            '[mcp_servers.tokencut]\ncommand="uvx"\nargs=["tokencut", "mcp"]',
+            '[mcp_servers.usagetrim]\ncommand="uvx"\nargs=["usagetrim", "mcp"]',
             "warning",
             "unrelated PyPI",
         ),
-        ('[mcp_servers.tokencut]\nurl="https://example.invalid"', "warning", "local server"),
+        ('[mcp_servers.usagetrim]\nurl="https://example.invalid"', "warning", "local server"),
     ],
 )
 def test_codex_missing_disabled_or_invalid_is_not_marked_working(
@@ -302,13 +302,13 @@ def test_configure_windsurf_mcp(tmp_path, monkeypatch):
     target = tmp_path / "mcp_config.json"
     monkeypatch.setattr(doctor, "get_windsurf_mcp_config_path", lambda: target)
     monkeypatch.setattr(
-        doctor, "_local_mcp_command", lambda: {"command": "/bin/tokencut", "args": ["mcp"]}
+        doctor, "_local_mcp_command", lambda: {"command": "/bin/usagetrim", "args": ["mcp"]}
     )
     ok, path_str = configure_windsurf_mcp(target)
     assert ok is True
     assert target.exists()
     data = json.loads(target.read_text(encoding="utf-8"))
-    assert "tokencut" in data["mcpServers"]
+    assert "usagetrim" in data["mcpServers"]
 
 
 def test_configure_codex_mcp(tmp_path, monkeypatch):
@@ -318,7 +318,7 @@ def test_configure_codex_mcp(tmp_path, monkeypatch):
         doctor,
         "_local_mcp_command",
         lambda profile=None: {
-            "command": "/bin/tokencut",
+            "command": "/bin/usagetrim",
             "args": ["mcp", "--profile", profile] if profile else ["mcp"],
         },
     )
@@ -326,8 +326,8 @@ def test_configure_codex_mcp(tmp_path, monkeypatch):
     assert ok is True
     assert target.exists()
     content = target.read_text(encoding="utf-8")
-    assert "[mcp_servers.tokencut]" in content
-    assert 'command = "/bin/tokencut"' in content
+    assert "[mcp_servers.usagetrim]" in content
+    assert 'command = "/bin/usagetrim"' in content
     assert '"--profile"' in content
     assert '"desktop"' in content
 
@@ -339,15 +339,15 @@ def test_configure_claude_desktop_mcp_with_profile(tmp_path, monkeypatch):
         doctor,
         "_local_mcp_command",
         lambda profile=None: {
-            "command": "/bin/tokencut",
+            "command": "/bin/usagetrim",
             "args": ["mcp", "--profile", profile] if profile else ["mcp"],
         },
     )
     ok, path_str = doctor.configure_claude_desktop_mcp(target, profile="desktop")
     assert ok is True
     data = json.loads(target.read_text(encoding="utf-8"))
-    assert "tokencut" in data["mcpServers"]
-    assert data["mcpServers"]["tokencut"]["args"] == ["mcp", "--profile", "desktop"]
+    assert "usagetrim" in data["mcpServers"]
+    assert data["mcpServers"]["usagetrim"]["args"] == ["mcp", "--profile", "desktop"]
 
 
 def test_configure_shell_alias_fish(tmp_path):
@@ -355,7 +355,7 @@ def test_configure_shell_alias_fish(tmp_path):
     ok, path_str = configure_shell_alias(fish_config)
     assert ok is True
     content = fish_config.read_text(encoding="utf-8")
-    assert "alias cc 'tokencut run --'" in content
+    assert "alias cc 'usagetrim run --'" in content
 
 
 @pytest.mark.parametrize(
@@ -363,12 +363,12 @@ def test_configure_shell_alias_fish(tmp_path):
     [
         ("zsh", 'alias cc="gcc"', "warning"),
         ("fish", "alias cc 'gcc'", "warning"),
-        ("fish", "alias ccache 'tokencut run --'", "missing"),
-        ("fish", "# alias cc 'tokencut run --'", "missing"),
-        ("zsh", '# alias cc="tokencut run --"', "missing"),
-        ("zsh", 'alias cc="tokencut run --"\nalias cc="gcc"', "warning"),
-        ("zsh", 'alias cc="tokencut run --"', "ok"),
-        ("fish", "alias cc 'tokencut run --'", "ok"),
+        ("fish", "alias ccache 'usagetrim run --'", "missing"),
+        ("fish", "# alias cc 'usagetrim run --'", "missing"),
+        ("zsh", '# alias cc="usagetrim run --"', "missing"),
+        ("zsh", 'alias cc="usagetrim run --"\nalias cc="gcc"', "warning"),
+        ("zsh", 'alias cc="usagetrim run --"', "ok"),
+        ("fish", "alias cc 'usagetrim run --'", "ok"),
     ],
 )
 def test_alias_diagnostic_identifies_the_actual_shortcut(
@@ -385,15 +385,15 @@ def test_alias_diagnostic_identifies_the_actual_shortcut(
 @pytest.mark.parametrize(
     "entry",
     [
-        {"command": "tokencut", "disabled": True},
-        {"command": "tokencut", "enabled": False},
+        {"command": "usagetrim", "disabled": True},
+        {"command": "usagetrim", "enabled": False},
         {"command": ""},
-        {"command": "tokencut", "args": "mcp"},
+        {"command": "usagetrim", "args": "mcp"},
         None,
     ],
 )
 def test_windsurf_disabled_or_malformed_entry_is_not_reported_ready(tmp_path, monkeypatch, entry):
     target = tmp_path / "mcp_config.json"
-    target.write_text(json.dumps({"mcpServers": {"tokencut": entry}}))
+    target.write_text(json.dumps({"mcpServers": {"usagetrim": entry}}))
     monkeypatch.setattr(doctor, "get_windsurf_mcp_config_path", lambda: target)
     assert check_windsurf_mcp().status == "warning"

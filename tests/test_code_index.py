@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from tokencut.core.cache import ContextCache
-from tokencut.core.code_index import CodeIndex, digest, parse_source, read_symbol
-from tokencut.core.skeleton import extract_symbol_or_range
-from tokencut.core.symbol_edit import replace_symbol
-from tokencut.mcp import server
-from tokencut.metrics.tokenizer import count_tokens
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.code_index import CodeIndex, digest, parse_source, read_symbol
+from usagetrim.core.skeleton import extract_symbol_or_range
+from usagetrim.core.symbol_edit import replace_symbol
+from usagetrim.mcp import server
+from usagetrim.metrics.tokenizer import count_tokens
 
 
 def test_qualified_symbol_preserves_source_and_rejects_ambiguity(tmp_path):
@@ -156,7 +156,7 @@ def test_edit_preview_hash_syntax_crlf_and_surrounding_bytes(tmp_path):
 
 
 def test_edit_aborts_concurrent_change(tmp_path, monkeypatch):
-    from tokencut.core import symbol_edit
+    from usagetrim.core import symbol_edit
 
     path = tmp_path / "sample.py"
     source = "def run(): return 1\n"
@@ -176,13 +176,13 @@ def test_edit_aborts_concurrent_change(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="changed while"):
         replace_symbol(path, "run", "def run(): return 2", digest(source), apply=True)
     assert "999" in path.read_text()
-    assert not list(tmp_path.glob(".tokencut-edit-*"))
+    assert not list(tmp_path.glob(".usagetrim-edit-*"))
 
 
 def test_native_cli_code_and_guarded_edit(tmp_path):
     from typer.testing import CliRunner
 
-    from tokencut.cli import app
+    from usagetrim.cli import app
 
     root = tmp_path / "project"
     root.mkdir()
@@ -240,20 +240,20 @@ def test_cache_search_does_not_mistake_error_output_for_missing_ref():
 
 
 def test_code_events_have_no_source_or_query_in_telemetry(tmp_path):
-    from tokencut.core.monitor import Monitor
-    from tokencut.core.telemetry import TelemetryStore
+    from usagetrim.core.monitor import Monitor
+    from usagetrim.core.telemetry import TelemetryStore
 
     root = tmp_path / "project"
     root.mkdir()
     (root / "sample.py").write_text('def PRIVATE_SYMBOL(): return "PRIVATE_CONTENT"\n')
-    server.handle_tokencut_code({"root": str(root), "query": "PRIVATE_SYMBOL"})
+    server.handle_usagetrim_code({"root": str(root), "query": "PRIVATE_SYMBOL"})
     store = TelemetryStore()
     with store.connect() as db:
         rows = db.execute("SELECT * FROM events").fetchall()
     assert "PRIVATE_" not in str(rows)
     assert b"PRIVATE_" not in store.db_path.read_bytes()
     snapshot = Monitor([store.db_path.parent], tmp_path / "collector").snapshot()
-    card = next(item for item in snapshot["integrations"] if item["name"] == "TokenCut Code")
+    card = next(item for item in snapshot["integrations"] if item["name"] == "UsageTrim Code")
     assert card["last_event"] is not None
 
 
@@ -269,7 +269,7 @@ def test_mcp_code_and_search_recovery_obey_output_budget(tmp_path):
             "id": 1,
             "method": "tools/call",
             "params": {
-                "name": "tokencut_code",
+                "name": "usagetrim_code",
                 "arguments": {"root": str(root), "limit": 100, "max_tokens": 128},
             },
         }
@@ -278,12 +278,12 @@ def test_mcp_code_and_search_recovery_obey_output_budget(tmp_path):
     text = response["result"]["content"][0]["text"]
     assert count_tokens(text).claude <= 128
     ref = re.search(r"tc_[a-f0-9]+", text).group()
-    recovered = server.handle_tokencut_retrieve(
+    recovered = server.handle_usagetrim_retrieve(
         {"ref_id": ref, "query": "function_99", "max_tokens": 256}
     )
     assert "function_99" in recovered and count_tokens(recovered).claude <= 256
     with pytest.raises(ValueError):
-        server.handle_tokencut_retrieve({"ref_id": ref, "query": "function_99", "lines": "1-2"})
+        server.handle_usagetrim_retrieve({"ref_id": ref, "query": "function_99", "lines": "1-2"})
 
 
 def test_code_index_outline_mode(tmp_path):
@@ -313,7 +313,9 @@ def test_code_index_outline_mode(tmp_path):
     assert "auth.py:8-9 [function_definition] helper | def helper() -> None:" in outline
 
     # Query outline via MCP server
-    mcp_res = server.handle_tokencut_code({"root": str(root), "mode": "outline", "file": "auth.py"})
+    mcp_res = server.handle_usagetrim_code(
+        {"root": str(root), "mode": "outline", "file": "auth.py"}
+    )
     assert "AuthService.authenticate" in mcp_res
 
 
@@ -343,7 +345,7 @@ def test_code_index_references_and_callers_mode(tmp_path):
     assert "def verify_token" not in res
 
     # Query references alias via MCP
-    mcp_res = server.handle_tokencut_code(
+    mcp_res = server.handle_usagetrim_code(
         {"root": str(root), "mode": "references", "query": "AuthService.verify_token"}
     )
     assert "login_endpoint" in mcp_res

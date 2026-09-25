@@ -1,4 +1,4 @@
-from tokencut.core.diff_slimmer import slim_git_diff
+from usagetrim.core.diff_slimmer import slim_git_diff
 
 SAMPLE_DIFF = """diff --git a/src/main.py b/src/main.py
 index 1234567..89abcdef 100644
@@ -27,7 +27,7 @@ def test_slim_git_diff_folds_lockfile():
     assert "+    new_important_logic()" in slimmed
     # Lockfile lines should be folded
     assert "diff --git a/uv.lock b/uv.lock" in slimmed
-    assert "lines of lockfile/generated diff omitted by tokencut" in slimmed
+    assert "lines of lockfile/generated diff omitted by usagetrim" in slimmed
     assert "+ extra_lock_line_50" not in slimmed
 
 
@@ -77,5 +77,5 @@ index 1111111..2222222 100644
     # With extra pattern matching fixtures
     slimmed = slim_git_diff(diff, extra_patterns=[r"fixtures/.*\.json$"])
     assert "diff --git a/fixtures/mock_data.json" in slimmed
-    assert "omitted by tokencut" in slimmed
+    assert "omitted by usagetrim" in slimmed
     assert '+{"id": 1}' not in slimmed

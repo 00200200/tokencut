@@ -42,7 +42,7 @@ jobs:
           uv build --wheel
           wheel="$(realpath dist/*.whl)"
           cd "$(mktemp -d)"
-          uv tool run --isolated --from "$wheel" tokencut demo --json
+          uv tool run --isolated --from "$wheel" usagetrim demo --json
 
   macos-companion:
     runs-on: macos-latest
@@ -51,4 +51,4 @@ jobs:
       - name: Build native menu bar app
         run: bash macos/build.sh
       - name: Verify local app signature
-        run: codesign --verify --deep --strict macos/build/TokenCut.app
+        run: codesign --verify --deep --strict macos/build/UsageTrim.app

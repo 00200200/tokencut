@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from tokencut.core.skeleton import (
+from usagetrim.core.skeleton import (
     extract_symbol_or_range,
     skeletonize_code_ast,
     skeletonize_json,
@@ -60,7 +60,7 @@ def test_skeletonize_json():
     assert '"name": "app"' in res
     assert '"a"' in res
     assert '"b"' in res
-    assert "more items omitted by tokencut" in res
+    assert "more items omitted by usagetrim" in res
 
 
 def test_extract_symbol_and_range():
