@@ -48,6 +48,9 @@ class RuleIssue:
     snippet: str
 
 
+PROMPT_CACHE_MIN_TOKENS: int = 1024
+
+
 @dataclass
 class LintResult:
     file_path: str
@@ -55,6 +58,9 @@ class LintResult:
     line_count: int
     issues: list[RuleIssue]
     is_cache_friendly: bool
+    exceeds_cache_threshold: bool = False
+    tokens_to_cache_threshold: int = 0
+    cache_advice: str = ""
 
 
 def lint_rule_content(content: str, file_name: str = "rules") -> LintResult:
@@ -111,6 +117,15 @@ def lint_rule_content(content: str, file_name: str = "rules") -> LintResult:
             consecutive_empty = 0
 
     tokens = count_tokens(content).avg
+    exceeds_threshold = tokens >= PROMPT_CACHE_MIN_TOKENS
+    tokens_to_threshold = max(0, PROMPT_CACHE_MIN_TOKENS - tokens)
+    if exceeds_threshold:
+        advice = "Exceeds 1,024-token prompt cache threshold (eligible for standalone Anthropic/OpenAI prompt cache hits)."
+    else:
+        advice = (
+            f"Below 1,024-token standalone threshold ({tokens_to_threshold} to boundary). "
+            "When combined with usagetrim MCP desktop profile (~2,000 tool tokens), conversation automatically activates prompt caching."
+        )
 
     return LintResult(
         file_path=file_name,
@@ -118,6 +133,9 @@ def lint_rule_content(content: str, file_name: str = "rules") -> LintResult:
         line_count=len(lines),
         issues=issues,
         is_cache_friendly=is_cache_friendly,
+        exceeds_cache_threshold=exceeds_threshold,
+        tokens_to_cache_threshold=tokens_to_threshold,
+        cache_advice=advice,
     )
 
 
@@ -253,4 +271,7 @@ def optimize_rules(content: str) -> dict[str, Any]:
         "savings_pct": savings_pct,
         "optimized_content": optimized_content,
         "is_cache_friendly": lint_res.is_cache_friendly,
+        "exceeds_cache_threshold": lint_res.exceeds_cache_threshold,
+        "tokens_to_cache_threshold": lint_res.tokens_to_cache_threshold,
+        "cache_advice": lint_res.cache_advice,
     }

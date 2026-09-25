@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from typer.testing import CliRunner
 
 from usagetrim.cli import app
@@ -164,7 +166,7 @@ def test_cli_gain_empty_state(tmp_path, monkeypatch):
 def test_cli_run_records_operation_family(tmp_path, monkeypatch):
     monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(tmp_path))
     runner = CliRunner()
-    result = runner.invoke(app, ["run", "--", "python", "-c", "print('hi')"])
+    result = runner.invoke(app, ["run", "--", sys.executable, "-c", "print('hi')"])
     assert result.exit_code == 0
     store = TelemetryStore(db_path=tmp_path / "telemetry.db")
     with store.connect() as conn:

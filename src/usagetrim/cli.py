@@ -291,6 +291,12 @@ def pack_command(
 @app.command("prepare")
 def prepare_command(
     file: Annotated[Path | None, typer.Option("--file", "-f", help="Read a supplied draft")] = None,
+    clipboard: Annotated[
+        bool, typer.Option("--clipboard", "-c", help="Read input from system clipboard")
+    ] = False,
+    copy: Annotated[
+        bool, typer.Option("--copy", "-C", help="Copy prepared text back to system clipboard")
+    ] = False,
     mode: Annotated[
         str,
         typer.Option(help="conservative, summary (lossy), optimize (autonomous), or desktop"),
@@ -314,11 +320,18 @@ def prepare_command(
         if file is not None:
             with file.open("rb") as stream:
                 raw = stream.read(MAX_INPUT_BYTES + 1)
+        elif clipboard:
+            from usagetrim.core.clip import get_clipboard
+
+            clip_text = get_clipboard()
+            if not clip_text:
+                raise ValueError("Clipboard is empty; copy text first or supply --file/stdin")
+            raw = clip_text.encode("utf-8")[: MAX_INPUT_BYTES + 1]
         elif not sys.stdin.isatty():
             raw = sys.stdin.read(MAX_INPUT_BYTES + 1).encode("utf-8")
         else:
             raise ValueError(
-                "Supply --file or pipe text through stdin; clipboard is not read automatically"
+                "Supply --file, --clipboard (-c), or pipe text through stdin; clipboard is not read automatically unless -c is passed"
             )
         if len(raw) > MAX_INPUT_BYTES:
             raise ValueError("Draft exceeds 128 KiB; select a smaller relevant excerpt")
@@ -329,6 +342,13 @@ def prepare_command(
         print(json.dumps(result, ensure_ascii=False))
     else:
         sys.stdout.write(result["text"])
+        if copy:
+            from usagetrim.core.clip import set_clipboard
+
+            set_clipboard(result["text"])
+            err_console.print(
+                "[bold green]✓ Copied prepared text to system clipboard (ready to paste)![/bold green]"
+            )
         err_console.print(
             f"Tokens: {result['counts']}  ·  local o200k estimate · not usage savings. "
             "Review before pasting into Claude Desktop / Codex. "
@@ -1317,7 +1337,8 @@ def install(
         raise typer.Exit(code=1)
 
     if all_targets or cursor:
-        ok, msg = configure_cursor_mcp()
+        cursor_profile = profile if profile in {"coding", "full"} else "coding"
+        ok, msg = configure_cursor_mcp(profile=cursor_profile)
         if not ok:
             err_console.print(msg, markup=False)
             raise typer.Exit(code=1)
@@ -1549,8 +1570,15 @@ def lint(
         else "[red]NO (Cache Busting Detected!)[/red]"
     )
     table.add_row("Cache Friendly?", cache_status)
+    threshold_desc = (
+        "[green]>= 1,024 tok (Standalone Eligible)[/green]"
+        if result.exceeds_cache_threshold
+        else f"[yellow]<1,024 tok ({result.tokens_to_cache_threshold} to boundary)[/yellow]"
+    )
+    table.add_row("Cache Threshold", threshold_desc)
 
     console.print(table)
+    console.print(f"[dim]{result.cache_advice}[/dim]")
 
     if result.issues:
         console.print("\n[bold yellow]Issues Detected:[/bold yellow]")
@@ -1616,11 +1644,17 @@ def rules_command(
             sys.stdout.write(res["optimized_content"])
 
         if stats or write:
+            threshold_note = (
+                "[green]Standalone Cache Ready (>=1,024 tok)[/green]"
+                if res.get("exceeds_cache_threshold")
+                else "[cyan]Paired with usagetrim MCP desktop (~2k tokens) to cache[/cyan]"
+            )
             console.print(
                 f"[bold cyan]UsageTrim Rules Optimization:[/bold cyan] "
                 f"{res['original_tokens']} -> {res['optimized_tokens']} tokens "
                 f"([green]-{res['savings_pct']}%[/green]) | "
-                f"Cache Friendly: {'[green]YES[/green]' if res['is_cache_friendly'] else '[yellow]NO[/yellow]'}"
+                f"Cache Friendly: {'[green]YES[/green]' if res['is_cache_friendly'] else '[yellow]NO[/yellow]'} | "
+                f"{threshold_note}"
             )
         return
 
@@ -1642,9 +1676,9 @@ def mcp(
         typer.Option(
             "--profile",
             envvar="USAGETRIM_MCP_PROFILE",
-            help="desktop: 11 tools with optimized schemas for Claude & Codex Desktop; coding: 9 core tools; full: all tools (default)",
+            help="coding: 9 core tools with compact schemas (default, lowest usage); desktop: 11 tools; full: all tools",
         ),
-    ] = "full",
+    ] = "coding",
 ):
     """Start the Model Context Protocol (MCP) server for Claude Code, Cursor, and Codex."""
     from usagetrim.mcp.server import tool_definitions

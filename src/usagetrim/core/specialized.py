@@ -1596,6 +1596,194 @@ def filter_directory_scan(raw_output: str) -> str:
     return ret + "\n" if raw_output.endswith("\n") else ret
 
 
+def filter_git_branch(raw_output: str) -> str:
+    """Compact verbose git branch / git branch -a listings, grouping noisy remote branches."""
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    remote_groups: dict[str, list[str]] = {}
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if line.startswith("*") or "-> " in line or not stripped.startswith("remotes/"):
+            result.append(line)
+            continue
+
+        parts = stripped.split("/")
+        if len(parts) >= 3:
+            group_prefix = "/".join(parts[:3])
+            remote_groups.setdefault(group_prefix, []).append(line)
+        else:
+            result.append(line)
+
+    for prefix, group_lines in sorted(remote_groups.items()):
+        if len(group_lines) > 2:
+            result.append(f"  {prefix}/* [... {len(group_lines)} branches collapsed ...]")
+        else:
+            result.extend(group_lines)
+
+    ret = "\n".join(result)
+    return ret + "\n" if raw_output.endswith("\n") else ret
+
+
+def filter_curl_http(raw_output: str) -> str:
+    """Compact verbose curl -v and HTTP response logs."""
+    if not raw_output.strip():
+        return raw_output
+
+    lines = raw_output.splitlines()
+    result: list[str] = []
+    header_count = 0
+    in_headers = False
+
+    routine_headers = {
+        "date",
+        "server",
+        "etag",
+        "keep-alive",
+        "connection",
+        "vary",
+        "x-powered-by",
+        "x-process-time",
+        "access-control-allow-origin",
+        "access-control-allow-credentials",
+        "strict-transport-security",
+    }
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("* "):
+            if "Connected to" in stripped or "Trying" in stripped:
+                result.append(stripped)
+            continue
+
+        if stripped.startswith("< "):
+            in_headers = True
+            hdr = stripped[2:].strip().lower()
+            if hdr.startswith("http/"):
+                result.append(stripped)
+                continue
+            hdr_name = hdr.split(":")[0].strip()
+            if hdr_name in routine_headers:
+                header_count += 1
+                continue
+            result.append(stripped)
+            continue
+
+        if in_headers and not stripped:
+            in_headers = False
+            if header_count > 0:
+                result.append(f"< [... {header_count} routine response headers collapsed ...]")
+                header_count = 0
+
+        if "<script" in stripped.lower() or "<style" in stripped.lower():
+            continue
+
+        result.append(line)
+
+    if header_count > 0:
+        result.append(f"< [... {header_count} routine response headers collapsed ...]")
+
+    body_text = "\n".join(result)
+    return body_text + "\n" if raw_output.endswith("\n") else body_text
+
+
+_SQL_QUERY_PATTERN = re.compile(
+    r"(?:prisma:query|\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b)",
+    re.IGNORECASE,
+)
+_SQL_ERROR_PATTERN = re.compile(
+    r"(?:error|exception|failed|fatal|rollback|violat|denied|deadlock|timeout|traceback)",
+    re.IGNORECASE,
+)
+
+
+def _normalize_sql_skeleton(line: str) -> str:
+    """Extract a structural template of a SQL line by replacing literals and parameter bindings."""
+    cleaned = re.sub(
+        r"^\[?[0-9\-:,\. ]+\]?\s*(?:INFO|DEBUG|NOTICE)?\s*(?:(?:prisma:query|sqlalchemy\.engine(?:\.Engine)?|django\.db\.backends|query:?)\s*)?",
+        "",
+        line,
+        flags=re.IGNORECASE,
+    ).strip()
+    cleaned = re.sub(r"'[^']*'", "'?'", cleaned)
+    cleaned = re.sub(r'"[^"]*"', '"?"', cleaned)
+    cleaned = re.sub(r"\b\d+\b", "?", cleaned)
+    cleaned = re.sub(r"\$[0-9]+", "?", cleaned)
+    cleaned = re.sub(r":\w+", "?", cleaned)
+    cleaned = re.sub(r"%\([^)]+\)s", "?", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def filter_sql_logs(raw_text: str) -> str:
+    """Fold repetitive SQL / ORM queries (Prisma, Django, SQLAlchemy, Drizzle) into compact counts."""
+    if not raw_text.strip():
+        return raw_text
+
+    lines = raw_text.splitlines()
+    result: list[str] = []
+    pending_group: list[str] = []
+    current_skeleton = ""
+
+    def flush_pending():
+        nonlocal pending_group, current_skeleton
+        if not pending_group:
+            return
+        if len(pending_group) <= 2:
+            result.extend(pending_group)
+        else:
+            result.append(pending_group[0])
+            skel_display = current_skeleton[:80] + ("..." if len(current_skeleton) > 80 else "")
+            collapsed_count = len(pending_group) - 1
+            result.append(
+                f"  [... {collapsed_count} repeated queries matching '{skel_display}' collapsed by usagetrim ...]"
+            )
+        pending_group = []
+        current_skeleton = ""
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            flush_pending()
+            result.append(line)
+            continue
+
+        if _SQL_ERROR_PATTERN.search(line):
+            flush_pending()
+            result.append(line)
+            continue
+
+        if _SQL_QUERY_PATTERN.search(line):
+            skel = _normalize_sql_skeleton(line)
+            if skel == current_skeleton and current_skeleton:
+                pending_group.append(line)
+                continue
+            else:
+                flush_pending()
+                current_skeleton = skel
+                pending_group.append(line)
+                continue
+        else:
+            flush_pending()
+            result.append(line)
+
+    flush_pending()
+
+    ret = "\n".join(result)
+    return ret + "\n" if raw_text.endswith("\n") else ret
+
+
+def _is_sql_dense_output(raw_output: str) -> bool:
+    matches = sum(1 for line in raw_output.splitlines()[:60] if _SQL_QUERY_PATTERN.search(line))
+    return matches >= 4
+
+
 def _is_directory_scan_command(cmd_lower: str) -> bool:
     prefixes = (
         "find ",
@@ -1619,8 +1807,12 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
         return filter_git_log(raw_output)
     elif cmd_lower.startswith("git status"):
         return filter_git_status(raw_output)
+    elif cmd_lower.startswith("git branch"):
+        return filter_git_branch(raw_output)
     elif cmd_lower.startswith(("git diff", "git show")):
         return filter_git_diff(raw_output)
+    elif cmd_lower.startswith(("curl ", "curl\t", "wget ", "http ", "https ")):
+        return filter_curl_http(raw_output)
     elif cargo_sub in {"test", "nextest"}:
         return filter_cargo_test(raw_output)
     elif cargo_sub in {"build", "check"}:
@@ -1711,6 +1903,28 @@ def auto_specialize_command_output(command: str, raw_output: str) -> str | None:
 
     if _is_traceback_output(cmd_lower, raw_output):
         res = filter_traceback(raw_output)
+        if res != raw_output:
+            return res
+
+    if any(
+        cmd_lower.startswith(p)
+        for p in (
+            "prisma",
+            "npx prisma",
+            "pnpm prisma",
+            "alembic",
+            "drizzle-kit",
+            "npx drizzle-kit",
+            "python manage.py",
+            "python3 manage.py",
+        )
+    ) or any(db_sub in cmd_lower for db_sub in ("db:migrate", "db:seed", "makemigrations")):
+        res = filter_sql_logs(raw_output)
+        if res != raw_output:
+            return res
+
+    if _is_sql_dense_output(raw_output):
+        res = filter_sql_logs(raw_output)
         if res != raw_output:
             return res
 

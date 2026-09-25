@@ -1539,3 +1539,55 @@ def test_auto_specialize_routes_find_and_tree():
     assert res is not None
     assert "./src/main.py" in res
     assert "node_modules/ [... 20 items omitted by usagetrim" in res
+
+
+def test_filter_git_branch():
+    from usagetrim.core.specialized import filter_git_branch
+
+    raw = """* main
+  feature/my-local-feature
+  remotes/origin/HEAD -> origin/main
+  remotes/origin/main
+  remotes/origin/dependabot/npm_and_yarn/foo-1.0
+  remotes/origin/dependabot/npm_and_yarn/bar-2.0
+  remotes/origin/dependabot/npm_and_yarn/baz-3.0
+  remotes/origin/dependabot/npm_and_yarn/qux-4.0
+  remotes/origin/pr/100
+  remotes/origin/pr/101
+  remotes/origin/pr/102
+"""
+    compact = filter_git_branch(raw)
+    assert "* main" in compact
+    assert "feature/my-local-feature" in compact
+    assert "remotes/origin/HEAD -> origin/main" in compact
+    assert "remotes/origin/dependabot/* [... 4 branches collapsed ...]" in compact
+    assert "remotes/origin/pr/* [... 3 branches collapsed ...]" in compact
+
+
+def test_filter_curl_http():
+    from usagetrim.core.specialized import filter_curl_http
+
+    raw = """*   Trying 127.0.0.1:8000...
+* Connected to localhost (127.0.0.1) port 8000 (#0)
+> GET /api/v1/health HTTP/1.1
+> Host: localhost:8000
+> 
+< HTTP/1.1 200 OK
+< date: Tue, 22 Sep 2026 19:40:00 GMT
+< server: uvicorn
+< content-type: application/json
+< access-control-allow-origin: *
+< access-control-allow-credentials: true
+< x-process-time: 0.0012
+< etag: W/"15-abc"
+< keep-alive: timeout=5
+< connection: keep-alive
+< 
+{"status":"ok"}
+"""
+    compact = filter_curl_http(raw)
+    assert "< HTTP/1.1 200 OK" in compact
+    assert "content-type: application/json" in compact
+    assert '{"status":"ok"}' in compact
+    assert "routine response headers collapsed" in compact
+    assert "server: uvicorn" not in compact

@@ -277,12 +277,20 @@ def extract_symbol_or_range(
     if not p.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
+    from usagetrim.core.lockfile import is_lockfile, summarize_lockfile
+
+    content = p.read_text(encoding="utf-8", errors="replace")
+
+    if is_lockfile(p.name):
+        if symbol and not lines_range:
+            return summarize_lockfile(content, p.name, query_package=symbol)
+        if skeleton:
+            return summarize_lockfile(content, p.name)
+
     if symbol and not lines_range:
         from usagetrim.core.code_index import read_symbol
 
         return read_symbol(p, symbol)
-
-    content = p.read_text(encoding="utf-8", errors="replace")
 
     if lines_range:
         # e.g. "10-50" or "42"

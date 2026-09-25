@@ -236,6 +236,10 @@ TOOLS_DEFINITIONS = [
                     "description": "If true, view staged changes (--cached).",
                     "default": False,
                 },
+                "path": {
+                    "type": "string",
+                    "description": "Optional file or directory path to scope git diff.",
+                },
                 "ignore_patterns": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -574,10 +578,10 @@ def tool_definitions(profile: str = "full") -> list[dict]:
     if profile == "full":
         return [tool for tool in TOOLS_DEFINITIONS]
     if profile == "desktop":
-        return [
-            _make_desktop_tool(tool) for tool in TOOLS_DEFINITIONS if tool["name"] in DESKTOP_TOOLS
-        ]
-    return [tool for tool in TOOLS_DEFINITIONS if tool["name"] in CODING_TOOLS]
+        allowed = DESKTOP_TOOLS
+    else:
+        allowed = CODING_TOOLS
+    return [_make_desktop_tool(tool) for tool in TOOLS_DEFINITIONS if tool["name"] in allowed]
 
 
 def server_instructions(profile: str) -> str:
@@ -769,6 +773,17 @@ def handle_usagetrim_read(arguments: dict[str, Any]) -> str:
             raw = p.read_text(encoding="utf-8", errors="replace")
             return _record(raw, notice, operation="read", project=path)
 
+    from usagetrim.core.lockfile import is_lockfile, summarize_lockfile
+
+    if is_lockfile(p.name) and lines is None:
+        raw_full = p.read_text(encoding="utf-8", errors="replace")
+        extracted = summarize_lockfile(raw_full, p.name, query_package=symbol)
+        if include_hash:
+            current_hash = hashlib.sha256(raw_full.encode("utf-8")).hexdigest()
+            extracted = f"# [sha256: {current_hash[:16]}]\n" + extracted
+        output = _compress(extracted, budget, source="read")
+        return _record(raw_full, output, operation="read", project=path)
+
     auto_skeleton = bool(arguments.get("auto_skeleton", False))
 
     extracted = extract_symbol_or_range(
@@ -836,6 +851,9 @@ def handle_usagetrim_diff(arguments: dict[str, Any]) -> str:
     cmd = ["git", "diff", "--no-ext-diff", "--no-textconv", "--no-color"]
     if staged:
         cmd.append("--cached")
+    path_arg = arguments.get("path")
+    if path_arg and isinstance(path_arg, str) and path_arg.strip():
+        cmd.extend(["--", path_arg.strip()])
     res = subprocess.run(
         cmd, capture_output=True, text=True, errors="replace", timeout=30, cwd=_cwd(arguments)
     )

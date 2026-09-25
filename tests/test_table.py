@@ -68,3 +68,62 @@ def test_compact_table_secret_scrubbing():
     res = compact_table(raw, budget=1000)
     assert secret not in res.text
     assert "[REDACTED" in res.text
+
+
+def test_compact_table_mysql_box_format():
+    sql_box = """+----+----------+-----------------------+
+| id | username | email                 |
++----+----------+-----------------------+
+| 1  | alice    | alice@company.com     |
+| 2  | bob      | bob@company.com       |
+| 3  | charlie  | charlie@company.com   |
++----+----------+-----------------------+
+3 rows in set (0.01 sec)
+"""
+    res = compact_table(sql_box, budget=1000, format_type="toon")
+    assert res.row_count == 3
+    assert res.column_count == 3
+    assert "[id | username | email]" in res.text
+    assert "1 | alice | alice@company.com" in res.text
+    assert "3 | charlie | charlie@company.com" in res.text
+
+
+def test_compact_table_psql_format():
+    psql_table = """ id |  name   |  role   
+----+---------+---------
+  1 | Alice   | Admin   
+  2 | Bob     | Member  
+  3 | Charlie | Guest   
+(3 rows)
+"""
+    res = compact_table(psql_table, budget=1000, format_type="markdown")
+    assert res.row_count == 3
+    assert res.columns == ["id", "name", "role"]
+    assert "| id | name | role |" in res.text
+    assert "| 1 | Alice | Admin |" in res.text
+
+
+def test_compact_table_sqlite_column_format():
+    sqlite_table = """id          name        department
+----------  ----------  ----------
+1           Alice       Backend   
+2           Bob         Frontend  
+3           Charlie     DevOps    
+"""
+    res = compact_table(sqlite_table, budget=1000, format_type="toon")
+    assert res.row_count == 3
+    assert res.columns == ["id", "name", "department"]
+    assert "1 | Alice | Backend" in res.text
+    assert "3 | Charlie | DevOps" in res.text
+
+
+def test_compact_table_pipe_delimited_format():
+    pipe_table = """id|status|count
+1|active|150
+2|pending|25
+3|failed|2
+"""
+    res = compact_table(pipe_table, budget=1000, format_type="toon")
+    assert res.row_count == 3
+    assert res.columns == ["id", "status", "count"]
+    assert "1 | active | 150" in res.text
