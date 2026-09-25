@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from tokencut.core.cache import ContextCache
-from tokencut.core.table import compact_table
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.table import compact_table
 
 
 def test_compact_table_json_toon():

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tokencut"
+name = "usagetrim"
 version = "0.2.0"
 description = "Bound AI coding tool output with local compaction, targeted reads, and recoverable context."
 readme = "README.md"
@@ -45,15 +45,15 @@ mcp = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/00200200/tokencut"
-Repository = "https://github.com/00200200/tokencut"
-Issues = "https://github.com/00200200/tokencut/issues"
+Homepage = "https://github.com/00200200/usagetrim"
+Repository = "https://github.com/00200200/usagetrim"
+Issues = "https://github.com/00200200/usagetrim/issues"
 
 [project.scripts]
-tokencut = "tokencut.cli:main"
+usagetrim = "usagetrim.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/tokencut"]
+packages = ["src/usagetrim"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

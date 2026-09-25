@@ -1,14 +1,14 @@
-- id: tokencut-lint
-  name: tokencut-lint
+- id: usagetrim-lint
+  name: usagetrim-lint
   description: Lint CLAUDE.md and agent rule files for prompt cache-busting patterns.
-  entry: tokencut lint
+  entry: usagetrim lint
   language: python
   files: ^(CLAUDE\.md|\.cursorrules|\.gemini/.*)$
   types: [text]
 
-- id: tokencut-pr
-  name: tokencut-pr
+- id: usagetrim-pr
+  name: usagetrim-pr
   description: Check token impact before pushing changes.
-  entry: tokencut pr
+  entry: usagetrim pr
   language: python
   pass_filenames: false

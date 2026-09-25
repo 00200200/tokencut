@@ -11,21 +11,21 @@ from unittest.mock import patch
 from rich.console import Console
 from rich.table import Table
 
-from tokencut.core.cache import ContextCache
-from tokencut.core.cleaner import CleanerOptions, compact_terminal_output
-from tokencut.core.diff_slimmer import slim_git_diff
-from tokencut.core.safe_filter import safe_compact_output
-from tokencut.core.skeleton import skeletonize_python
-from tokencut.mcp.server import TOOLS_DEFINITIONS, handle_tokencut_read, tool_definitions
-from tokencut.metrics.tokenizer import compute_metrics
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.cleaner import CleanerOptions, compact_terminal_output
+from usagetrim.core.diff_slimmer import slim_git_diff
+from usagetrim.core.safe_filter import safe_compact_output
+from usagetrim.core.skeleton import skeletonize_python
+from usagetrim.mcp.server import TOOLS_DEFINITIONS, handle_usagetrim_read, tool_definitions
+from usagetrim.metrics.tokenizer import compute_metrics
 
 console = Console()
 
 
 def run_benchmarks(json_output: bool = False):
     # Fixtures must not populate the user's cache or lifetime usage statistics.
-    with TemporaryDirectory(prefix="tokencut-benchmark-") as directory:
-        with patch.dict(os.environ, {"TOKENCUT_CACHE_DIR": directory}):
+    with TemporaryDirectory(prefix="usagetrim-benchmark-") as directory:
+        with patch.dict(os.environ, {"USAGETRIM_CACHE_DIR": directory}):
             _run_benchmarks(json_output)
 
 
@@ -84,7 +84,7 @@ dist/assets/index-B7x90q.js     142.80 kB │ gzip: 45.20 kB
     m_build = compute_metrics(build_raw, build_compact)
 
     # Scenario 3: Python AST Skeleton on full codebase file
-    cli_content = Path("src/tokencut/cli.py").read_text()
+    cli_content = Path("src/usagetrim/cli.py").read_text()
     skeleton_content = skeletonize_python(cli_content)
     m_skel = compute_metrics(cli_content, skeleton_content)
 
@@ -111,7 +111,7 @@ index 3333333..4444444 100644
     with TemporaryDirectory() as directory:
         path = Path(directory) / "long.txt"
         path.write_text(long_raw)
-        long_compact = handle_tokencut_read({"path": str(path), "max_tokens": 2000})
+        long_compact = handle_usagetrim_read({"path": str(path), "max_tokens": 2000})
 
     def envelope(text: str) -> str:
         return json.dumps({"content": [{"type": "text", "text": text}]})
@@ -175,10 +175,10 @@ index 3333333..4444444 100644
         )
         return
 
-    table = Table(title="tokencut authored fixture benchmarks (local token estimates)")
+    table = Table(title="usagetrim authored fixture benchmarks (local token estimates)")
     table.add_column("Workload / Scenario", style="cyan")
     table.add_column("Raw Tokens", style="red")
-    table.add_column("tokencut Tokens", style="green")
+    table.add_column("usagetrim Tokens", style="green")
     table.add_column("Token Reduction", style="bold yellow")
     table.add_column("Fixture check", style="magenta")
 

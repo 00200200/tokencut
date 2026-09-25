@@ -1,7 +1,7 @@
 .PHONY: test lint format check bench help
 
 help:
-	@echo "tokencut developer commands:"
+	@echo "usagetrim developer commands:"
 	@echo "  make test    - Run pytest test suite"
 	@echo "  make lint    - Run ruff linter check"
 	@echo "  make format  - Auto-format code with ruff"

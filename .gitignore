@@ -43,8 +43,8 @@ htmlcov/
 *.swp
 *.swo
 
-# Tokencut local stats
-.tokencut_history.json
+# Usagetrim local stats
+.usagetrim_history.json
 
 # Local macOS companion builds
 macos/.build/

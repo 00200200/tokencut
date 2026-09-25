@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from tokencut.core import usage
+from usagetrim.core import usage
 
 
 def test_codex_weekly_primary_null_secondary_and_multi_bucket():
@@ -151,7 +151,7 @@ def test_missing_reader_and_timeout_have_actionable_private_diagnostics(failure,
 
 
 def test_savings_snapshot_does_not_start_quota_probes(tmp_path, monkeypatch):
-    from tokencut.core.monitor import Monitor
+    from usagetrim.core.monitor import Monitor
 
     def unexpected():
         pytest.fail("Savings must remain local and must not fetch account limits")

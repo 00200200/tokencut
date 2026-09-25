@@ -1,4 +1,4 @@
-from tokencut.core.cleaner import (
+from usagetrim.core.cleaner import (
     CleanerOptions,
     compact_terminal_output,
     deduplicate_repetitive_lines,
@@ -55,7 +55,7 @@ def test_compact_terminal_output_preserves_error():
     assert "Traceback (most recent call last):" in compacted
     assert "ZeroDivisionError: division by zero" in compacted
     # Must omit middle routine steps
-    assert "lines of routine output omitted by tokencut" in compacted
+    assert "lines of routine output omitted by usagetrim" in compacted
 
 
 def test_compact_terminal_output_no_error():
@@ -66,4 +66,4 @@ def test_compact_terminal_output_no_error():
 
     assert "Item 1" in compacted
     assert "Item 149" in compacted
-    assert "lines omitted by tokencut" in compacted
+    assert "lines omitted by usagetrim" in compacted

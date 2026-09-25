@@ -9,20 +9,20 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from tokencut.cli import app
-from tokencut.core import engines
-from tokencut.core.cache import ContextCache
-from tokencut.core.companion_state import already_wrapped, settings, update_settings
-from tokencut.core.monitor import Monitor
-from tokencut.core.native_hooks import claude_post_tool_use
-from tokencut.core.telemetry import TelemetryStore
-from tokencut.mcp.server import handle_tokencut_read
+from usagetrim.cli import app
+from usagetrim.core import engines
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.companion_state import already_wrapped, settings, update_settings
+from usagetrim.core.monitor import Monitor
+from usagetrim.core.native_hooks import claude_post_tool_use
+from usagetrim.core.telemetry import TelemetryStore
+from usagetrim.mcp.server import handle_usagetrim_read
 
 runner = CliRunner()
 
 
 def monitor(tmp_path):
-    return Monitor([Path(os.environ["TOKENCUT_CACHE_DIR"])], tmp_path / "collector")
+    return Monitor([Path(os.environ["USAGETRIM_CACHE_DIR"])], tmp_path / "collector")
 
 
 def test_metadata_only_signed_recovery_dedup_and_restart(tmp_path):
@@ -53,7 +53,7 @@ def test_metadata_only_signed_recovery_dedup_and_restart(tmp_path):
 
 
 def test_legacy_is_unattributed_and_separate(tmp_path):
-    path = Path(os.environ["TOKENCUT_CACHE_DIR"]) / "cache.db"
+    path = Path(os.environ["USAGETRIM_CACHE_DIR"]) / "cache.db"
     path.parent.mkdir()
     with sqlite3.connect(path) as conn:
         conn.execute(
@@ -94,13 +94,13 @@ def test_pause_roundtrip_preserves_backup_and_mcp_view(tmp_path):
     update_settings(paused=False, custom="keep")
     update_settings(paused=True)
     assert settings()["custom"] == "keep"
-    backups = list(Path(os.environ["TOKENCUT_STATE_DIR"]).glob("companion.json.backup-*"))
+    backups = list(Path(os.environ["USAGETRIM_STATE_DIR"]).glob("companion.json.backup-*"))
     assert len(backups) == 1
     assert json.loads(backups[0].read_text())["paused"] is False
     path = tmp_path / "large.txt"
     original = "Unicode zażółć 你好 🐍\n" * 500
     path.write_text(original)
-    assert handle_tokencut_read({"path": str(path), "max_tokens": 64}) == original
+    assert handle_usagetrim_read({"path": str(path), "max_tokens": 64}) == original
     result = runner.invoke(
         app, ["run", "--budget", "10", "--", sys.executable, "-c", "print('marker ' * 1000)"]
     )
@@ -124,12 +124,12 @@ def test_hook_prepared_idempotent_and_wrapper_skip(tmp_path):
     data = monitor(tmp_path).snapshot()
     assert data["prepared"]["events"] == 1
     assert data["today"] is None
-    payload["tool_input"]["command"] = "TOKENCUT_CACHE_DIR=/tmp/cache /bin/tokencut run -- pytest"
+    payload["tool_input"]["command"] = "USAGETRIM_CACHE_DIR=/tmp/cache /bin/usagetrim run -- pytest"
     assert claude_post_tool_use(payload) == {}
     assert already_wrapped(payload["tool_input"]["command"])
 
 
-@pytest.mark.parametrize("engine", ["none", "tokencut", "auto"])
+@pytest.mark.parametrize("engine", ["none", "usagetrim", "auto"])
 @pytest.mark.parametrize("case", ["empty", "unicode", "failure", "traceback", "large"])
 def test_modes_execute_once_preserve_diagnostics(tmp_path, engine, case):
     marker = tmp_path / "executions"
@@ -150,7 +150,7 @@ def test_modes_execute_once_preserve_diagnostics(tmp_path, engine, case):
 
 
 def test_external_or_invalid_engine_rejected_before_command(tmp_path):
-    assert engines.select_engine("auto") == "tokencut"
+    assert engines.select_engine("auto") == "usagetrim"
     for selected in ("unknown", "rtk", "serena"):
         marker = tmp_path / "bad"
         result = runner.invoke(
@@ -186,7 +186,7 @@ def test_auto_filter_and_monitor_do_not_launch_external_engines(tmp_path, monkey
     assert result.exit_code == 0
     assert "ERROR: preserve this diagnostic" in result.stdout
     data = monitor(tmp_path).snapshot()
-    assert [item["name"] for item in data["integrations"]] == ["TokenCut", "TokenCut Code"]
+    assert [item["name"] for item in data["integrations"]] == ["UsageTrim", "UsageTrim Code"]
     assert not marker.exists()
 
 
@@ -237,7 +237,7 @@ def test_rtk_recovery_is_charged_to_rtk_not_tokenizer(tmp_path):
     assert data["rtk"]["recovery"] == -data["rtk"]["net"]
 
 
-@pytest.mark.parametrize("engine", ["none", "tokencut", "auto"])
+@pytest.mark.parametrize("engine", ["none", "usagetrim", "auto"])
 @pytest.mark.parametrize("code", [0, 7])
 def test_actual_adapter_invokes_command_once(tmp_path, monkeypatch, engine, code):
     marker = tmp_path / "calls"
@@ -255,7 +255,7 @@ def test_actual_adapter_invokes_command_once(tmp_path, monkeypatch, engine, code
 
 
 def test_clear_does_not_restore_legacy_on_next_invocation(tmp_path):
-    path = Path(os.environ["TOKENCUT_CACHE_DIR"]) / "cache.db"
+    path = Path(os.environ["USAGETRIM_CACHE_DIR"]) / "cache.db"
     path.parent.mkdir()
     with sqlite3.connect(path) as conn:
         conn.execute(
@@ -269,7 +269,7 @@ def test_clear_does_not_restore_legacy_on_next_invocation(tmp_path):
 
 
 def test_recovery_ref_keeps_measurement_owner_for_identical_output():
-    from tokencut.core.telemetry import recovery_engine
+    from usagetrim.core.telemetry import recovery_engine
 
     raw = "same original output"
     cache = ContextCache()
@@ -278,4 +278,4 @@ def test_recovery_ref_keeps_measurement_owner_for_identical_output():
     assert native != rtk
     assert cache.retrieve(native) == cache.retrieve(rtk) == raw
     assert recovery_engine(rtk) == "rtk"
-    assert recovery_engine(native) == "tokencut"
+    assert recovery_engine(native) == "usagetrim"

@@ -15,15 +15,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from tokencut.core.code_index import digest
-from tokencut.core.symbol_edit import replace_symbol
-from tokencut.mcp.server import (
+from usagetrim.core.code_index import digest
+from usagetrim.core.symbol_edit import replace_symbol
+from usagetrim.mcp.server import (
     TOOLS_DEFINITIONS,
     _respond,
-    handle_tokencut_code,
-    handle_tokencut_read,
+    handle_usagetrim_code,
+    handle_usagetrim_read,
 )
-from tokencut.metrics.tokenizer import count_tokens
+from usagetrim.metrics.tokenizer import count_tokens
 
 
 def tokens(text):
@@ -86,7 +86,7 @@ async def serena_probe(executable, root, home):
 
 
 def benchmark(serena=None):
-    with TemporaryDirectory(prefix="tokencut-code-benchmark-") as directory:
+    with TemporaryDirectory(prefix="usagetrim-code-benchmark-") as directory:
         folder = Path(directory)
         root = folder / "project"
         root.mkdir()
@@ -101,21 +101,21 @@ def benchmark(serena=None):
         with patch.dict(
             os.environ,
             {
-                "TOKENCUT_CACHE_DIR": str(folder / "cache"),
-                "TOKENCUT_STATE_DIR": str(folder / "state"),
+                "USAGETRIM_CACHE_DIR": str(folder / "cache"),
+                "USAGETRIM_STATE_DIR": str(folder / "state"),
             },
         ):
             start = time.perf_counter()
-            found = handle_tokencut_code(
+            found = handle_usagetrim_code(
                 {"root": str(root), "mode": "symbols", "query": "Service73.run"}
             )
             cold_ms = (time.perf_counter() - start) * 1000
             start = time.perf_counter()
-            warm = handle_tokencut_code(
+            warm = handle_usagetrim_code(
                 {"root": str(root), "mode": "symbols", "query": "Service73.run"}
             )
             warm_ms = (time.perf_counter() - start) * 1000
-            body = handle_tokencut_read({"path": str(path), "symbol": "Service73.run"})
+            body = handle_usagetrim_read({"path": str(path), "symbol": "Service73.run"})
             assert "important comment 73" in body and "return value + 73" in body
             assert "0 reindexed" in warm
             replacement = (
@@ -136,7 +136,7 @@ def benchmark(serena=None):
                 "fixture": "100 Python classes; locate/read Service73.run and separately verify guarded edit",
                 "method": "o200k_base estimates; no model calls; not task quality or quota",
                 "raw_full_file_tokens": tokens(source),
-                "tokencut": {
+                "usagetrim": {
                     "passed": True,
                     "query_and_read_tokens": tokens(found) + tokens(body),
                     "read_only_tokens": tokens(body),

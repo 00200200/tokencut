@@ -2,9 +2,9 @@ import re
 
 import pytest
 
-from tokencut.core.adaptive import compress_to_budget
-from tokencut.core.cache import ContextCache
-from tokencut.core.specialized import (
+from usagetrim.core.adaptive import compress_to_budget
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.specialized import (
     author_kubectl_describe_fixture,
     author_kubectl_get_fixture,
     author_terraform_plan_fixture,
@@ -29,7 +29,7 @@ from tokencut.core.specialized import (
     filter_tsc,
     filter_uv_project,
 )
-from tokencut.metrics.tokenizer import count_tokens
+from usagetrim.metrics.tokenizer import count_tokens
 
 SAMPLE_KUBECTL_DESCRIBE = author_kubectl_describe_fixture()
 SAMPLE_KUBECTL_GET = author_kubectl_get_fixture()
@@ -652,7 +652,7 @@ def test_auto_specialize():
 def test_filter_cargo_test_collapses_passing_runs():
     compact = filter_cargo_test(SAMPLE_CARGO_PASS)
 
-    assert "[TokenCut: 48 passing tests, 48 progress records]" in compact
+    assert "[UsageTrim: 48 passing tests, 48 progress records]" in compact
     assert "test module0::tests::case_0 ... ok" not in compact
     # The authoritative summary and the compile banner must survive.
     assert "test result: ok. 48 passed; 0 failed" in compact
@@ -682,7 +682,7 @@ def test_auto_specialize_routes_cargo_test():
     compact = auto_specialize_command_output("cargo test --all-features", SAMPLE_CARGO_PASS)
 
     assert compact is not None
-    assert "[TokenCut: 48 passing tests, 48 progress records]" in compact
+    assert "[UsageTrim: 48 passing tests, 48 progress records]" in compact
 
 
 def test_filter_cargo_test_collapses_tests_named_like_diagnostics():
@@ -699,14 +699,14 @@ def test_filter_cargo_test_collapses_tests_named_like_diagnostics():
     compact = filter_cargo_test(raw)
 
     # "error"/"warning" inside a test name must not stop collapsing.
-    assert "[TokenCut: 3 passing tests, 3 progress records]" in compact
+    assert "[UsageTrim: 3 passing tests, 3 progress records]" in compact
     assert "test result: ok. 3 passed; 0 failed" in compact
 
 
 def test_filter_go_test_collapses_passing_runs():
     compact = filter_go_test(SAMPLE_GO_PASS)
 
-    assert "[TokenCut: 3 passing tests, 6 progress records]" in compact
+    assert "[UsageTrim: 3 passing tests, 6 progress records]" in compact
     assert "=== RUN   TestServerStart" not in compact
     assert "--- PASS: TestServerStart" not in compact
     assert "ok  \tgithub.com/acme/server\t0.034s" in compact
@@ -727,7 +727,7 @@ def test_filter_go_test_keeps_failure_identity_and_assertion():
 def test_auto_specialize_routes_go_test():
     compact = auto_specialize_command_output("go test -v ./...", SAMPLE_GO_PASS)
     assert compact is not None
-    assert "[TokenCut: 3 passing tests, 6 progress records]" in compact
+    assert "[UsageTrim: 3 passing tests, 6 progress records]" in compact
 
 
 def test_filter_cargo_test_compacts_failures_hard_with_large_savings():
@@ -741,7 +741,7 @@ def test_filter_cargo_test_compacts_failures_hard_with_large_savings():
     assert "assertion `left == right` failed" in compact
     assert "left: Err(InvalidUtf8)" in compact
     assert "test result: FAILED. 200 passed; 1 failed" in compact
-    assert "[TokenCut: 200 passing tests, 200 progress records]" in compact
+    assert "[UsageTrim: 200 passing tests, 200 progress records]" in compact
     assert "stack backtrace:" not in compact
     assert "acme_core::parser::parse_12" not in compact
     assert reduction >= 85.0, (
@@ -759,7 +759,7 @@ def test_filter_go_test_compacts_failures_hard_with_large_savings():
     assert "panic: unhandled nil pointer dereference" in compact
     assert "runtime error: invalid memory address" in compact
     assert "FAIL\tgithub.com/acme/server" in compact
-    assert "[TokenCut: 120 passing tests, 241 progress records]" in compact
+    assert "[UsageTrim: 120 passing tests, 241 progress records]" in compact
     assert "goroutine 16 [running]:" not in compact
     assert "main.helper12" not in compact
     assert reduction >= 85.0, (
@@ -779,21 +779,21 @@ def test_auto_specialize_routes_cargo_toolchain_absolute_and_nextest():
     )
     compact = auto_specialize_command_output("cargo nextest run", SAMPLE_NEXTEST_PASS)
     assert compact is not None
-    assert "[TokenCut: 24 passing tests, 24 progress records]" in compact
+    assert "[UsageTrim: 24 passing tests, 24 progress records]" in compact
     assert "PASS [   0.010s]" not in compact
 
 
 def test_auto_specialize_routes_absolute_go_test():
     compact = auto_specialize_command_output("/usr/local/go/bin/go test -v ./...", SAMPLE_GO_PASS)
     assert compact is not None
-    assert "[TokenCut: 3 passing tests, 6 progress records]" in compact
+    assert "[UsageTrim: 3 passing tests, 6 progress records]" in compact
 
 
 def test_filter_jest_vitest_collapses_passing_runs():
     compact = filter_jest_vitest(SAMPLE_VITEST_PASS)
 
     # Vitest's own summary in this fixture reports 7 tests across 2 files.
-    assert "[TokenCut: 7 passing tests in 2 files, 9 progress records]" in compact
+    assert "[UsageTrim: 7 passing tests in 2 files, 9 progress records]" in compact
     assert "formats currency correctly" not in compact
     assert "Test Files  2 passed (2)" in compact
     assert "Tests  7 passed (7)" in compact
@@ -904,18 +904,18 @@ def test_filter_jest_vitest_collapses_tests_named_with_diagnostic_words():
         ]
     )
     compact = filter_jest_vitest(raw)
-    assert "[TokenCut: 2 passing tests in 1 file, 3 progress records]" in compact
+    assert "[UsageTrim: 2 passing tests in 1 file, 3 progress records]" in compact
     assert "Tests  2 passed (2)" in compact
 
 
 def test_auto_specialize_routes_jest_and_vitest():
     compact_vitest = auto_specialize_command_output("npx vitest run", SAMPLE_VITEST_PASS)
     assert compact_vitest is not None
-    assert "[TokenCut: 7 passing tests in 2 files, 9 progress records]" in compact_vitest
+    assert "[UsageTrim: 7 passing tests in 2 files, 9 progress records]" in compact_vitest
 
     compact_npm = auto_specialize_command_output("npm test -- --coverage", SAMPLE_VITEST_PASS)
     assert compact_npm is not None
-    assert "[TokenCut: 7 passing tests in 2 files, 9 progress records]" in compact_npm
+    assert "[UsageTrim: 7 passing tests in 2 files, 9 progress records]" in compact_npm
 
 
 def test_filter_tsc_compacts_errors_and_strips_squiggles():
@@ -987,7 +987,7 @@ def test_filter_cargo_build_collapses_crates():
     crates = "\n".join([f"   Compiling crate_{i} v0.{i}.0" for i in range(20)])
     raw = f"{crates}\nwarning: unused variable `x`\n --> src/main.rs:5:9\n    Finished dev [unoptimized + debuginfo] in 3.12s\n"
     res = filter_cargo_build(raw)
-    assert "[TokenCut: compiled/checked 20 crates]" in res
+    assert "[UsageTrim: compiled/checked 20 crates]" in res
     assert "warning: unused variable `x`" in res
     assert "Finished dev" in res
     assert "Compiling crate_0" not in res
@@ -1005,7 +1005,7 @@ def test_filter_cargo_build_preserves_error():
         "   |     ^^^ not found\n"
     )
     res = filter_cargo_build(raw)
-    assert "[TokenCut: compiled/checked 3 crates]" in res
+    assert "[UsageTrim: compiled/checked 3 crates]" in res
     assert "error[E0425]: cannot find value `foo` in this scope" in res
     assert "10 |     foo();" in res
 
@@ -1022,7 +1022,7 @@ def test_filter_pip_install_collapses_progress_and_downloads():
         "Successfully installed requests-2.31.0 urllib3-2.2.1\n"
     )
     res = filter_pip_install(raw)
-    assert "[TokenCut: resolved/downloaded 2 packages]" in res
+    assert "[UsageTrim: resolved/downloaded 2 packages]" in res
     assert "Successfully installed requests-2.31.0 urllib3-2.2.1" in res
     assert "━━━━━━━━━━━━━━━━" not in res
 
@@ -1047,7 +1047,7 @@ def test_filter_uv_project_collapses_package_list_and_debug():
     assert "Downloaded black" not in res
     assert "Resolved 16 packages in 1.00s" in res
     assert "Installed 15 packages in 77ms" in res
-    assert "[TokenCut: +12 package changes collapsed]" in res
+    assert "[UsageTrim: +12 package changes collapsed]" in res
     assert " + pkg0==1.0.0" not in res
     assert "warning: The package `legacy` is deprecated" in res
 
@@ -1061,7 +1061,7 @@ def test_auto_specialize_routes_uv_project_not_uv_pip_install():
     noisy = "Resolved 10 packages in 1s\n" + "\n".join(f" + p{i}==1.0" for i in range(8))
     sync = auto_specialize_command_output("uv sync --all-extras", noisy)
     assert sync is not None
-    assert "[TokenCut: +8 package changes collapsed]" in sync
+    assert "[UsageTrim: +8 package changes collapsed]" in sync
 
     add = auto_specialize_command_output("uv add httpx", noisy)
     assert add is not None
@@ -1087,7 +1087,7 @@ def test_filter_npm_install_collapses_deprecations():
         "found 0 vulnerabilities\n"
     )
     res = filter_npm_install(raw)
-    assert "[TokenCut: 8 package deprecation warnings collapsed]" in res
+    assert "[UsageTrim: 8 package deprecation warnings collapsed]" in res
     assert "added 185 packages, and audited 186 packages in 2s" in res
     assert "found 0 vulnerabilities" in res
     assert "run `npm fund`" not in res
@@ -1097,7 +1097,7 @@ def test_auto_specialize_routes_build_and_package_commands():
     cargo_raw = "   Compiling a v1.0.0\n   Compiling b v1.0.0\n   Compiling c v1.0.0\n"
     res_cargo = auto_specialize_command_output("cargo build --release", cargo_raw)
     assert res_cargo is not None
-    assert "[TokenCut: compiled/checked 3 crates]" in res_cargo
+    assert "[UsageTrim: compiled/checked 3 crates]" in res_cargo
 
     pip_raw = "Collecting foo\nSuccessfully installed foo-1.0.0\n"
     res_pip = auto_specialize_command_output("pip install foo", pip_raw)
@@ -1107,7 +1107,7 @@ def test_auto_specialize_routes_build_and_package_commands():
     npm_raw = "npm warn deprecated a\nnpm warn deprecated b\nnpm warn deprecated c\nadded 10 pkgs\n"
     res_npm = auto_specialize_command_output("npm install", npm_raw)
     assert res_npm is not None
-    assert "[TokenCut: 3 package deprecation warnings collapsed]" in res_npm
+    assert "[UsageTrim: 3 package deprecation warnings collapsed]" in res_npm
 
 
 def test_filter_jest_vitest_does_not_inflate_counts_with_file_records():
@@ -1119,7 +1119,7 @@ def test_filter_jest_vitest_does_not_inflate_counts_with_file_records():
 
     compact = filter_jest_vitest(raw)
 
-    assert "[TokenCut: 390 passing tests in 20 files, 20 progress records]" in compact
+    assert "[UsageTrim: 390 passing tests in 20 files, 20 progress records]" in compact
     assert "Tests  390 passed (390)" in compact
 
 
@@ -1129,7 +1129,7 @@ def test_filter_jest_vitest_reports_files_when_test_counts_are_unstated():
 
     compact = filter_jest_vitest(raw)
 
-    assert "[TokenCut: 3 passing test files, 3 progress records]" in compact
+    assert "[UsageTrim: 3 passing test files, 3 progress records]" in compact
 
 
 @pytest.mark.parametrize(
@@ -1149,7 +1149,7 @@ def test_filter_git_diff_folds_lockfiles_and_keeps_code_hunks():
     assert "diff --git a/src/main.py b/src/main.py" in compact
     assert "+    new_important_logic()" in compact
     assert "diff --git a/uv.lock b/uv.lock" in compact
-    assert "lines of lockfile/generated diff omitted by tokencut" in compact
+    assert "lines of lockfile/generated diff omitted by usagetrim" in compact
     assert "+ extra_lock_line_50" not in compact
     assert count_tokens(compact).claude < count_tokens(SAMPLE_GIT_DIFF).claude
 
@@ -1162,7 +1162,7 @@ def test_filter_git_diff_leaves_non_diff_output_unchanged():
 def test_auto_specialize_routes_git_diff_and_show():
     compact_diff = auto_specialize_command_output("git diff HEAD~1", SAMPLE_GIT_DIFF)
     assert compact_diff is not None
-    assert "omitted by tokencut" in compact_diff
+    assert "omitted by usagetrim" in compact_diff
 
     compact_show = auto_specialize_command_output("git show abc1234", SAMPLE_GIT_DIFF)
     assert compact_show is not None
@@ -1443,7 +1443,7 @@ def test_filter_terraform_plan_collapses_refresh_keeps_plan():
     assert "Refreshing state..." not in compact
     assert "Reading..." not in compact
     assert "Read complete after" not in compact
-    assert "refresh" in compact.lower() or "TokenCut" in compact
+    assert "refresh" in compact.lower() or "UsageTrim" in compact
     before = count_tokens(SAMPLE_TERRAFORM_PLAN).openai
     after = count_tokens(compact).openai
     assert after < before * 0.25
@@ -1508,7 +1508,7 @@ def test_cleaning_still_returns_recoverable_reference():
 
 
 def test_filter_directory_scan():
-    from tokencut.core.specialized import filter_directory_scan
+    from usagetrim.core.specialized import filter_directory_scan
 
     raw = """./src
 ./src/index.ts
@@ -1528,8 +1528,8 @@ def test_filter_directory_scan():
     assert "./src/app.ts" in compact
     assert "./package.json" in compact
     assert "./README.md" in compact
-    assert "node_modules/ [... 4 items omitted by tokencut" in compact
-    assert ".git/ [... 3 items omitted by tokencut" in compact
+    assert "node_modules/ [... 4 items omitted by usagetrim" in compact
+    assert ".git/ [... 3 items omitted by usagetrim" in compact
     assert "./node_modules/react/index.js" not in compact
 
 
@@ -1538,4 +1538,4 @@ def test_auto_specialize_routes_find_and_tree():
     res = auto_specialize_command_output("find . -type f", raw)
     assert res is not None
     assert "./src/main.py" in res
-    assert "node_modules/ [... 20 items omitted by tokencut" in res
+    assert "node_modules/ [... 20 items omitted by usagetrim" in res

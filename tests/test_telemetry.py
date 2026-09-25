@@ -1,4 +1,4 @@
-from tokencut.core.telemetry import TelemetryStore
+from usagetrim.core.telemetry import TelemetryStore
 
 
 def test_telemetry_store(tmp_path):

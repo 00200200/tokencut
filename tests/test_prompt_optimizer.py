@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tokencut.core.prompt_optimizer import align_prompt, lint_prompt, minify_prompt
+from usagetrim.core.prompt_optimizer import align_prompt, lint_prompt, minify_prompt
 
 
 def test_lint_clean_prompt():

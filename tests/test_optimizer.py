@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from tokencut.core.cache import ContextCache
-from tokencut.core.optimizer import optimize_context
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.optimizer import optimize_context
 
 
 def test_optimize_intra_fence_json_to_toon():
@@ -51,7 +51,7 @@ Is this package upgrade safe?
     assert "fence:diff" in res.pipeline_stages
     assert "Review the following dependency update patch:" in res.text
     assert "Is this package upgrade safe?" in res.text
-    assert "lockfile/generated diff omitted by tokencut" in res.text
+    assert "lockfile/generated diff omitted by usagetrim" in res.text
     assert res.optimized_tokens < res.original_tokens
 
 
@@ -91,7 +91,7 @@ Assistant: I inspected the test suite and all 400 unit tests passed successfully
 User: Should we use SQLite or PostgreSQL for local developer caching?
 Assistant: We decided to use SQLite with WAL mode for the local context cache because it requires zero daemon setup. Setting up PostgreSQL would require docker containers and background daemons which slows down developer onboarding and introduces extra memory overhead.
 User: Great. Which files need to be updated for this change?
-Assistant: We modified src/tokencut/core/cache.py and src/tokencut/cli.py to support the new cache schema and ensure connection pooling works correctly across threads.
+Assistant: We modified src/usagetrim/core/cache.py and src/usagetrim/cli.py to support the new cache schema and ensure connection pooling works correctly across threads.
 User: What are the next steps before opening the pull request?
 Assistant: We must run ruff format, verify all tests pass, and generate the pull request description detailing the benchmark results and memory footprint.
 User: Go ahead and run the checks now.
@@ -101,7 +101,7 @@ Assistant: All checks passed cleanly with 100% test success rate. Ready for revi
     assert res.primary_mode == "conversation_distill"
     assert "conversation_distillation" in res.pipeline_stages
     assert "Distilled Conversation Context" in res.text
-    assert "src/tokencut/core/cache.py" in res.text
+    assert "src/usagetrim/core/cache.py" in res.text
 
 
 def test_optimize_whole_document_prompt_alignment():

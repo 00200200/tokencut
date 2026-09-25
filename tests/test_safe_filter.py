@@ -3,11 +3,11 @@ import sqlite3
 
 import pytest
 
-from tokencut.core import safe_filter
-from tokencut.core.cache import ContextCache
-from tokencut.core.redactor import redact_secrets
-from tokencut.core.safe_filter import safe_compact_output
-from tokencut.metrics.tokenizer import count_tokens
+from usagetrim.core import safe_filter
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.redactor import redact_secrets
+from usagetrim.core.safe_filter import safe_compact_output
+from usagetrim.metrics.tokenizer import count_tokens
 
 
 def _passes(count=80):
@@ -200,7 +200,7 @@ def test_pytest_failure_noise_is_cut_while_keeping_failure_and_recovery():
     assert "DEBUG retry attempt" not in result
     assert "gw0 I /Users/dev" not in result
     assert "z" * 40 not in result  # hypothesis blob body
-    assert "[TokenCut: truncated" in result
+    assert "[UsageTrim: truncated" in result
     assert "{'c': 20," not in result  # deep long-repr body not retained
 
     # Must beat pass-only compaction by a wide margin (main left ~4000 tokens here).

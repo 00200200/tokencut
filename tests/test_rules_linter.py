@@ -1,4 +1,4 @@
-from tokencut.core.rules_linter import lint_rule_content, minify_rules
+from usagetrim.core.rules_linter import lint_rule_content, minify_rules
 
 SAMPLE_RULES_BAD = """
 # Project Guidelines
@@ -28,7 +28,7 @@ def test_minify_rules():
 
 
 def test_optimize_rules_strips_boilerplate_and_aligns_cache():
-    from tokencut.core.rules_linter import optimize_rules
+    from usagetrim.core.rules_linter import optimize_rules
 
     res = optimize_rules(SAMPLE_RULES_BAD)
     assert res["optimized_tokens"] < res["original_tokens"]
@@ -45,13 +45,13 @@ def test_optimize_rules_strips_boilerplate_and_aligns_cache():
 
 
 def test_generate_desktop_rules():
-    from tokencut.core.rules_linter import generate_desktop_rules
+    from usagetrim.core.rules_linter import generate_desktop_rules
 
     claude_rules = generate_desktop_rules("claude")
-    assert "TokenCut Claude Rules" in claude_rules
-    assert "tokencut_read" in claude_rules
-    assert "tokencut_code" in claude_rules
+    assert "UsageTrim Claude Rules" in claude_rules
+    assert "usagetrim_read" in claude_rules
+    assert "usagetrim_code" in claude_rules
 
     codex_rules = generate_desktop_rules("codex")
-    assert "TokenCut Codex Rules" in codex_rules
-    assert "tokencut_exec" in codex_rules
+    assert "UsageTrim Codex Rules" in codex_rules
+    assert "usagetrim_exec" in codex_rules

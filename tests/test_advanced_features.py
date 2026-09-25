@@ -1,6 +1,6 @@
-from tokencut.core.cache import ContextCache
-from tokencut.core.redactor import redact_secrets
-from tokencut.core.tree_scanner import scan_directory
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.redactor import redact_secrets
+from usagetrim.core.tree_scanner import scan_directory
 
 
 def test_cache_never_persists_or_replays_recognized_secrets(tmp_path):

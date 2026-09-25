@@ -4,8 +4,8 @@ import sys
 
 from typer.testing import CliRunner
 
-from tokencut.cli import app
-from tokencut.core.cache import ContextCache
+from usagetrim.cli import app
+from usagetrim.core.cache import ContextCache
 
 runner = CliRunner()
 
@@ -33,7 +33,7 @@ def test_cli_demo():
 
 
 def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
-    cache_path = os.environ["TOKENCUT_CACHE_DIR"]
+    cache_path = os.environ["USAGETRIM_CACHE_DIR"]
     cache = ContextCache()
     ref = cache.store("existing user output", source="test")
     before = cache.get_stats()["count"]
@@ -59,7 +59,7 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
     assert (
         data["specialized"]["eslint"]["output_tokens"] < data["specialized"]["eslint"]["raw_tokens"]
     )
-    # Measured o200k_base counts — keep README in lockstep with tokencut demo.
+    # Measured o200k_base counts — keep README in lockstep with usagetrim demo.
     assert data["specialized"]["mypy"] == {
         "raw_tokens": 522,
         "output_tokens": 259,
@@ -87,7 +87,7 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
     }
     assert data["specialized"]["pytest_noise"] == {
         "raw_tokens": 5111,
-        "output_tokens": 348,
+        "output_tokens": 349,
         "reduction_pct": 93.2,
     }
     assert data["specialized"]["pyright"] == {
@@ -120,13 +120,13 @@ def test_demo_measures_recovery_and_preserves_user_cache(tmp_path, monkeypatch):
     assert data["checks"]["npm_test_keeps_failure_drops_console"]
     assert data["checks"]["kubectl_keeps_crash_drops_annotations"]
     assert data["checks"]["terraform_keeps_plan_drops_refresh"]
-    assert os.environ["TOKENCUT_CACHE_DIR"] == cache_path
+    assert os.environ["USAGETRIM_CACHE_DIR"] == cache_path
     assert cache.get_stats()["count"] == before
     assert cache.retrieve(ref) == "existing user output"
 
 
 def test_demo_fails_if_compaction_drops_diagnostics(monkeypatch):
-    monkeypatch.setattr("tokencut.cli.safe_compact_output", lambda text, **kw: "everything passed")
+    monkeypatch.setattr("usagetrim.cli.safe_compact_output", lambda text, **kw: "everything passed")
     res = runner.invoke(app, ["demo", "--json"])
     assert res.exit_code == 1
     data = json.loads(res.stdout)
@@ -174,7 +174,7 @@ def test_run_preserves_complete_failed_output_and_exit_status():
 
 
 def test_retrieve_preserves_original_format_and_charges_readback():
-    from tokencut.core.telemetry import TelemetryStore
+    from usagetrim.core.telemetry import TelemetryStore
 
     raw = "[bold]literal[/bold] " + "long-line " * 40
     ref = ContextCache().store(raw, source="test")
@@ -235,25 +235,25 @@ def test_cli_json_string():
     raw = '[{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}]'
     res = runner.invoke(app, ["json", raw])
     assert res.exit_code == 0
-    assert "omitted by tokencut" in res.output
+    assert "omitted by usagetrim" in res.output
 
 
 def test_cli_json_stdin():
     raw = '{"items": [1, 2, 3, 4, 5, 6, 7]}'
     res = runner.invoke(app, ["json"], input=raw)
     assert res.exit_code == 0
-    assert "omitted by tokencut" in res.output
+    assert "omitted by usagetrim" in res.output
 
 
 def test_cli_doctor():
     res = runner.invoke(app, ["doctor"])
     assert res.exit_code == 0
-    assert "tokencut System & Integration Diagnostics" in res.output
+    assert "usagetrim System & Integration Diagnostics" in res.output
 
 
 def test_cli_install_desktop_honors_installer_failure(monkeypatch):
     monkeypatch.setattr(
-        "tokencut.cli.configure_claude_desktop_mcp",
+        "usagetrim.cli.configure_claude_desktop_mcp",
         lambda: (False, "Malformed existing config; unchanged"),
     )
     result = runner.invoke(app, ["install", "--claude-desktop"])
@@ -265,11 +265,11 @@ def test_cli_install_desktop_honors_installer_failure(monkeypatch):
 def test_cli_install_desktop_selects_only_desktop(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "tokencut.cli.configure_claude_desktop_mcp",
+        "usagetrim.cli.configure_claude_desktop_mcp",
         lambda: (calls.append("desktop") or True, "/tmp/claude.json"),
     )
-    monkeypatch.setattr("tokencut.cli.configure_cursor_mcp", lambda: calls.append("cursor"))
-    monkeypatch.setattr("tokencut.cli.configure_shell_alias", lambda: calls.append("alias"))
+    monkeypatch.setattr("usagetrim.cli.configure_cursor_mcp", lambda: calls.append("cursor"))
+    monkeypatch.setattr("usagetrim.cli.configure_shell_alias", lambda: calls.append("alias"))
     result = runner.invoke(app, ["install", "--claude-desktop"])
     assert result.exit_code == 0
     assert calls == ["desktop"]
@@ -278,13 +278,13 @@ def test_cli_install_desktop_selects_only_desktop(monkeypatch):
 def test_cli_install_windsurf_selects_only_windsurf(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "tokencut.cli.configure_windsurf_mcp",
+        "usagetrim.cli.configure_windsurf_mcp",
         lambda: (calls.append("windsurf") or True, "/tmp/windsurf.json"),
     )
-    monkeypatch.setattr("tokencut.cli.configure_cursor_mcp", lambda: calls.append("cursor"))
-    monkeypatch.setattr("tokencut.cli.configure_shell_alias", lambda: calls.append("alias"))
+    monkeypatch.setattr("usagetrim.cli.configure_cursor_mcp", lambda: calls.append("cursor"))
+    monkeypatch.setattr("usagetrim.cli.configure_shell_alias", lambda: calls.append("alias"))
     monkeypatch.setattr(
-        "tokencut.cli.configure_claude_desktop_mcp", lambda: calls.append("desktop")
+        "usagetrim.cli.configure_claude_desktop_mcp", lambda: calls.append("desktop")
     )
     result = runner.invoke(app, ["install", "--windsurf"])
     assert result.exit_code == 0
@@ -473,16 +473,16 @@ def test_cli_optimize_json(tmp_path):
 def test_cli_share():
     res = runner.invoke(app, ["share"])
     assert res.exit_code == 0
-    assert "Share TokenCut & Add Badge" in res.output
-    assert "shields.io/badge/tokencut" in res.output
-    assert "github.com/00200200/tokencut" in res.output
+    assert "Share UsageTrim & Add Badge" in res.output
+    assert "shields.io/badge/usagetrim" in res.output
+    assert "github.com/00200200/usagetrim" in res.output
 
 
 def test_cli_share_badge():
     res = runner.invoke(app, ["share", "--badge"])
     assert res.exit_code == 0
     assert res.output.strip().startswith(
-        "[![TokenCut Context](https://img.shields.io/badge/tokencut-"
+        "[![UsageTrim Context](https://img.shields.io/badge/usagetrim-"
     )
 
 
@@ -491,7 +491,7 @@ def test_cli_rules_init(tmp_path):
     res = runner.invoke(app, ["rules", "--init", "--file", str(target), "--client", "claude"])
     assert res.exit_code == 0
     assert target.exists()
-    assert "TokenCut Claude Rules" in target.read_text()
+    assert "UsageTrim Claude Rules" in target.read_text()
 
 
 def test_cli_rules_optimize(tmp_path):
@@ -505,7 +505,7 @@ def test_cli_rules_optimize(tmp_path):
     # Test --optimize --stats (dry run)
     res_dry = runner.invoke(app, ["rules", "--optimize", "--file", str(target), "--stats"])
     assert res_dry.exit_code == 0
-    assert "TokenCut Rules Optimization:" in res_dry.output
+    assert "UsageTrim Rules Optimization:" in res_dry.output
     assert "Run pytest before pushing code" in res_dry.output
     assert "You are an expert" not in res_dry.output
 
@@ -521,7 +521,7 @@ def test_cli_rules_optimize(tmp_path):
 
 
 def test_cli_install_codex_and_profile(tmp_path, monkeypatch):
-    import tokencut.core.doctor as doc
+    import usagetrim.core.doctor as doc
 
     fake_codex_cfg = tmp_path / "config.toml"
     fake_claude_cfg = tmp_path / "claude_desktop_config.json"
@@ -531,7 +531,7 @@ def test_cli_install_codex_and_profile(tmp_path, monkeypatch):
         doc,
         "_local_mcp_command",
         lambda profile=None: {
-            "command": "/bin/tokencut",
+            "command": "/bin/usagetrim",
             "args": ["mcp", "--profile", profile] if profile else ["mcp"],
         },
     )

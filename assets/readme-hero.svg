@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
-  <title id="title">TokenCut - keep the signal, cut the noise</title>
-  <desc id="desc">Dark hero for TokenCut. Authored fixtures: docker 18,360→107, cargo 3,795→185, pytest 1,562→174. Local estimate, no model calls.</desc>
+  <title id="title">UsageTrim - keep the signal, cut the noise</title>
+  <desc id="desc">Dark hero for UsageTrim. Authored fixtures: docker 18,360→107, cargo 3,795→185, pytest 1,562→174. Local estimate, no model calls.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#07161a"/>
@@ -54,7 +54,7 @@
   <!-- Brand -->
   <g transform="translate(56, 42)">
     <path d="M0 10c14-7 21 2 15 12-6 8-17 7-17-2 0-6 4-8 11-9-3 3-6 7-7 11" fill="#b3f5cd"/>
-    <text x="28" y="24" class="sans" font-size="20" font-weight="700" letter-spacing="3.2" fill="#eaf7f3">TOKENCUT</text>
+    <text x="28" y="24" class="sans" font-size="20" font-weight="700" letter-spacing="3.2" fill="#eaf7f3">USAGETRIM</text>
   </g>
 
   <!-- Hook - left two-thirds -->
@@ -99,7 +99,7 @@
       <circle cx="24" cy="26" r="4.5" fill="#ff5f56"/>
       <circle cx="42" cy="26" r="4.5" fill="#ffbd2e"/>
       <circle cx="60" cy="26" r="4.5" fill="#27c93f"/>
-      <text x="84" y="30" class="mono" font-size="11" fill="#8fd6b8">tokencut  -  kept</text>
+      <text x="84" y="30" class="mono" font-size="11" fill="#8fd6b8">usagetrim  -  kept</text>
 
       <text x="20" y="68" class="mono" font-size="12" fill="#6f9588">119 passed collapsed</text>
       <text x="20" y="100" class="mono" font-size="13" font-weight="700" fill="#ffb4ae">FAILED test_refund</text>

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-from tokencut.core.cache import ContextCache
-from tokencut.core.clip import compact_text, get_clipboard, set_clipboard
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.clip import compact_text, get_clipboard, set_clipboard
 
 
 def test_compact_text_short_passthrough():
@@ -97,7 +97,7 @@ def test_compact_text_budget_truncation():
     huge = "".join(f"Unique diagnostic row {i} with payload data {i * 7}\n" for i in range(400))
     res = compact_text(huge, budget=200)
     assert res.compacted_tokens <= 200
-    assert "lines omitted by TokenCut to fit 200 token budget" in res.text
+    assert "lines omitted by UsageTrim to fit 200 token budget" in res.text
     assert res.ref_id is not None
     recovered = ContextCache().retrieve(res.ref_id)
     assert "Unique diagnostic row 0" in recovered

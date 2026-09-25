@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tokencut.core.cache import ContextCache
-from tokencut.core.pack import pack_context
+from usagetrim.core.cache import ContextCache
+from usagetrim.core.pack import pack_context
 
 
 def test_pack_context_basic(tmp_path: Path):
@@ -25,7 +25,7 @@ def test_pack_context_basic(tmp_path: Path):
     assert res.file_count >= 2
     assert "app.py" in res.bundle_text
     assert "README.md" in res.bundle_text
-    assert "# TokenCut Context Bundle" in res.bundle_text
+    assert "# UsageTrim Context Bundle" in res.bundle_text
     assert res.packed_tokens <= 4000
 
 
@@ -46,7 +46,7 @@ def test_pack_context_force_skeleton(tmp_path: Path):
     assert file_entry.is_skeleton
     assert "def compute_sum" in file_entry.content
     assert "..." in file_entry.content
-    assert "Recover: tokencut retrieve" in file_entry.content
+    assert "Recover: usagetrim retrieve" in file_entry.content
     assert file_entry.ref_id is not None
     assert "compute_sum" in ContextCache().retrieve(file_entry.ref_id)
 

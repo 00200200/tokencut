@@ -1,5 +1,5 @@
-from tokencut.metrics.pricing import estimate_savings
-from tokencut.metrics.tokenizer import compute_metrics, count_tokens
+from usagetrim.metrics.pricing import estimate_savings
+from usagetrim.metrics.tokenizer import compute_metrics, count_tokens
 
 
 def test_count_tokens():

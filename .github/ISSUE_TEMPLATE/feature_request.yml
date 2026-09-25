@@ -4,7 +4,7 @@ labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
-      value: Share your ideas for making tokencut even more token-efficient!
+      value: Share your ideas for making usagetrim even more token-efficient!
   - type: textarea
     id: problem
     attributes:
@@ -16,6 +16,6 @@ body:
     id: proposal
     attributes:
       label: Proposed Solution
-      description: How should tokencut compress or handle this?
+      description: How should usagetrim compress or handle this?
     validations:
       required: true

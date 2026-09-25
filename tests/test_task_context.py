@@ -5,14 +5,14 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from typer.testing import CliRunner
 
-from tokencut.cli import app
-from tokencut.core.companion_state import update_settings
-from tokencut.core.context_hooks import context_hook, install_context_hooks, run_context_hook
-from tokencut.core.monitor import Monitor
-from tokencut.core.task_context import TaskContext, context_path, context_summary, dispatch_context
-from tokencut.core.telemetry import TelemetryStore
-from tokencut.mcp.server import _respond
-from tokencut.metrics.tokenizer import count_tokens
+from usagetrim.cli import app
+from usagetrim.core.companion_state import update_settings
+from usagetrim.core.context_hooks import context_hook, install_context_hooks, run_context_hook
+from usagetrim.core.monitor import Monitor
+from usagetrim.core.task_context import TaskContext, context_path, context_summary, dispatch_context
+from usagetrim.core.telemetry import TelemetryStore
+from usagetrim.mcp.server import _respond
+from usagetrim.metrics.tokenizer import count_tokens
 
 
 def note(goal="Ship the fix", **extra):
@@ -176,7 +176,7 @@ def test_pause_and_unavailable_cache_never_block_conversation(tmp_path, monkeypa
     update_settings(paused=False)
     blocked = tmp_path / "not-a-directory"
     blocked.write_text("x")
-    monkeypatch.setenv("TOKENCUT_CACHE_DIR", str(blocked))
+    monkeypatch.setenv("USAGETRIM_CACHE_DIR", str(blocked))
     output = io.StringIO()
     run_context_hook("codex", io.StringIO(json.dumps(event(tmp_path))), output)
     assert json.loads(output.getvalue()) == {}
@@ -202,7 +202,7 @@ def test_install_preserves_hooks_backs_up_and_is_idempotent(tmp_path, client):
     installed = json.loads(first)
     assert installed["permissions"] == existing["permissions"]
     assert installed["hooks"]["SessionStart"][0] == existing["hooks"]["SessionStart"][0]
-    backups = list(tmp_path.glob("*.pre-tokencut-context-*"))
+    backups = list(tmp_path.glob("*.pre-usagetrim-context-*"))
     assert len(backups) == 1
     assert json.loads(backups[0].read_text()) == existing
     assert backups[0].stat().st_mode & 0o777 == 0o600
@@ -212,7 +212,7 @@ def test_install_rejects_malformed_hooks_without_modifying_config(tmp_path):
     config = tmp_path / "settings.json"
     original = '{"hooks":{"PostCompact":{}}}'
     config.write_text(original)
-    executable = tmp_path / "tokencut"
+    executable = tmp_path / "usagetrim"
     executable.touch()
     with pytest.raises(ValueError):
         install_context_hooks("codex", executable, tmp_path, config)
@@ -221,7 +221,7 @@ def test_install_rejects_malformed_hooks_without_modifying_config(tmp_path):
 
 def test_reconfigure_cache_replaces_owned_handlers_without_duplicate_injection(tmp_path):
     config = tmp_path / "hooks.json"
-    executable = tmp_path / "tokencut"
+    executable = tmp_path / "usagetrim"
     executable.touch()
     install_context_hooks("codex", executable, tmp_path / "old", config)
     install_context_hooks("codex", executable, tmp_path / "new", config)
@@ -256,7 +256,7 @@ def test_mcp_and_cli_roundtrip_redaction_and_negative_accounting(tmp_path):
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
-            "params": {"name": "tokencut_context", "arguments": request},
+            "params": {"name": "usagetrim_context", "arguments": request},
         }
     )
     assert not response["result"]["isError"]
