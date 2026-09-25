@@ -1418,6 +1418,61 @@ def test_filter_kubectl_get_collapses_healthy_rows():
     assert after < before * 0.35
 
 
+KUBECTL_GET_HEADER = "NAME                READY   STATUS             RESTARTS      AGE"
+
+
+def _kubectl_get(*rows: str) -> str:
+    return "\n".join([KUBECTL_GET_HEADER, *rows])
+
+
+def test_filter_kubectl_get_keeps_pods_that_are_restarting():
+    # A pod can report Running while restarting constantly; that is the signal.
+    raw = _kubectl_get(
+        "api-aaaa            1/1     Running            0             5d",
+        "payments-bbbb       1/1     Running            47 (5m ago)   2d",
+    )
+
+    compact = filter_kubectl(raw)
+
+    assert "payments-bbbb" in compact
+    assert "47 (5m ago)" in compact
+    assert "api-aaaa" not in compact
+
+
+def test_filter_kubectl_get_keeps_partially_ready_pods():
+    # 1/2 ready is a degraded pod, not a healthy one.
+    raw = _kubectl_get(
+        "api-aaaa            2/2     Running            0             5d",
+        "search-bbbb         1/2     Running            0             3d",
+    )
+
+    compact = filter_kubectl(raw)
+
+    assert "search-bbbb" in compact
+    assert "api-aaaa" not in compact
+
+
+def test_filter_kubectl_get_collapses_finished_pods():
+    # Finished pods report 0/N ready by design, so readiness must not keep them.
+    raw = _kubectl_get(
+        "backup-aaaa         0/1     Completed          0             1h",
+        "backup-bbbb         0/2     Completed          0             2h",
+        "restore-cccc        0/1     Succeeded          0             3h",
+    )
+
+    compact = filter_kubectl(raw)
+
+    assert "[UsageTrim: 3 healthy Running/Completed rows collapsed]" in compact
+    assert "backup-aaaa" not in compact
+    assert "restore-cccc" not in compact
+
+
+def test_filter_kubectl_get_keeps_rows_with_an_unreadable_restart_column():
+    raw = _kubectl_get("api-aaaa            1/1     Running            <unknown>     5d")
+
+    assert "api-aaaa" in filter_kubectl(raw)
+
+
 def test_auto_specialize_routes_kubectl():
     compact = auto_specialize_command_output(
         "kubectl -n production describe pod api-7d8f9c-xk2m9", SAMPLE_KUBECTL_DESCRIBE
