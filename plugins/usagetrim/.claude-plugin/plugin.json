@@ -1,0 +1,28 @@
+{
+  "name": "usagetrim",
+  "version": "0.3.0",
+  "description": "Keep the signal, cut the noise: fold verbose tool output (tests, builds, logs, JSON) locally and recover the original by reference.",
+  "author": {
+    "name": "00200200",
+    "url": "https://github.com/00200200"
+  },
+  "homepage": "https://github.com/00200200/usagetrim",
+  "repository": "https://github.com/00200200/usagetrim",
+  "license": "MIT",
+  "keywords": ["mcp", "tokens", "context", "compaction", "claude-code", "developer-tools"],
+  "mcpServers": "./.mcp.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx usagetrim hook-filter --client claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

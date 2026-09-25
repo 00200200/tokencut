@@ -1399,8 +1399,9 @@ def install(
             err_console.print(msg, markup=False)
             raise typer.Exit(code=1)
         console.print(
-            f"Claude Desktop Extension manifest written to {msg}. "
-            "Pack with `mcpb pack` or open from Claude Desktop Extensions.",
+            f"Claude Desktop Extension bundle written to {msg}. "
+            f"Pack it with `npx @anthropic-ai/mcpb pack {msg}`, or install the "
+            "released usagetrim.mcpb from Claude Desktop Settings > Extensions.",
             markup=False,
         )
 

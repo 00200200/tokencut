@@ -1,9 +1,14 @@
 # UsageTrim — Claude Desktop extension
 
-1. Install the CLI: `uv tool install usagetrim`
-2. Either:
-   - `usagetrim install --claude-desktop` (writes `claude_desktop_config.json`), or
-   - `usagetrim install --mcpb` (writes this manifest under `~/.usagetrim/extensions/claude-desktop` for packaging with `mcpb pack`)
-3. Restart Claude Desktop and enable the UsageTrim connector/tools.
+This directory is the source of `usagetrim-<version>.mcpb`, attached to every
+[release](https://github.com/00200200/usagetrim/releases).
 
-UsageTrim does not intercept Desktop chat messages. It saves tokens via MCP tools and optional Prepare-for-chat.
+1. Download `usagetrim-<version>.mcpb`.
+2. Double-click it, or open Claude Desktop → Settings → Extensions → Install extension.
+3. Claude Desktop installs the pinned `usagetrim` package with its bundled uv; no separate
+   Python or CLI install is needed.
+
+Rebuild locally with `npx @anthropic-ai/mcpb pack extensions/claude-desktop`.
+
+UsageTrim does not intercept Desktop chat messages. It reduces tool output through MCP
+tools and the optional Prepare-for-chat clipboard helper. Counts are local estimates.

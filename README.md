@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/00200200/usagetrim/actions/workflows/ci.yml"><img src="https://github.com/00200200/usagetrim/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/00200200/usagetrim/releases"><img src="https://img.shields.io/github/v/release/00200200/usagetrim?color=b3f5cd&amp;label=release" alt="Release"></a>
+  <a href="https://github.com/00200200/usagetrim/releases"><img src="https://img.shields.io/github/v/release/00200200/usagetrim?include_prereleases&amp;color=b3f5cd&amp;label=release" alt="Release"></a>
   <a href="https://pypi.org/project/usagetrim/"><img src="https://img.shields.io/pypi/v/usagetrim?color=b3f5cd&amp;label=PyPI" alt="PyPI"></a>
   <a href="https://github.com/00200200/usagetrim/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-b3f5cd" alt="MIT license"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-compatible-2ec79b" alt="MCP Compatible"></a>
@@ -46,6 +46,17 @@ usagetrim demo
 
 Also works: `pipx install usagetrim`, or one-off `uvx usagetrim demo`. Latest `main`:
 `uv tool install 'git+https://github.com/00200200/usagetrim.git'`.
+
+### Add it inside your app
+
+| App | Install |
+|---|---|
+| **Claude Code** | `/plugin marketplace add 00200200/usagetrim`, then `/plugin install usagetrim@usagetrim` — MCP tools plus the Bash output hook |
+| **Claude Desktop** | Customize → Plugins → add the marketplace `00200200/usagetrim`, or double-click `usagetrim-<version>.mcpb` from [Releases](https://github.com/00200200/usagetrim/releases) (Settings → Extensions) |
+| **Codex app & CLI** | `codex plugin marketplace add 00200200/usagetrim`, then `codex plugin add usagetrim@usagetrim` (or pick it under Plugins in the app) |
+| **Cursor, Windsurf** | `usagetrim install --cursor` or `usagetrim install --windsurf` |
+
+Plugins start `uvx usagetrim mcp`, so they need [uv](https://docs.astral.sh/uv/getting-started/installation/) on `PATH`. The `.mcpb` extension installs its own copy through Claude Desktop.
 
 ```
 verbose tool text  →  keep the failure  →  recover the rest by reference

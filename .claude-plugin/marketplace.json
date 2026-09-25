@@ -1,0 +1,21 @@
+{
+  "name": "usagetrim",
+  "owner": {
+    "name": "00200200",
+    "url": "https://github.com/00200200"
+  },
+  "metadata": {
+    "description": "UsageTrim: local MCP that folds verbose tool output for AI coding agents."
+  },
+  "plugins": [
+    {
+      "name": "usagetrim",
+      "source": "./plugins/usagetrim",
+      "description": "Fold verbose tool output (tests, builds, logs, JSON) locally; recover originals by reference. No model calls.",
+      "version": "0.3.0",
+      "category": "development",
+      "homepage": "https://github.com/00200200/usagetrim",
+      "keywords": ["mcp", "tokens", "context", "compaction"]
+    }
+  ]
+}

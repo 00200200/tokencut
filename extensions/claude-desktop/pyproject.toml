@@ -1,0 +1,6 @@
+[project]
+name = "usagetrim-claude-desktop"
+version = "0.3.0"
+description = "Claude Desktop extension bundle for the UsageTrim MCP server."
+requires-python = ">=3.11"
+dependencies = ["usagetrim==0.3.0"]
