@@ -1,0 +1,20 @@
+{
+  "name": "usagetrim",
+  "interface": {
+    "displayName": "UsageTrim"
+  },
+  "plugins": [
+    {
+      "name": "usagetrim",
+      "source": {
+        "source": "local",
+        "path": "./plugins/usagetrim"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

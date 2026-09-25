@@ -58,6 +58,9 @@ path = "src/usagetrim/__init__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/usagetrim"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"extensions/claude-desktop" = "usagetrim/extensions/claude-desktop"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

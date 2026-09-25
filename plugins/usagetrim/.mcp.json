@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "usagetrim": {
+      "command": "uvx",
+      "args": ["usagetrim", "mcp"]
+    }
+  }
+}

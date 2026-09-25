@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import Literal
 
-from usagetrim import __version__
 from usagetrim.core.cache import DEFAULT_CACHE_DB
 
 
@@ -542,47 +541,47 @@ def configure_codex_mcp(
             staged.unlink(missing_ok=True)
 
 
-def write_claude_desktop_extension(target_dir: Path | None = None) -> tuple[bool, str]:
-    """Write a Claude Desktop Extension (MCPB) manifest next to the install docs.
+EXTENSION_FILES = (
+    "manifest.json",
+    "pyproject.toml",
+    "src/server.py",
+    "icon.png",
+    "README.md",
+    ".mcpbignore",
+)
 
-    Claude Desktop can load local MCP via config today; the ``.mcpb`` package is
-    the one-click Extensions path. We ship the manifest so users (or ``mcpb pack``)
-    can build an installable bundle without inventing a second MCP server.
+
+def _extension_source() -> Path | None:
+    here = Path(__file__).resolve()
+    # Wheel installs carry the bundle inside the package; a checkout keeps it at the root.
+    for candidate in (
+        here.parents[1] / "extensions" / "claude-desktop",
+        here.parents[3] / "extensions" / "claude-desktop",
+    ):
+        if (candidate / "manifest.json").is_file():
+            return candidate
+    return None
+
+
+def write_claude_desktop_extension(target_dir: Path | None = None) -> tuple[bool, str]:
+    """Copy the Claude Desktop Extension (MCPB) bundle source for ``mcpb pack``.
+
+    Releases attach a ready ``usagetrim-<version>.mcpb``; this keeps a local path
+    for users who want to inspect or rebuild it. The bundle uses the ``uv``
+    server type, so Claude Desktop installs the pinned package itself.
     """
+    source = _extension_source()
+    if source is None:
+        return False, (
+            "Extension bundle not found in this install. Download usagetrim.mcpb from "
+            "https://github.com/00200200/usagetrim/releases instead."
+        )
     dest = target_dir or (Path.home() / ".usagetrim" / "extensions" / "claude-desktop")
     try:
-        dest.mkdir(parents=True, exist_ok=True)
-        packaged = Path(__file__).resolve().parents[3] / "extensions" / "claude-desktop"
-        for name in ("manifest.json", "README.md"):
-            source = packaged / name
-            if source.is_file():
-                shutil.copy2(source, dest / name)
-            elif name == "manifest.json":
-                manifest = {
-                    "manifest_version": "0.2",
-                    "name": "usagetrim",
-                    "display_name": "UsageTrim",
-                    "version": __version__,
-                    "description": (
-                        "Keep the signal. Cut the noise. Local MCP for Claude Desktop."
-                    ),
-                    "author": {
-                        "name": "00200200",
-                        "url": "https://github.com/00200200/usagetrim",
-                    },
-                    "server": {
-                        "type": "binary",
-                        "entry_point": "usagetrim",
-                        "mcp_config": {
-                            "command": "usagetrim",
-                            "args": ["mcp", "--profile", "coding"],
-                            "env": {"USAGETRIM_CLIENT": "claude-desktop"},
-                        },
-                    },
-                }
-                (dest / "manifest.json").write_text(
-                    json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-                )
+        for name in EXTENSION_FILES:
+            if (source / name).is_file():
+                (dest / name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source / name, dest / name)
         return True, str(dest)
     except OSError as exc:
         return False, f"Could not write Claude Desktop extension: {exc}"

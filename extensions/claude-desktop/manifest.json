@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.2",
+  "manifest_version": "0.4",
   "name": "usagetrim",
   "display_name": "UsageTrim",
   "version": "0.3.0",
@@ -14,16 +14,88 @@
   "support": "https://github.com/00200200/usagetrim/issues",
   "icon": "icon.png",
   "server": {
-    "type": "binary",
-    "entry_point": "usagetrim",
+    "type": "uv",
+    "entry_point": "src/server.py",
     "mcp_config": {
-      "command": "usagetrim",
-      "args": ["mcp", "--profile", "coding"],
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "src/server.py"
+      ],
       "env": {
         "USAGETRIM_CLIENT": "claude-desktop"
       }
     }
   },
-  "tools": [],
-  "keywords": ["tokens", "context", "mcp", "coding", "claude"]
+  "tools": [
+    {
+      "name": "usagetrim_context",
+      "description": "Save/read bounded task milestones across session turns."
+    },
+    {
+      "name": "usagetrim_code",
+      "description": "Search local syntax index (symbols, occurrences, outline, callers, references, patterns) or ranked repo map."
+    },
+    {
+      "name": "usagetrim_edit_symbol",
+      "description": "Atomic symbol replacement in source file guarded by file hash."
+    },
+    {
+      "name": "usagetrim_exec",
+      "description": "Run noninteractive shell command with output compaction."
+    },
+    {
+      "name": "usagetrim_read",
+      "description": "Targeted file read by skeleton outline, symbol, or line range with bounded output."
+    },
+    {
+      "name": "usagetrim_retrieve",
+      "description": "Recover full original output from SQLite cache by ref_id."
+    },
+    {
+      "name": "usagetrim_diff",
+      "description": "Compact git diff folding lockfiles and build artifacts."
+    },
+    {
+      "name": "usagetrim_clip",
+      "description": "Compact noisy text, logs, diffs, or stack traces before pasting into chat."
+    },
+    {
+      "name": "usagetrim_optimize",
+      "description": "Autonomous prompt, code block, log, and table context optimizer."
+    },
+    {
+      "name": "usagetrim_stats",
+      "description": "Report session token savings."
+    },
+    {
+      "name": "usagetrim_gain",
+      "description": "Local per-tool-family savings from telemetry."
+    }
+  ],
+  "keywords": [
+    "tokens",
+    "context",
+    "mcp",
+    "coding",
+    "claude",
+    "compaction"
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ],
+    "runtimes": {
+      "python": ">=3.11"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/00200200/usagetrim.git"
+  },
+  "license": "MIT"
 }
