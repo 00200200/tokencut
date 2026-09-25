@@ -956,6 +956,110 @@ def filter_gh_text_view(raw_output: str) -> str | None:
     return "\n".join(parts)
 
 
+# ``gh run view --log`` prefixes every line with ``job<TAB>step<TAB>timestamp``.
+_GH_LOG_LINE = re.compile(
+    r"^(?P<job>[^\t]*)\t(?P<step>[^\t]*)\t\ufeff?(?:\d{4}-\d\d-\d\dT[\d:.]+Z ?)?(?P<text>.*)$"
+)
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_GH_LOG_SIGNAL = re.compile(
+    r"##\[error\]|\berror\b(?!-)|\bfail(?:ed|ure)?\b(?!-)|FAIL:|Traceback|\bassert|\w*Exception\b"
+    r"|panicked|would reformat|exit code [1-9]",
+    re.IGNORECASE,
+)
+_GH_LOG_NOISE = re.compile(
+    r"^(?:##\[(?:group|endgroup|debug|start-action|end-action)|\[command\]|Current runner version"
+    r"|Runner Image|Hosted Compute Agent|Version: |Commit: |Build Date: |Worker ID: |Azure Region: "
+    r"|Operating System|Ubuntu$|LTS$|Image: |Image Release: |Included Software|Secret source: "
+    r"|Prepare workflow directory|Prepare all required actions|Getting action download info"
+    r"|Download action repository|Complete job name|Post job cleanup|Cleaning up orphan processes"
+    r"|Temporarily overriding HOME|Adding repository directory|git version |Syncing repository"
+    r"|Fetching the repository|Determining the checkout|Checking out the ref|Removing |shell: )"
+)
+# Step inputs and environment are printed as ``with:``/``env:`` followed by indented pairs.
+_GH_LOG_BLOCK_START = frozenset({"with:", "env:"})
+_GH_LOG_STEP_TAIL = 12
+_GH_LOG_AFTER_SIGNAL = 10
+_GH_LOG_MAX_SIGNAL = 80
+
+
+def _is_gh_run_log_command(command: str) -> bool:
+    words = _gh_argv(command)
+    if not words or PurePath(words[0]).name != "gh" or len(words) < 3:
+        return False
+    return (
+        words[1] == "run"
+        and words[2] == "view"
+        and any(word in {"--log", "--log-failed"} for word in words[3:])
+    )
+
+
+def filter_gh_run_log(raw_output: str) -> str | None:
+    """Fold ``gh run view --log`` / ``--log-failed`` down to failures and step tails.
+
+    Runner setup, checkout plumbing and job cleanup are dropped, as are the
+    per-line job/step/timestamp prefixes; each step keeps every error-like line
+    plus its last few lines. The full log goes to the cache and stays
+    recoverable by ref.
+    """
+    lines = raw_output.splitlines()
+    parsed = [_GH_LOG_LINE.match(line) for line in lines]
+    if len(lines) < 20 or sum(match is not None for match in parsed) < len(lines) // 2:
+        return None
+
+    groups: dict[tuple[str, str], list[str]] = {}
+    for line, match in zip(lines, parsed):
+        job, step, text = (match["job"], match["step"], match["text"]) if match else ("", "", line)
+        text = _ANSI_ESCAPE.sub("", text).rstrip()
+        if text:
+            groups.setdefault((job, step), []).append(text)
+
+    output: list[str] = []
+    signal_budget = _GH_LOG_MAX_SIGNAL
+    for (job, step), texts in groups.items():
+        candidates: list[int] = []
+        in_block = False
+        for index, text in enumerate(texts):
+            bare = text.lstrip("\ufeff")
+            if bare.strip() in _GH_LOG_BLOCK_START:
+                in_block = True
+                continue
+            if in_block and bare[:1].isspace():
+                continue
+            in_block = False
+            if not _GH_LOG_NOISE.match(bare):
+                candidates.append(index)
+        signal = [index for index in candidates if _GH_LOG_SIGNAL.search(texts[index])]
+        signal = signal[:signal_budget]
+        signal_budget -= len(signal)
+        position = {index: order for order, index in enumerate(candidates)}
+        after = {
+            candidates[order]
+            for index in signal
+            for order in range(position[index] + 1, position[index] + 1 + _GH_LOG_AFTER_SIGNAL)
+            if order < len(candidates)
+        }
+        keep = sorted(set(signal) | after | set(candidates[-_GH_LOG_STEP_TAIL:]))
+        if not keep:
+            continue
+        output.append(f"── {job} › {step}" if step and step != "UNKNOWN STEP" else f"── {job}")
+        previous = -1
+        for index in keep:
+            if index - previous > 1:
+                output.append(f"  … {index - previous - 1} lines omitted")
+            output.append("  " + texts[index].replace("##[error]", "ERROR: "))
+            previous = index
+
+    compact = "\n".join(output)
+    if len(compact) >= len(raw_output) * 0.8:
+        return None
+    ref_id = ContextCache().store(raw_output, source="gh-run-log")
+    header = (
+        f"// [usagetrim: CI log {len(lines):,} lines → {len(output):,} "
+        f"(runner setup and passing output dropped). Ref: {ref_id}]\n"
+    )
+    return header + compact
+
+
 def filter_gh_command_output(command: str, raw_output: str) -> str | None:
     """Specialize ``gh pr view`` / ``gh api`` (and related) with JSON spill + slim.
 
@@ -998,6 +1102,8 @@ def filter_gh_command_output(command: str, raw_output: str) -> str | None:
                 )
             return header + slimmed
 
+    if _is_gh_run_log_command(command):
+        return filter_gh_run_log(raw_output)
     if _is_gh_text_view_command(command):
         return filter_gh_text_view(raw_output)
     return None
