@@ -10,19 +10,13 @@
   "version": "0.4.0",
   "packages": [
     {
-      "registryType": "pypi",
-      "identifier": "usagetrim",
+      "registryType": "mcpb",
+      "identifier": "https://github.com/00200200/usagetrim/releases/download/v0.4.0/usagetrim-0.4.0.mcpb",
       "version": "0.4.0",
-      "runtimeHint": "uvx",
+      "fileSha256": "72fe8a5c64df16a595479cde51482bfc980689bfd08ffa1a3cbbb68a3add1c33",
       "transport": {
         "type": "stdio"
-      },
-      "packageArguments": [
-        {
-          "type": "positional",
-          "value": "mcp"
-        }
-      ]
+      }
     }
   ]
 }

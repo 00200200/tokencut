@@ -392,6 +392,10 @@ def test_version_flag_matches_package_and_release_metadata():
     # Registry, extension and plugin metadata must not drift from the published package.
     assert manifest["version"] == registry["version"] == __version__
     assert {p["version"] for p in registry["packages"]} == {__version__}
+    # The registry installs the released .mcpb, so it needs no PyPI account.
+    assert [p["identifier"] for p in registry["packages"]] == [
+        _release_wheel().replace("-py3-none-any.whl", ".mcpb")
+    ]
     assert claude_plugin["version"] == codex_plugin["version"] == __version__
     assert {p["version"] for p in claude_market["plugins"]} == {__version__}
     bundle = tomllib.loads((root / "extensions/claude-desktop/pyproject.toml").read_text())
