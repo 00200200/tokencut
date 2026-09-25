@@ -2243,6 +2243,37 @@ def filter_kubectl(raw_output: str) -> str:
     return raw_output
 
 
+_KUBECTL_READY_RE = re.compile(r"^(\d+)/(\d+)$")
+_KUBECTL_RESTARTS_RE = re.compile(r"^(\d+)")
+
+
+def _kubectl_row_is_routine(parts: list[str]) -> bool:
+    """Report whether a `kubectl get pods` row carries nothing worth keeping.
+
+    A row is routine only when nothing about it asks for attention. Restarts are the
+    clearest sign a pod is unstable even while it currently reports Running, and a
+    partially ready pod is degraded, so both are kept. Finished pods report 0/N ready
+    by design, so readiness is only meaningful while a pod is still running.
+    """
+    ready = parts[1] if len(parts) > 1 else ""
+    status = parts[2] if len(parts) > 2 else ""
+    restarts = parts[3] if len(parts) > 3 else ""
+
+    restart_match = _KUBECTL_RESTARTS_RE.match(restarts)
+    if not restart_match or int(restart_match.group(1)):
+        # An unreadable restart column means the row is not understood well enough
+        # to drop, so it is kept.
+        return False
+
+    if status in {"Completed", "Succeeded"}:
+        return True
+    if status != "Running":
+        return False
+
+    ready_match = _KUBECTL_READY_RE.match(ready)
+    return bool(ready_match) and ready_match.group(1) == ready_match.group(2)
+
+
 def _filter_kubectl_get(lines: list[str]) -> str:
     header = None
     healthy: list[str] = []
@@ -2254,16 +2285,7 @@ def _filter_kubectl_get(lines: list[str]) -> str:
         if _KUBECTL_GET_HEADER_RE.match(stripped):
             header = line
             continue
-        parts = stripped.split()
-        ready = parts[1] if len(parts) > 1 else ""
-        status = parts[2] if len(parts) > 2 else ""
-        is_healthy = (
-            status in {"Running", "Completed", "Succeeded"}
-            and ready
-            and "/" in ready
-            and not ready.startswith("0/")
-        )
-        if is_healthy:
+        if _kubectl_row_is_routine(stripped.split()):
             healthy.append(stripped)
         else:
             keep.append(line)
